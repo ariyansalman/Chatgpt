@@ -1,0 +1,47 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploys the bot as a Web Service (required so Render's health check can
+# reach it — see render_service.py, which binds $PORT and proxies into
+# bot.py's polling loop). The payment-gateway webhook receiver
+# (webhook_server.py) is defined as a second, optional Web Service — only
+# needed if you use bKash/Nagad/Cryptomus/NOWPayments/ZiniPay/CryptoBot,
+# which require a public HTTPS callback URL. Delete that service if you
+# don't need it.
+#
+# DATABASE_URL is NOT set here — add it manually in the Render dashboard
+# (Environment tab) as a secret, pointing at your Supabase connection
+# string. See .env.example for the full list of variables.
+
+services:
+  - type: web
+    name: telegram-store-bot
+    runtime: python
+    plan: starter
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python render_service.py"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: RUN_MODE
+        value: polling
+      # Set these in the Render dashboard (marked sync: false so Render
+      # prompts for them instead of storing them in this file):
+      - key: DATABASE_URL
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_TELEGRAM_ID
+        sync: false
+
+  - type: web
+    name: telegram-store-webhooks
+    runtime: python
+    plan: starter
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python webhook_server.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        sync: false

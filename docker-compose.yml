@@ -1,0 +1,66 @@
+# ─── Phase 4: Docker Compose (Bot + PostgreSQL + Webhook receiver) ──
+# Usage:
+#   cp .env.example .env       # fill BOT_TOKEN, ADMIN_TELEGRAM_ID, etc.
+#   docker compose up -d --build
+#   docker compose logs -f bot
+#
+# Switch to webhook mode by setting RUN_MODE=webhook and WEBHOOK_URL in .env,
+# then expose port 8443 behind your HTTPS reverse-proxy (nginx / caddy / traefik).
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tgbot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-botuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botpass}
+      POSTGRES_DB: ${POSTGRES_DB:-botdb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-botuser} -d ${POSTGRES_DB:-botdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Expose only inside the compose network by default. Uncomment to reach from host:
+    # ports:
+    #   - "5432:5432"
+
+  bot:
+    build: .
+    container_name: tgbot-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Overrides .env DATABASE_URL so the bot always reaches the compose Postgres
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-botuser}:${POSTGRES_PASSWORD:-botpass}@db:5432/${POSTGRES_DB:-botdb}
+    volumes:
+      - ./assets:/app/assets
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    ports:
+      # Only used when RUN_MODE=webhook
+      - "${WEBHOOK_PORT:-8443}:8443"
+
+  # Optional: standalone CryptoBot webhook receiver (Flask)
+  cryptobot-webhook:
+    build: .
+    container_name: tgbot-cryptowebhook
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-botuser}:${POSTGRES_PASSWORD:-botpass}@db:5432/${POSTGRES_DB:-botdb}
+    command: ["python", "webhook_server.py"]
+    ports:
+      - "5000:5000"
+    profiles: ["crypto"]   # start with:  docker compose --profile crypto up -d
+
+volumes:
+  pgdata:
