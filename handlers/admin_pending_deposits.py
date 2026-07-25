@@ -218,7 +218,7 @@ async def pending_deposits_list(update: Update, context: ContextTypes.DEFAULT_TY
 
     kb += [
         [InlineKeyboardButton(f"Sort: {sort_lbl}", callback_data=f"pd:list:{page}:{next_sort}")],
-        [InlineKeyboardButton("⬅ Back", callback_data="acc:cat:payments")],
+        [InlineKeyboardButton("⬅ Back", callback_data="admin_confirm_order")],
     ]
 
     await _safe_edit(

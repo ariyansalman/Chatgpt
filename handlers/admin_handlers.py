@@ -1783,7 +1783,19 @@ async def admin_complete_order_callback(update: Update, context: ContextTypes.DE
 
 
 async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show list of pending transactions for manual confirmation."""
+    """Payments panel — Admin Panel → Payments.
+
+    Primary entry: 🧾 Pending Deposits → pd:list:0:desc (the dedicated
+    Pending Deposit Review system).
+
+    Secondary section: any PENDING transactions that admins can manually
+    confirm inline (legacy confirm_payment_<id> flow — kept fully intact
+    so existing confirmations are unaffected).
+
+    This function is the single registered handler for callback_data=
+    "admin_confirm_order" and is the back-navigation target for the
+    Pending Deposits list ("⬅ Back" in pd:list returns here).
+    """
     query = update.callback_query
     await query.answer()
 
@@ -1791,48 +1803,87 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
         await query.answer("⛔ Access denied.", show_alert=True)
         return
 
+    # ── All DB work in one session to avoid detached-instance errors ────────
+    pending_review_count = 0
+    tx_display: list[tuple] = []   # (tx_id, username_str, amount, pm_label)
+
     with get_db_session() as session:
-        from database import Transaction, TransactionStatus
+        from database import Transaction, TransactionStatus, PaymentMethod
 
-        # Get all pending transactions
-        transactions = session.query(Transaction).filter_by(status=TransactionStatus.PENDING).order_by(Transaction.created_at.desc()).all()
+        _REVIEWABLE = (PaymentMethod.MANUAL, PaymentMethod.BKASH, PaymentMethod.NAGAD)
+        _PENDING_ST  = (TransactionStatus.PENDING, TransactionStatus.AWAITING_CONFIRMATION)
 
-        if not transactions:
-            keyboard = [[InlineKeyboardButton("🔙 Back to Orders", callback_data="admin_orders")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+        # Count deposits awaiting manual review
+        pending_review_count = (
+            session.query(func.count(Transaction.id))
+            .filter(
+                Transaction.payment_method.in_(_REVIEWABLE),
+                Transaction.status.in_(_PENDING_ST),
+            )
+            .scalar() or 0
+        )
 
-            try:
-                await query.edit_message_text(
-                    "✅ No pending payments to confirm.",
-                    reply_markup=reply_markup
-                )
-            except BadRequest as e:
-                if "Message is not modified" not in str(e):
-                    raise
-            return
+        # Collect display tuples for legacy inline-confirm rows — all within
+        # the session so attribute reads never hit a detached-instance error.
+        tx_rows = (
+            session.query(Transaction)
+            .filter(Transaction.status == TransactionStatus.PENDING)
+            .order_by(Transaction.created_at.desc())
+            .all()
+        )
+        for txn in tx_rows:
+            _u = session.query(User).filter_by(id=txn.user_id).first()
+            uname = (
+                _u.username if _u and _u.username
+                else f"ID:{_u.telegram_id if _u else 'unknown'}"
+            )
+            pm_label = txn.payment_method.value.replace("_", " ").title()
+            tx_display.append((txn.id, uname, float(txn.amount or 0), pm_label))
 
-        # Build keyboard with transaction buttons
-        keyboard = []
-        for txn in transactions:
-            user = session.query(User).filter_by(id=txn.user_id).first()
-            username = user.username if user and user.username else f"ID:{user.telegram_id if user else 'Unknown'}"
+    # ── Build keyboard ─────────────────────────────────────────────────────
+    # Primary action — always visible, live counter badge when > 0
+    review_label = (
+        f"🧾 Pending Deposits  ({pending_review_count})"
+        if pending_review_count else
+        "🧾 Pending Deposits"
+    )
+    keyboard = [
+        [InlineKeyboardButton(review_label, callback_data="pd:list:0:desc")],
+    ]
 
-            payment_method = txn.payment_method.value.replace('_', ' ').title()
+    # Secondary section — legacy inline confirmations
+    if tx_display:
+        keyboard.append(
+            [InlineKeyboardButton("── Manual Confirmations ──", callback_data="noop")]
+        )
+        for tx_id, uname, amount, pm_label in tx_display:
+            btn = f"⏳ Txn #{tx_id} | @{uname} | {format_price(amount)} | {pm_label}"
+            keyboard.append(
+                [InlineKeyboardButton(btn[:64], callback_data=f"confirm_payment_{tx_id}")]
+            )
 
-            button_text = f"⏳ Txn #{txn.id} | @{username} | {format_price(txn.amount)} | {payment_method}"
-            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"confirm_payment_{txn.id}")])
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_menu")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Add back button
-        keyboard.append([InlineKeyboardButton("🔙 Back to Orders", callback_data="admin_orders")])
-        reply_markup = InlineKeyboardMarkup(keyboard)
+    # ── Header ─────────────────────────────────────────────────────────────
+    if pending_review_count:
+        header = (
+            f"💳 <b>Payments</b>\n\n"
+            f"⚠️ <b>{pending_review_count}</b> deposit(s) awaiting manual review.\n"
+            "Tap <b>Pending Deposits</b> to open the review queue."
+        )
+    else:
+        header = "💳 <b>Payments</b>\n\nNo deposits are currently waiting for review."
 
-        message = f"✅ Manual Payment Confirmation ({len(transactions)} pending)\n\nSelect a transaction to confirm:"
-
-        try:
-            await query.edit_message_text(message, reply_markup=reply_markup)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e):
-                raise
+    try:
+        await query.edit_message_text(
+            header,
+            reply_markup=reply_markup,
+            parse_mode="HTML",
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
 
 
 async def admin_cancel_order_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):

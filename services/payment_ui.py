@@ -349,14 +349,18 @@ class PaymentMethodView:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# "Payment Under Review" — dedicated user-facing confirmation screen
+# "Payment Under Review" — clean fintech-style confirmation screen
 #
-# UI/UX-only redesign: one premium block, no dashed dividers, and no field
-# is ever shown twice. In particular, if the Transaction ID a gateway/user
-# supplied is identical to the Deposit ID, only the Deposit ID is shown.
-# Every payment method (built-in or admin-added later) renders through
-# this exact same template — only the label text changes — so a new
-# gateway never needs a new screen.
+# Design rules (enforced here, nowhere else):
+#   • One premium layout — no dashed or dotted separator lines.
+#   • No field is ever shown twice: if the Transaction ID the gateway/user
+#     supplied is identical to the Deposit ID, only the Deposit ID appears.
+#   • No internal IDs, no repeated status messages, no redundant text.
+#   • Amount and Deposit ID are wrapped in <code> so the user can tap to
+#     copy them on mobile — the single most-requested fintech UX detail.
+#   • Every payment method (built-in or admin-created) renders through
+#     this exact same template — only the label text changes — so a new
+#     gateway never needs a new screen.
 # ─────────────────────────────────────────────────────────────────────────
 
 _DEFAULT_PENDING_REVIEW_NOTE = (
@@ -383,50 +387,63 @@ def pending_review_card(
     shown to a user right after they submit a payment / TXID / proof for
     manual review.
 
-    Values are always resolved dynamically (gateway registry + live
-    transaction data) — nothing here is ever hardcoded per gateway.
+    All displayed values are resolved dynamically — nothing is ever
+    hardcoded per gateway.  A new payment method added tomorrow (by code
+    or by an admin via Telegram) automatically uses this exact layout.
     """
+    # ── Resolve payment method label ──────────────────────────────────────
     if payment_method:
         label = payment_method
     else:
         label, _emoji = gateway_meta(gateway_key, gateway_label_override)
 
-    dep_id = _display_deposit_id(deposit_id if deposit_id is not None else order_id, created_at)
+    # ── Resolve deposit reference ─────────────────────────────────────────
+    dep_id = _display_deposit_id(
+        deposit_id if deposit_id is not None else order_id, created_at
+    )
 
-    # Never display the same reference twice: only show Transaction ID
-    # when it's genuinely different from the Deposit ID being shown.
+    # ── Deduplicate IDs: show Transaction ID only when it differs ─────────
     show_txn_id = bool(txn_id) and str(txn_id) != str(dep_id)
 
-    lines = ["🟡 <b>Payment Under Review</b>", ""]
+    # ── Build card ────────────────────────────────────────────────────────
+    lines: list[str] = ["🟡 <b>Payment Under Review</b>", ""]
 
+    # Payment Method
     lines.append("💳 <b>Payment Method</b>")
     lines.append(str(label))
     lines.append("")
 
+    # Amount — tap-to-copy on mobile
     lines.append("💰 <b>Amount</b>")
-    lines.append(str(amount))
+    lines.append(f"<code>{amount}</code>")
     lines.append("")
 
+    # Deposit ID — tap-to-copy; only if a reference exists
     if dep_id:
         lines.append("🧾 <b>Deposit ID</b>")
-        lines.append(str(dep_id))
+        lines.append(f"<code>{dep_id}</code>")
         lines.append("")
 
+    # Transaction ID — only when genuinely different from Deposit ID
     if show_txn_id:
         lines.append("🔗 <b>Transaction ID</b>")
-        lines.append(str(txn_id))
+        lines.append(f"<code>{txn_id}</code>")
         lines.append("")
 
-    for emoji, field_label, value in extra:
+    # Any gateway-specific extra fields (e.g. network, screenshot hash)
+    for field_emoji, field_label, value in extra:
         if value is None or value == "":
             continue
-        lines.append(f"{emoji} <b>{field_label}</b>")
+        lines.append(f"{field_emoji} <b>{field_label}</b>")
         lines.append(str(value))
         lines.append("")
 
+    # Status
     lines.append("🔍 <b>Status</b>")
     lines.append("Pending Review")
     lines.append("")
+
+    # Confirmation note
     lines.append(note or _DEFAULT_PENDING_REVIEW_NOTE)
 
     return "\n".join(lines)
@@ -438,14 +455,16 @@ def pending_review_keyboard(
     support_cb: str = "support",
     menu_cb: str = "main_menu",
 ) -> InlineKeyboardMarkup:
-    """Standard keyboard for the 'Payment Under Review' screen:
-    📜 Deposit History · 💬 Contact Support · 🏠 Back to Menu.
-    Reuses the app's existing routes — no new callback_data is introduced.
+    """Standard action keyboard for the 'Payment Under Review' screen.
+
+    Buttons (in order): 📜 Deposit History · 💬 Contact Support · 🏠 Back to Menu.
+    All callback_data values are passed in from the caller — no new routes
+    are introduced here, and future payment methods get this keyboard for free.
     """
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📜 Deposit History", callback_data=history_cb)],
-        [InlineKeyboardButton("💬 Contact Support", callback_data=support_cb)],
-        [InlineKeyboardButton("🏠 Back to Menu", callback_data=menu_cb)],
+        [InlineKeyboardButton("📜 Deposit History",  callback_data=history_cb)],
+        [InlineKeyboardButton("💬 Contact Support",  callback_data=support_cb)],
+        [InlineKeyboardButton("🏠 Back to Menu",     callback_data=menu_cb)],
     ])
 
 
