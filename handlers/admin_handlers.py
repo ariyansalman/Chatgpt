@@ -1809,19 +1809,15 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
 
     with get_db_session() as session:
         from database import Transaction, TransactionStatus, PaymentMethod
+        from services import payment_ui as _pui
 
-        _REVIEWABLE = (PaymentMethod.MANUAL, PaymentMethod.BKASH, PaymentMethod.NAGAD)
-        _PENDING_ST  = (TransactionStatus.PENDING, TransactionStatus.AWAITING_CONFIRMATION)
-
-        # Count deposits awaiting manual review
-        pending_review_count = (
-            session.query(func.count(Transaction.id))
-            .filter(
-                Transaction.payment_method.in_(_REVIEWABLE),
-                Transaction.status.in_(_PENDING_ST),
-            )
-            .scalar() or 0
-        )
+        # SYNCHRONIZATION FIX: was a locally hand-copied filter that could
+        # (and did) drift out of sync with handlers/admin_pending_deposits.py
+        # and handlers/admin_dashboard.py. Now sourced from one shared
+        # definition — see services/payment_ui.count_pending_deposits.
+        _counts = _pui.count_pending_deposits(session)
+        pending_review_count = _counts["deposits"]
+        gateway_verification_count = _counts["gateway_verifications"]
 
         # Collect display tuples for legacy inline-confirm rows — all within
         # the session so attribute reads never hit a detached-instance error.
@@ -1862,7 +1858,7 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
                 [InlineKeyboardButton(btn[:64], callback_data=f"confirm_payment_{tx_id}")]
             )
 
-    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_menu")])
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="acc:root")])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     # ── Header ─────────────────────────────────────────────────────────────
@@ -1874,6 +1870,11 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
         )
     else:
         header = "💳 <b>Payments</b>\n\nNo deposits are currently waiting for review."
+    if gateway_verification_count:
+        header += (
+            f"\n⚠️ <b>{gateway_verification_count}</b> gateway verification(s) also "
+            "awaiting review (Binance/Bybit/ZiniPay panels)."
+        )
 
     try:
         await query.edit_message_text(

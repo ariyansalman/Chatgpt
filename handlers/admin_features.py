@@ -702,7 +702,7 @@ async def features_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             callback_data=f"af:f:{feat['id']}",
         )])
 
-    kb.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_menu")])
+    kb.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="acc:root")])
     await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(kb))
 
 

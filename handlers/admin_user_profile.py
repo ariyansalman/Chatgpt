@@ -174,7 +174,7 @@ async def up_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📋 User List",              callback_data="up:list:0:desc")],
         [InlineKeyboardButton("🔍 Advanced Search",        callback_data="up:search")],
         [InlineKeyboardButton("🔍 Customer 360° View",     callback_data="c360:search")],
-        [InlineKeyboardButton("🔙 Back",                 callback_data="admin_menu")],
+        [InlineKeyboardButton("🔙 Back",                 callback_data="acc:root")],
     ])
     await _safe_edit(
         query,

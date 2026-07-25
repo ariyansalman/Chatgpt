@@ -66,9 +66,16 @@ _PAGE_SZ = 8
 # means "waiting on a human review" in this project — see module
 # docstring. Every other gateway is confirmed automatically and is
 # deliberately excluded so this panel never races an API/webhook.
-_REVIEWABLE_METHODS = (PaymentMethod.MANUAL, PaymentMethod.BKASH, PaymentMethod.NAGAD)
-
-_PENDING_STATUSES = (TransactionStatus.PENDING, TransactionStatus.AWAITING_CONFIRMATION)
+#
+# SYNCHRONIZATION FIX: these are no longer defined locally. They are read
+# from services.payment_ui — the single shared definition also used by
+# handlers/admin_handlers.py (Payments menu badge), handlers/
+# admin_dashboard.py (dashboard badge) and handlers/admin_manual_payments.py.
+# Previously each of those files had its own hand-copied tuple; whenever one
+# was edited and the others weren't, the "Pending Deposits" number shown on
+# one screen stopped matching another — the exact bug this audit fixes.
+_REVIEWABLE_METHODS = pui.reviewable_methods()
+_PENDING_STATUSES = pui.pending_tx_statuses()
 
 _STATUS_ICON = {
     TransactionStatus.PENDING:               "⏳",
@@ -104,40 +111,84 @@ def _status_key(tx) -> str:
     }.get(tx.status, "pending_review")
 
 
+_VERIFICATION_RESULT_LABEL = {
+    # Generic ManualPaymentMethod / bKash / Nagad manual-mode deposits have
+    # no gateway API to auto-verify — the whole point of this queue is that
+    # a human checks the submitted TXID/screenshot. Shown so the admin
+    # review card never has to silently omit the field one gateway's
+    # PendingManualVerification-based card shows (⚠ Verification Result).
+    True:  "⚠️ Not auto-verifiable — human review required",
+    False: "⚠️ Not auto-verifiable — human review required",
+}
+
+
+def _network_for(tx) -> str | None:
+    """Best-effort network/currency hint for the admin card's 🌐 Network
+    field. Manual/bKash/Nagad deposits don't always have one; returns None
+    (row is simply omitted by build_card) when there's nothing to show."""
+    if tx.payment_method == PaymentMethod.BKASH:
+        return "bKash (BDT)"
+    if tx.payment_method == PaymentMethod.NAGAD:
+        return "Nagad (BDT)"
+    if getattr(tx, "crypto_network", None):
+        return tx.crypto_network
+    return None
+
+
 def _deposit_detail_msg(tx, user) -> str:
-    name    = html.escape(_customer_name(user))
-    method  = html.escape(_method_label(tx))
+    """THE single Admin Review Screen layout for every deposit shown by this
+    panel — built entirely through services.payment_ui.admin_review_card so
+    it is byte-for-byte the same template every other manual-review surface
+    in the bot (bKash/Nagad, Binance Pay, Bybit Pay, ZiniPay) already uses.
+    No handler builds its own message; this function only supplies values.
+    """
+    name    = pui.customer_display(user.username if user else None, user.telegram_id if user else None)
     amount  = f"${tx.amount:.2f}" if tx.amount is not None else "—"
-    created = tx.created_at.strftime("%Y-%m-%d %H:%M UTC") if tx.created_at else "—"
-    txn_id  = html.escape(str(tx.txid or tx.proof or "—"))
-    return pui.build_card(
-        title=f"Deposit #{tx.id}", title_emoji="🧾",
-        fields=[
-            ("💳", "Payment Method", method),
-            ("💰", "Amount", amount),
-            ("🧾", "Deposit ID", format_deposit_id(tx.id, tx.created_at)),
-            ("🔗", "Transaction ID", txn_id),
-            ("👤", "Customer", name),
-            ("🕒", "Created Time", created),
-        ],
+    txn_id  = html.escape(str(tx.txid or tx.proof or "—")) if (tx.txid or tx.proof) else None
+    return pui.admin_review_card(
+        gateway_key=None,
+        gateway_label_override=_method_label(tx),
+        amount=amount,
+        order_id=tx.id,
+        created_at=tx.created_at,
+        txn_id=txn_id,
+        customer_name=name,
+        user_id=user.telegram_id if user else None,
+        network=_network_for(tx),
+        verification_result=_VERIFICATION_RESULT_LABEL[True],
         status_key=_status_key(tx),
     )
 
 
-def _deposit_kb(tx) -> InlineKeyboardMarkup:
-    kb = []
+def _deposit_kb(tx, user=None) -> InlineKeyboardMarkup:
+    """THE single Admin Review Screen keyboard — built through
+    pui.admin_review_keyboard so button emoji/order/labels are identical to
+    every other manual-review surface: 🔄 Verify Again (n/a here — manual
+    submissions have no API to re-query, so omitted), ✅ Approve,
+    ❌ Reject, 👤 View User, ⬅ Back.
+    """
+    tg_id = user.telegram_id if user else None
     if tx.status in _PENDING_STATUSES:
-        kb.append([
-            InlineKeyboardButton("🟢 Approve", callback_data=f"pd:appr_ask:{tx.id}"),
-            InlineKeyboardButton("🔴 Reject",  callback_data=f"pd:rej_ask:{tx.id}"),
-        ])
-    elif tx.status == TransactionStatus.COMPLETED:
-        kb.append([InlineKeyboardButton("🟢 Already Approved", callback_data="noop")])
-    elif tx.status == TransactionStatus.REJECTED:
-        kb.append([InlineKeyboardButton("🔴 Already Rejected", callback_data="noop")])
-    kb.append([InlineKeyboardButton("📜 View Details", callback_data=f"pd:info:{tx.id}")])
-    kb.append([InlineKeyboardButton("⬅ Back", callback_data="pd:list:0:desc")])
-    return InlineKeyboardMarkup(kb)
+        kb = pui.admin_review_keyboard(
+            approve_cb=f"pd:appr_ask:{tx.id}",
+            reject_cb=f"pd:rej_ask:{tx.id}",
+            view_user_cb=(f"admin_view_user_pmv_{tg_id}" if tg_id else None),
+            back_cb="pd:list:0:desc",
+        )
+    else:
+        already = "🟢 Already Approved" if tx.status == TransactionStatus.COMPLETED else "🔴 Already Rejected"
+        rows = [[InlineKeyboardButton(already, callback_data="noop")]]
+        if tg_id:
+            rows.append([InlineKeyboardButton("👤 View User", callback_data=f"admin_view_user_pmv_{tg_id}")])
+        rows.append([InlineKeyboardButton("⬅ Back", callback_data="pd:list:0:desc")])
+        kb = InlineKeyboardMarkup(rows)
+    # 📜 View Details stays a separate row — it opens the extended raw-info
+    # screen (proof/screenshot/admin notes), which is deliberately NOT part
+    # of the standardized review card (see task spec: admin card shows only
+    # the fixed field set; anything extra lives one tap away).
+    rows = list(kb.inline_keyboard)
+    rows.insert(-1, [InlineKeyboardButton("📜 View Details", callback_data=f"pd:info:{tx.id}")])
+    return InlineKeyboardMarkup(rows)
 
 
 async def _safe_edit(query, text, reply_markup=None, parse_mode="HTML"):
@@ -221,11 +272,26 @@ async def pending_deposits_list(update: Update, context: ContextTypes.DEFAULT_TY
         [InlineKeyboardButton("⬅ Back", callback_data="admin_confirm_order")],
     ]
 
-    await _safe_edit(
-        query,
-        f"🧾 <b>Pending Deposits</b> ({total})\nDeposits waiting for manual review.",
-        InlineKeyboardMarkup(kb),
-    )
+    # SYNCHRONIZATION FIX: Binance Pay / Bybit Pay / ZiniPay submissions that
+    # failed auto-verification are a separate, real "waiting for a human"
+    # state (PendingManualVerification, reviewed from each gateway's own
+    # panel — see admin_binance.py / admin_bybit.py). They're intentionally
+    # not listed here (this list only ever showed reviewable-Transaction
+    # rows and always will — see module docstring), but the count is now
+    # always surfaced on this same screen so it can never look like "0
+    # deposits waiting" while one of those is actually sitting in a review
+    # queue elsewhere.
+    with get_db_session() as _cs:
+        _counts = pui.count_pending_deposits(_cs)
+    gw_count = _counts["gateway_verifications"]
+    header = f"🧾 <b>Pending Deposits</b> ({total})\nDeposits waiting for manual review."
+    if gw_count:
+        header += (
+            f"\n⚠️ <b>{gw_count}</b> gateway verification(s) also awaiting review "
+            "(Binance/Bybit/ZiniPay panels)."
+        )
+
+    await _safe_edit(query, header, InlineKeyboardMarkup(kb))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -253,7 +319,7 @@ async def deposit_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _ = tx.manual_method  # noqa: F841 — eager-load before session closes
         u   = session.query(User).filter_by(id=tx.user_id).first()
         msg = _deposit_detail_msg(tx, u)
-        kb  = _deposit_kb(tx)
+        kb  = _deposit_kb(tx, u)
 
     await _safe_edit(query, msg, kb)
 

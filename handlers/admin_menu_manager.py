@@ -227,7 +227,7 @@ async def mm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         InlineKeyboardButton("🔄 Reset to Default", callback_data="mm:layout:reset"),
     ])
 
-    rows.append([InlineKeyboardButton("⬅️ Admin Menu", callback_data="admin_menu")])
+    rows.append([InlineKeyboardButton("⬅️ Admin Panel", callback_data="acc:root")])
 
     # Build summary text
     items_status = []

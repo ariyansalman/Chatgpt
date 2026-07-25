@@ -116,14 +116,14 @@ async def aos_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.answer()
 
     try:
-        from handlers.admin_dashboard import render_legacy_dashboard
-        await render_legacy_dashboard(update, context)
+        from handlers.admin_control_center import render_control_center
+        await render_control_center(update, context)
     except Exception:
         try:
             await query.edit_message_text(
                 "✅ Search cancelled.",
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_menu"),
+                    InlineKeyboardButton("🔙 Admin Panel", callback_data="acc:root"),
                 ]]),
             )
         except BadRequest:
@@ -635,7 +635,7 @@ def _build_detail_keyboard(
     # ── New Search + back ────────────────────────────────────────────────
     rows.append([
         InlineKeyboardButton("🔍 New Search", callback_data="aos:menu"),
-        InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_menu"),
+        InlineKeyboardButton("🔙 Admin Panel", callback_data="acc:root"),
     ])
 
     return InlineKeyboardMarkup(rows)
@@ -773,7 +773,7 @@ def _build_deposit_keyboard(
 
     rows.append([
         InlineKeyboardButton("🔍 New Search", callback_data="aos:menu"),
-        InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_menu"),
+        InlineKeyboardButton("🔙 Admin Panel", callback_data="acc:root"),
     ])
 
     return InlineKeyboardMarkup(rows)
@@ -815,7 +815,7 @@ async def aos_handle_query(
                 if txn is None:
                     kb = InlineKeyboardMarkup([[
                         InlineKeyboardButton("🔍 Try Again", callback_data="aos:menu"),
-                        InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_menu"),
+                        InlineKeyboardButton("🔙 Admin Panel", callback_data="acc:root"),
                     ]])
                     await update.message.reply_text(
                         match_desc,
@@ -835,7 +835,7 @@ async def aos_handle_query(
                 if order is None:
                     kb = InlineKeyboardMarkup([[
                         InlineKeyboardButton("🔍 Try Again", callback_data="aos:menu"),
-                        InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_menu"),
+                        InlineKeyboardButton("🔙 Admin Panel", callback_data="acc:root"),
                     ]])
                     await update.message.reply_text(
                         f"❌ {match_desc}",

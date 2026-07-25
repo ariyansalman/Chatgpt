@@ -128,7 +128,7 @@ async def admin_analytics_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         [InlineKeyboardButton("💎 LTV Breakdown", callback_data="admin_analytics_ltv"),
          InlineKeyboardButton("📉 Churn Detail", callback_data="admin_analytics_churn")],
         [InlineKeyboardButton("🔄 Refresh", callback_data="admin_analytics")],
-        [InlineKeyboardButton("🔙 Back", callback_data="admin_menu")],
+        [InlineKeyboardButton("🔙 Back", callback_data="acc:root")],
     ]
     try:
         await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb))

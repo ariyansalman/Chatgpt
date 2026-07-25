@@ -155,12 +155,20 @@ def _collect_dashboard_stats() -> dict:
             stats["pending_orders"] = s.query(func.count(Order.id)).filter(
                 Order.status == OrderStatus.PROCESSING
             ).scalar() or 0
-            stats["pending_payments"] = s.query(func.count(Transaction.id)).filter(
-                Transaction.status.in_([
-                    TransactionStatus.PENDING,
-                    TransactionStatus.AWAITING_CONFIRMATION,
-                ])
-            ).scalar() or 0
+            # SYNCHRONIZATION FIX: this used to count every Transaction in
+            # PENDING/AWAITING_CONFIRMATION regardless of payment method —
+            # including gateways (Binance Pay, Bybit Pay, ZiniPay, Cryptomus,
+            # NOWPayments, Heleket, Telegram Stars) that are still just
+            # waiting on their own webhook/API confirmation and need no
+            # admin action at all. That inflated number never matched the
+            # "Pending Deposits" count shown one tap later in the Payments
+            # menu. Now both read the exact same shared definition (see
+            # services/payment_ui.count_pending_deposits), which also folds
+            # in PendingManualVerification rows (failed auto-verifications
+            # genuinely waiting on a human) so this badge is never lower
+            # than the real number of items needing review.
+            from services.payment_ui import count_pending_deposits as _cpd
+            stats["pending_payments"] = _cpd(s)["total"]
             stats["total_sales"] = float(s.query(func.coalesce(
                 func.sum(Order.total_amount), 0.0
             )).filter(Order.status == OrderStatus.COMPLETED).scalar() or 0.0)
@@ -215,29 +223,30 @@ def _render_dashboard_text(stats: dict) -> str:
 
     alerts = []
     if stats["pending_orders"]:
-        alerts.append(f"⏳ Pending Orders: <b>{stats['pending_orders']:,}</b>")
+        alerts.append(f"  ⏳  <b>{stats['pending_orders']:,}</b> pending orders")
     if stats["pending_payments"]:
-        alerts.append(f"💳 Pending Payments: <b>{stats['pending_payments']:,}</b>")
+        alerts.append(f"  💳  <b>{stats['pending_payments']:,}</b> pending payments")
     if stats["low_stock"]:
-        alerts.append(f"📉 Low Stock: <b>{stats['low_stock']:,}</b>")
+        alerts.append(f"  📉  <b>{stats['low_stock']:,}</b> low-stock products")
     if open_tickets:
-        alerts.append(f"🎫 Open Tickets: <b>{open_tickets:,}</b>")
+        alerts.append(f"  🎫  <b>{open_tickets:,}</b> open support tickets")
 
-    attention = "\n".join(alerts) if alerts else "✅ All clear"
+    if alerts:
+        attention_block = "🔴 <b>Action Required</b>\n" + "\n".join(alerts)
+    else:
+        attention_block = "🟢 <b>All Clear</b>  —  No pending actions"
 
     return (
-        "🛡️ <b>Admin Control Center</b>\n\n"
-        "⚠️ <b>Needs Attention</b>\n"
-        f"{attention}\n\n"
-        "📊 <b>Store Overview</b>\n"
-        f"👥 Users: <b>{stats['users']:,}</b>\n"
-        f"📦 Products: <b>{stats['products']:,}</b>\n"
-        f"🛒 Orders: <b>{stats['orders']:,}</b>\n\n"
-        "💰 <b>Revenue</b>\n"
-        f"Total Sales: <b>{format_price(stats['total_sales'])}</b>\n\n"
-        "📈 <b>Performance</b>\n"
-        f"Avg. LTV: <b>{format_price(stats['avg_ltv'])}</b>  ·  "
-        f"Churn: <b>{stats['churn_rate_pct']}%</b>"
+        "⚡ <b>Admin Control Center</b>\n"
+        "──────────────────────────\n\n"
+        f"{attention_block}\n\n"
+        "──────────────────────────\n"
+        f"👥  <b>{stats['users']:,}</b> users   "
+        f"📦  <b>{stats['products']:,}</b> products   "
+        f"🛒  <b>{stats['orders']:,}</b> orders\n"
+        f"💰  Sales <b>{format_price(stats['total_sales'])}</b>   "
+        f"📈  LTV <b>{format_price(stats['avg_ltv'])}</b>   "
+        f"📉  Churn <b>{stats['churn_rate_pct']}%</b>"
     )
 
 
@@ -324,7 +333,7 @@ async def admin_low_stock_view(update: Update, context: ContextTypes.DEFAULT_TYP
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Refresh", callback_data="admin_low_stock")],
-        [InlineKeyboardButton("🔙 Back", callback_data="admin_menu")],
+        [InlineKeyboardButton("🔙 Back", callback_data="acc:root")],
     ])
     try:
         await query.edit_message_text("\n".join(lines), reply_markup=kb, parse_mode="HTML")
@@ -343,7 +352,7 @@ def _preview_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("📦 Product Card", callback_data="admin_preview_product")],
         [InlineKeyboardButton("🧾 Receipt Footer", callback_data="admin_preview_receipt")],
         [InlineKeyboardButton("💳 Payment Instructions", callback_data="admin_preview_payment")],
-        [InlineKeyboardButton("🔙 Back", callback_data="admin_menu")],
+        [InlineKeyboardButton("🔙 Back", callback_data="acc:root")],
     ])
 
 
@@ -513,7 +522,7 @@ async def admin_audit_log_view(update: Update, context: ContextTypes.DEFAULT_TYP
     kb_rows = []
     if nav:
         kb_rows.append(nav)
-    kb_rows.append([InlineKeyboardButton("🔙 Back", callback_data="admin_menu")])
+    kb_rows.append([InlineKeyboardButton("🔙 Back", callback_data="acc:root")])
 
     try:
         await query.edit_message_text(

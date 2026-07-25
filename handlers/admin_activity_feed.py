@@ -160,7 +160,7 @@ async def af_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("🌍 Public Feed Settings",  callback_data="af:public:menu")],
         [InlineKeyboardButton("📊 Event Filters",         callback_data="af:filters:menu")],
         [InlineKeyboardButton("⚙️ Display Options",       callback_data="af:options:menu")],
-        [InlineKeyboardButton("⬅️ Admin Menu",            callback_data="admin_menu")],
+        [InlineKeyboardButton("⬅️ Admin Panel",            callback_data="acc:root")],
     ])
     await _safe_edit(query, text, kb)
 

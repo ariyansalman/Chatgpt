@@ -34,7 +34,12 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 # Visual constants
 # ─────────────────────────────────────────────────────────────────────────
 
-DIVIDER = "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈"
+# NOTE: dashed/dotted divider lines have been retired project-wide (audit
+# finding: "old layouts still use dashed separator lines"). Every card now
+# separates sections with plain blank lines instead. DIVIDER is kept as an
+# empty string (rather than deleted outright) so any stray call site that
+# still concatenates it does not break, but it no longer renders anything.
+DIVIDER = ""
 
 # One source of truth for every gateway's display name + emoji, so "make
 # ALL payment gateways use the exact same UI" only ever needs one edit.
@@ -146,14 +151,13 @@ def build_card(
     value is falsy are skipped automatically, so the exact same renderer
     works for every gateway / lifecycle stage without special-casing.
     """
-    lines = [f"{title_emoji} <b>{title}</b>", DIVIDER, ""]
+    lines = [f"{title_emoji} <b>{title}</b>", ""]
     for emoji, label, value in fields:
         row = _row(emoji, label, value)
         if row:
             lines.append(row)
     if status_key:
         lines.append("")
-        lines.append(DIVIDER)
         lines.append(f"{status_badge(status_key)}")
     if note:
         lines.append("")
@@ -226,7 +230,7 @@ def user_payment_card(
     """
     label, emoji = gateway_meta(gateway_key, gateway_label_override)
     fields = [
-        ("💳", "Gateway", label),
+        ("💳", "Payment Method", label),
         ("💰", "Amount", amount),
         ("🧾", "Deposit ID", _display_deposit_id(order_id, created_at)),
         ("🔗", "Transaction ID", txn_id),
@@ -295,7 +299,7 @@ class PaymentMethodView:
     def render(self) -> str:
         """Build the identical card layout used by every payment method."""
         fields = [
-            ("💳", "Gateway", self.name),
+            ("💳", "Payment Method", self.name),
             ("💰", "Amount", copy_code(self.amount) if self.amount else None),
             ("🧾", "Deposit ID", _display_deposit_id(self.deposit_id, self.created_at)),
             ("🔗", "Transaction ID", self.transaction_id),
@@ -481,22 +485,34 @@ def admin_review_card(
     txn_id: Optional[str] = None,
     customer_name: Optional[str] = None,
     user_id=None,
+    network: Optional[str] = None,
+    verification_result: Optional[str] = None,
     time_str: Optional[str] = None,
     status_key: str = "pending_review",
     extra: Sequence[Tuple[str, str, object]] = (),
     note: Optional[str] = None,
     gateway_label_override: Optional[str] = None,
 ) -> str:
-    """Build the identical admin review card used for every gateway."""
+    """Build THE single admin review card used for every payment method and
+    every manual-review surface (generic manual, bKash/Nagad manual mode,
+    and Binance/Bybit/ZiniPay failed-auto-verification review).
+
+    Field order is fixed and identical everywhere:
+    💳 Payment Method → 💰 Amount → 🧾 Deposit ID → 🔗 Transaction ID →
+    👤 Customer → 🆔 Telegram ID → 🌐 Network → ⚠ Verification Result → status.
+    ``network`` / ``verification_result`` are omitted automatically when not
+    applicable (e.g. a plain bank-transfer submission has no network).
+    """
     label, emoji = gateway_meta(gateway_key, gateway_label_override)
     fields = [
-        ("💳", "Gateway", label),
+        ("💳", "Payment Method", label),
         ("💰", "Amount", amount),
         ("🧾", "Deposit ID", _display_deposit_id(order_id, created_at)),
         ("🔗", "Transaction ID", txn_id),
         ("👤", "Customer", customer_name),
-        ("🆔", "User ID", user_id),
-        ("🕒", "Time", time_str or now_str()),
+        ("🆔", "Telegram ID", user_id),
+        ("🌐", "Network", network),
+        ("⚠", "Verification Result", verification_result),
     ]
     fields.extend(extra)
     return build_card(
@@ -517,7 +533,7 @@ def admin_resolution_suffix(action: str, actor_label: str, reason: Optional[str]
         "rejected": "🔴 Rejected",
         "verified": "🟢 Verified & Approved",
     }.get(action, action)
-    out = f"\n\n{DIVIDER}\n{badge} by {actor_label}"
+    out = f"\n\n{badge} by {actor_label}"
     if reason:
         out += f"\n📝 Reason: {reason}"
     return out
@@ -567,14 +583,16 @@ def admin_review_keyboard(
     approve_cb: Optional[str] = None,
     reject_cb: Optional[str] = None,
     view_user_cb: Optional[str] = None,
+    back_cb: Optional[str] = None,
 ) -> InlineKeyboardMarkup:
     """Standard admin review keyboard. Order is always:
-    🔄 Verify Again, ✅ Approve, ❌ Reject, 👤 View User.
+    🔄 Verify Again, ✅ Approve, ❌ Reject, 👤 View User, ⬅ Back.
     A button is omitted only if its callback wasn't provided (e.g. some
-    gateways have no automated re-verification), but relative order among
-    the buttons that *are* present never changes.
+    gateways have no automated re-verification, or a caller has no natural
+    "back" destination), but relative order among the buttons that *are*
+    present never changes.
     """
-    row1, row2 = [], []
+    row1, row2, row3 = [], [], []
     if verify_cb:
         row1.append(InlineKeyboardButton("🔄 Verify Again", callback_data=verify_cb))
     if approve_cb:
@@ -583,7 +601,9 @@ def admin_review_keyboard(
         row2.append(InlineKeyboardButton("❌ Reject", callback_data=reject_cb))
     if view_user_cb:
         row2.append(InlineKeyboardButton("👤 View User", callback_data=view_user_cb))
-    rows = [r for r in (row1, row2) if r]
+    if back_cb:
+        row3.append(InlineKeyboardButton("⬅ Back", callback_data=back_cb))
+    rows = [r for r in (row1, row2, row3) if r]
     return InlineKeyboardMarkup(rows or [[InlineKeyboardButton("🔄 Refresh", callback_data="noop")]])
 
 
@@ -681,6 +701,73 @@ def payment_expired_keyboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("👛 My Wallet", callback_data="wallet")],
         [InlineKeyboardButton("🏠 Back to Menu", callback_data="main_menu")],
     ])
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Single source of truth for "how many deposits are waiting for a human
+# right now" — every screen that shows a Pending Deposits counter (the
+# Payments dashboard badge, the Payments menu header, the Pending Deposits
+# list header) must call THIS function instead of writing its own filter,
+# or the numbers drift apart the moment one of them is edited and the
+# others aren't (the exact bug this audit was asked to fix).
+#
+# Two independent DB states can mean "a deposit is waiting for manual
+# review" in this project, and both are counted:
+#   1. Transaction rows for the reviewable payment methods (generic Manual
+#      Payment methods + bKash/Nagad Manual mode) sitting in PENDING /
+#      AWAITING_CONFIRMATION.
+#   2. PendingManualVerification rows — a Binance Pay / Bybit Pay / ZiniPay
+#      submission whose automatic API check failed and is now queued for a
+#      human decision (see database/models.py docstring on that table).
+# This module does not alter what created those rows or how they are
+# resolved — it only reads the same two states everything else already
+# reads, and reports them consistently.
+# ─────────────────────────────────────────────────────────────────────────
+
+def reviewable_methods():
+    """The payment methods whose PENDING/AWAITING_CONFIRMATION Transaction
+    rows represent a deposit genuinely waiting on a human (as opposed to a
+    gateway still waiting on its own webhook/API confirmation)."""
+    from database.models import PaymentMethod
+    return (PaymentMethod.MANUAL, PaymentMethod.BKASH, PaymentMethod.NAGAD)
+
+
+def pending_tx_statuses():
+    """The Transaction statuses that mean 'not yet resolved'."""
+    from database.models import TransactionStatus
+    return (TransactionStatus.PENDING, TransactionStatus.AWAITING_CONFIRMATION)
+
+
+def count_pending_deposits(session) -> dict:
+    """Return the live, authoritative pending-review counts.
+
+    {
+      "deposits": N,               # reviewable Transaction rows pending
+      "gateway_verifications": M,  # PendingManualVerification rows pending
+      "total": N + M,
+    }
+    """
+    from sqlalchemy import func as _f
+    from database.models import Transaction, PendingManualVerification
+
+    deposits = (
+        session.query(_f.count(Transaction.id))
+        .filter(
+            Transaction.payment_method.in_(reviewable_methods()),
+            Transaction.status.in_(pending_tx_statuses()),
+        )
+        .scalar() or 0
+    )
+    gateway_verifications = (
+        session.query(_f.count(PendingManualVerification.id))
+        .filter(PendingManualVerification.status == "pending")
+        .scalar() or 0
+    )
+    return {
+        "deposits": deposits,
+        "gateway_verifications": gateway_verifications,
+        "total": deposits + gateway_verifications,
+    }
 
 
 def copy_code(value) -> str:

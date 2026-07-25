@@ -172,16 +172,16 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
 _CAT_META: dict[str, tuple[str, str]] = {
     "dashboard":   ("📊", "Dashboard"),
     "products":    ("📦", "Products"),
-    "discovery":   ("🧭", "Discovery"),
+    "discovery":   ("🔍", "Discovery"),
     "inventory":   ("📥", "Inventory"),
     "suppliers":   ("🏭", "Suppliers"),
     "orders":      ("🛒", "Orders"),
     "payments":    ("💳", "Payments"),
     "customers":   ("👥", "Customers"),
-    "loyalty":     ("⭐", "Loyalty & Support"),
-    "broadcast":   ("📢", "Broadcast"),
-    "promotions":  ("🎟", "Promotions"),
-    "security":    ("🛡", "Security"),
+    "loyalty":     ("🏆", "Loyalty & Support"),
+    "broadcast":   ("📡", "Broadcast"),
+    "promotions":  ("🎁", "Promotions"),
+    "security":    ("🔐", "Security"),
     "system":      ("⚙️", "Settings"),
     "performance": ("⚡", "Performance"),
     "tools":       ("🛠", "Tools"),
@@ -190,21 +190,21 @@ _CAT_META: dict[str, tuple[str, str]] = {
 # One-line tagline shown under the breadcrumb on each category's submenu,
 # so admins know at a glance what kind of tools live in this section.
 _CAT_DESC: dict[str, str] = {
-    "dashboard":   "Live store stats, growth &amp; profit metrics.",
-    "products":    "Catalog, bundles, gift cards &amp; product tools.",
-    "discovery":   "FAQ, compare, favorites &amp; recently viewed.",
-    "inventory":   "Stock, batches, price history &amp; reservations.",
-    "suppliers":   "Suppliers, files/keys &amp; delivery manager.",
-    "orders":      "Order queue, search, delivery &amp; refunds.",
-    "payments":    "Gateways, manual payments, pending deposits, wallets &amp; FX rates.",
-    "customers":   "Users, CRM, bulk users &amp; reviews.",
-    "loyalty":     "Loyalty, VIP, referrals, support &amp; disputes.",
-    "broadcast":   "Broadcasts, announcements &amp; notifications.",
-    "promotions":  "Promotions, flash sales, coupons &amp; reminders.",
-    "security":    "Fraud, anti-spam, audit logs &amp; access control.",
-    "system":      "Bot config, menu &amp; colors, languages, modules.",
-    "performance": "Performance, cache &amp; global search.",
-    "tools":       "Diagnostics, backups, system &amp; quality tools.",
+    "dashboard":   "Live stats, revenue &amp; growth metrics at a glance.",
+    "products":    "Manage catalog, bundles, gift cards &amp; templates.",
+    "discovery":   "FAQ, comparisons, favourites &amp; recently viewed items.",
+    "inventory":   "Stock levels, batches, price history &amp; reservations.",
+    "suppliers":   "Supplier accounts, file/key management &amp; delivery.",
+    "orders":      "Order queue, search, delivery tracking &amp; refunds.",
+    "payments":    "Gateways, deposits, wallets, FX rates &amp; webhooks.",
+    "customers":   "User accounts, CRM, bulk tools &amp; reviews.",
+    "loyalty":     "VIP tiers, referrals, support tickets &amp; disputes.",
+    "broadcast":   "Mass messages, scheduled blasts &amp; notifications.",
+    "promotions":  "Flash sales, coupons, deals &amp; reminder campaigns.",
+    "security":    "Fraud detection, anti-spam, audit logs &amp; access.",
+    "system":      "Bot config, menus, languages, modules &amp; features.",
+    "performance": "Speed manager, cache control &amp; global search.",
+    "tools":       "Diagnostics, backups, integrity checks &amp; dev tools.",
 }
 
 # Total item count per category (all pages combined) — shown as a badge
@@ -273,50 +273,54 @@ def _tog_icon(key: str, default: bool) -> str:
 
 
 def build_acc_root_keyboard(maintenance_on: bool) -> IKM:
-    """New categorized root panel."""
+    """Categorized root panel keyboard."""
     from utils.bot_config import cfg
     use_icons   = cfg.get_bool("admin_panel_icons",     True)
     show_search = cfg.get_bool("admin_panel_search",    True)
     show_favs   = cfg.get_bool("admin_panel_favorites", True)
     show_recent = cfg.get_bool("admin_panel_recent",    True)
 
-    def lbl(icon: str, text: str, cat: str) -> str:
-        badge = f" · {_CAT_COUNT.get(cat, 0)}"
-        return f"{icon} {text}{badge}" if use_icons else f"{text}{badge}"
+    def lbl(icon: str, text: str) -> str:
+        return f"{icon}  {text}" if use_icons else text
 
+    # ── Category grid (2 per row) ────────────────────────────────────────────
     kb: list[list[IKB]] = []
     row: list[IKB] = []
     for cat, (icon, name) in _CAT_META.items():
-        row.append(IKB(lbl(icon, name, cat), callback_data=f"acc:cat:{cat}"))
+        row.append(IKB(lbl(icon, name), callback_data=f"acc:cat:{cat}"))
         if len(row) == 2:
             kb.append(row)
             row = []
     if row:
         kb.append(row)
 
-    kb.append([IKB("🔔 Notification Settings", callback_data="nsm:menu")])
-
+    # ── Quick tools: search + notifications ─────────────────────────────────
+    util_row: list[IKB] = []
     if show_search:
-        kb.append([IKB("🔍 Admin Search", callback_data="acc:ui:search")])
+        util_row.append(IKB("🔍  Search", callback_data="acc:ui:search"))
+    util_row.append(IKB("🔔  Notifications", callback_data="nsm:menu"))
+    kb.append(util_row)
 
+    # ── Personal quick-access ────────────────────────────────────────────────
     quick: list[IKB] = []
     if show_favs:
-        quick.append(IKB("⭐ Favorites",  callback_data="acc:ui:favs"))
+        quick.append(IKB("⭐  Favourites", callback_data="acc:ui:favs"))
     if show_recent:
-        quick.append(IKB("🕐 Recent",     callback_data="acc:ui:recent"))
+        quick.append(IKB("🕐  Recent",     callback_data="acc:ui:recent"))
     if quick:
         kb.append(quick)
 
+    # ── System controls ──────────────────────────────────────────────────────
     maint_label = (
-        "🔴 Maintenance\nON"
+        "🔴  Maintenance ON"
         if maintenance_on
-        else "🟢 Maintenance\nOFF"
+        else "🟢  Maintenance OFF"
     )
     kb.append([
-        IKB("🔧 UI Settings",  callback_data="acc:ui:settings"),
-        IKB(maint_label,        callback_data="admin_maintenance_toggle"),
+        IKB("🔧  Panel Settings", callback_data="acc:ui:settings"),
+        IKB(maint_label,           callback_data="admin_maintenance_toggle"),
     ])
-    kb.append([IKB("🚪 Exit Admin", callback_data="main_menu")])
+    kb.append([IKB("🚪  Exit to Main Menu", callback_data="main_menu")])
     return IKM(kb)
 
 
@@ -361,11 +365,8 @@ def _build_category_keyboard(cat: str, page: int, uid: int,
     if pag:
         kb.append(pag)
 
-    # Back + Home
-    kb.append([
-        IKB("🔙 Back",       callback_data="acc:root"),
-        IKB("🏠 Admin", callback_data="acc:root"),
-    ])
+    # Back to root
+    kb.append([IKB("🏠  Back to Admin Panel", callback_data="acc:root")])
     return IKM(kb)
 
 
@@ -377,12 +378,11 @@ def _build_favs_keyboard(context: ContextTypes.DEFAULT_TYPE, uid: int) -> IKM:
         for label, cb in favs:
             kb.append([
                 IKB(label, callback_data=cb),
-                IKB("❌ Unpin", callback_data=f"acc:ui:unpin:{cb}"),
+                IKB("✖ Unpin", callback_data=f"acc:ui:unpin:{cb}"),
             ])
     else:
-        kb.append([IKB("📭 No favorites pinned yet", callback_data="acc:root")])
-    kb.append([IKB("🔙 Back", callback_data="acc:root"),
-               IKB("🏠 Admin", callback_data="acc:root")])
+        kb.append([IKB("📭  No favourites pinned yet", callback_data="acc:root")])
+    kb.append([IKB("🏠  Back to Admin Panel", callback_data="acc:root")])
     return IKM(kb)
 
 
@@ -393,11 +393,10 @@ def _build_recent_keyboard(context: ContextTypes.DEFAULT_TYPE, uid: int) -> IKM:
     if recent:
         for label, cb in recent:
             kb.append([IKB(label, callback_data=cb)])
-        kb.append([IKB("🗑 Clear History", callback_data="acc:ui:clear_recent")])
+        kb.append([IKB("🗑  Clear History", callback_data="acc:ui:clear_recent")])
     else:
-        kb.append([IKB("📭 No recent menus yet", callback_data="acc:root")])
-    kb.append([IKB("🔙 Back", callback_data="acc:root"),
-               IKB("🏠 Admin", callback_data="acc:root")])
+        kb.append([IKB("📭  No recent menus yet", callback_data="acc:root")])
+    kb.append([IKB("🏠  Back to Admin Panel", callback_data="acc:root")])
     return IKM(kb)
 
 
@@ -411,24 +410,23 @@ def _build_ui_settings_keyboard() -> IKM:
     s_next_icon = status_icons.get(s_next, "🟢")
 
     kb = [
-        [IKB(f"{s_icon} System Status\n{status.upper()}  →  {s_next_icon} {s_next.upper()}",
+        [IKB(f"{s_icon}  Panel Status: {status.upper()}  →  {s_next_icon} {s_next.upper()}",
              callback_data="acc:ui:set:status")],
-        [IKB(f"{_tog_icon('admin_panel_categories', True)} Categories",
-             callback_data="acc:ui:tog:admin_panel_categories")],
-        [IKB(f"{_tog_icon('admin_panel_search', True)} Global Search",
+        [IKB(f"{_tog_icon('admin_panel_categories', True)}  Category Grid",
+             callback_data="acc:ui:tog:admin_panel_categories"),
+         IKB(f"{_tog_icon('admin_panel_search', True)}  Search Bar",
              callback_data="acc:ui:tog:admin_panel_search")],
-        [IKB(f"{_tog_icon('admin_panel_favorites', True)} Favorites",
-             callback_data="acc:ui:tog:admin_panel_favorites")],
-        [IKB(f"{_tog_icon('admin_panel_recent', True)} Recent Menus",
+        [IKB(f"{_tog_icon('admin_panel_favorites', True)}  Favourites",
+             callback_data="acc:ui:tog:admin_panel_favorites"),
+         IKB(f"{_tog_icon('admin_panel_recent', True)}  Recent Menus",
              callback_data="acc:ui:tog:admin_panel_recent")],
-        [IKB(f"{_tog_icon('admin_panel_compact', False)} Compact Mode",
-             callback_data="acc:ui:tog:admin_panel_compact")],
-        [IKB(f"{_tog_icon('admin_panel_icons', True)} Icons",
+        [IKB(f"{_tog_icon('admin_panel_compact', False)}  Compact Mode",
+             callback_data="acc:ui:tog:admin_panel_compact"),
+         IKB(f"{_tog_icon('admin_panel_icons', True)}  Icons",
              callback_data="acc:ui:tog:admin_panel_icons")],
-        [IKB(f"{_tog_icon('admin_panel_breadcrumb', True)} Breadcrumb Navigation",
+        [IKB(f"{_tog_icon('admin_panel_breadcrumb', True)}  Breadcrumb Navigation",
              callback_data="acc:ui:tog:admin_panel_breadcrumb")],
-        [IKB("🔙 Back",       callback_data="acc:root"),
-         IKB("🏠 Admin", callback_data="acc:root")],
+        [IKB("🏠  Back to Admin Panel", callback_data="acc:root")],
     ]
     return IKM(kb)
 
@@ -553,14 +551,14 @@ async def _render_category(cat: str, page: int, uid: int,
 
     use_bc = _cfg_bool("admin_panel_breadcrumb", True)
     if use_bc and total > 1:
-        breadcrumb = f"🏠 Admin  ›  {cat_icon} <b>{cat_name}</b>  ›  Page {page}/{total}"
+        breadcrumb = f"🏠 Admin  ›  {cat_icon} <b>{cat_name}</b>  ·  {page} / {total}"
     elif use_bc:
         breadcrumb = f"🏠 Admin  ›  {cat_icon} <b>{cat_name}</b>"
     else:
         breadcrumb = f"{cat_icon} <b>{cat_name}</b>"
 
-    tagline  = _CAT_DESC.get(cat, "")
-    lines = [breadcrumb]
+    tagline = _CAT_DESC.get(cat, "")
+    lines   = [breadcrumb, "──────────────────────"]
     if tagline:
         lines.append(f"<i>{tagline}</i>")
     text = "\n".join(lines)

@@ -45,6 +45,8 @@ WELCOME_MESSAGE, STORE_LOGO = range(2)
 
 async def create_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start product creation flow."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_products")
     query = update.callback_query
     await query.answer()
 
@@ -733,6 +735,8 @@ async def cancel_product_creation(update: Update, context: ContextTypes.DEFAULT_
 
 async def create_category_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start category creation flow."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_manage_categories")
     query = update.callback_query
     await query.answer()
 
@@ -788,6 +792,8 @@ async def category_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def create_subcategory_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start subcategory creation flow."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_manage_categories")
     query = update.callback_query
     await query.answer()
 
@@ -885,6 +891,8 @@ async def subcategory_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def edit_category_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start category edit flow - show paginated category list."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_manage_categories")
     query = update.callback_query
     await query.answer()
 
@@ -1132,6 +1140,8 @@ async def edit_category_value(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def edit_subcategory_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start subcategory edit flow - show paginated subcategory list."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_manage_categories")
     query = update.callback_query
     await query.answer()
 
@@ -1440,6 +1450,8 @@ async def edit_subcategory_value(update: Update, context: ContextTypes.DEFAULT_T
 
 async def edit_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start product edit flow - show paginated product list."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_products")
     query = update.callback_query
     await query.answer()
 
@@ -2099,6 +2111,8 @@ async def edit_image_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def config_support_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start support username configuration."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_settings")
     query = update.callback_query
     await query.answer()
 
@@ -2125,6 +2139,8 @@ async def config_support_username(update: Update, context: ContextTypes.DEFAULT_
 
 async def config_channel_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start channel username configuration."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_settings")
     query = update.callback_query
     await query.answer()
 
@@ -2176,27 +2192,62 @@ async def setting_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generic cancel handler for conversations."""
-    from utils import create_admin_category_menu_keyboard
+    """Generic cancel handler, shared as the fallback for several
+    unrelated conversations (product edit, category/subcategory
+    create+edit, config value entry, ...).
 
-    # Handle both callback queries and messages
+    It used to always land on the Category menu regardless of which
+    conversation was actually cancelled, because that destination was
+    hardcoded here. It now reads back whichever menu the conversation's
+    own entry point recorded as "home" via
+    ``nav_state.set_conversation_home`` and returns there instead --
+    each workflow exits to its own parent, not a shared guess. If no
+    home was recorded (older/unknown entry point), it falls back to
+    the previous Category-menu behavior so nothing regresses.
+    """
+    from utils import nav_state
+    from handlers import admin_handlers
+
+    home_cb = nav_state.pop_conversation_home(context, default="")
+    context.user_data.clear()
+
+    destination_handlers = {
+        "admin_products": admin_handlers.admin_products_callback,
+        "admin_manage_categories": admin_handlers.admin_manage_categories_callback,
+        "admin_settings": admin_handlers.admin_settings_callback,
+        "admin_menu": admin_handlers.admin_menu_callback,
+    }
+    handler = destination_handlers.get(home_cb)
+
     if update.callback_query:
         await update.callback_query.answer()
+        if handler is not None:
+            from utils.update_proxy import with_data
+            try:
+                await handler(with_data(update, home_cb), context)
+                return ConversationHandler.END
+            except Exception:
+                logger.exception("cancel_conversation: dynamic redirect to %s failed, using fallback", home_cb)
+        _fallback_kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("⬅️ Admin Panel", callback_data="acc:root")
+        ]])
         try:
             await update.callback_query.edit_message_text(
                 "❌ Operation cancelled.",
-                reply_markup=create_admin_category_menu_keyboard()
+                reply_markup=_fallback_kb,
             )
         except BadRequest as e:
             if "Message is not modified" not in str(e):
                 raise
     else:
+        _fallback_kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("⬅️ Admin Panel", callback_data="acc:root")
+        ]])
         await update.message.reply_text(
             "❌ Operation cancelled.",
-            reply_markup=create_admin_category_menu_keyboard()
+            reply_markup=_fallback_kb,
         )
 
-    context.user_data.clear()
     return ConversationHandler.END
 
 
@@ -2413,6 +2464,8 @@ async def cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def config_welcome_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start welcome message configuration flow."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_settings")
     query = update.callback_query
     await query.answer()
 
@@ -2470,6 +2523,8 @@ async def welcome_message_value(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def config_store_logo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start store logo configuration flow."""
+    from utils import nav_state
+    nav_state.set_conversation_home(context, "admin_settings")
     query = update.callback_query
     await query.answer()
 

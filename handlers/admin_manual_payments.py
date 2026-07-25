@@ -83,24 +83,38 @@ def _tx_user_name(user) -> str:
     return f"@{user.username}" if user.username else f"User {user.telegram_id}"
 
 
+_STATUS_KEY_MAP = {
+    TransactionStatus.PENDING:               "pending_review",
+    TransactionStatus.AWAITING_CONFIRMATION:  "pending_review",
+    TransactionStatus.COMPLETED:              "approved",
+    TransactionStatus.REJECTED:               "rejected",
+    TransactionStatus.CANCELLED:              "cancelled",
+    TransactionStatus.EXPIRED:                "expired",
+    TransactionStatus.FAILED:                 "failed",
+}
+
+
 def _payment_msg(tx, user) -> str:
     name    = html.escape(_tx_user_name(user))
     tg_id   = user.telegram_id if user else "?"
-    badge   = _STATUS_BADGE_MAP.get(tx.status, f"❓ {tx.status.value if tx.status else 'unknown'}")
     date    = tx.created_at.strftime("%Y-%m-%d %H:%M") if tx.created_at else "—"
     amt     = f"${tx.amount:.2f}" if tx.amount is not None else "—"
     method  = tx.manual_method.name if tx.manual_method else "Manual"
+    # Rendered through the ONE centralized card renderer (services.
+    # payment_ui.build_card) with status_key so the badge/spacing is
+    # identical to every other payment screen in the bot — this panel used
+    # to build its own ad-hoc "Gateway" field + badge-in-note layout.
     return pui.build_card(
         title=f"Payment #{tx.id}", title_emoji="📝",
         fields=[
-            ("💳", "Gateway", method),
+            ("💳", "Payment Method", method),
             ("💰", "Amount", amt),
             ("🆔", "Order ID", f"#{tx.id}"),
             ("👤", "Customer", name),
-            ("🆔", "User ID", tg_id),
+            ("🆔", "Telegram ID", tg_id),
             ("🕒", "Time", date),
         ],
-        note=badge,
+        status_key=_STATUS_KEY_MAP.get(tx.status),
     )
 
 

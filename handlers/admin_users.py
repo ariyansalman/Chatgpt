@@ -113,7 +113,7 @@ async def users_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔍 User Search",      callback_data="usr:search")],
         [InlineKeyboardButton("🔍 Customer 360° View", callback_data="c360:search")],
         [InlineKeyboardButton("📝 Manual Payments",  callback_data="mp:list:0:desc")],
-        [InlineKeyboardButton("🔙 Back",            callback_data="admin_menu")],
+        [InlineKeyboardButton("🔙 Back",            callback_data="acc:root")],
     ])
     try:
         try:
