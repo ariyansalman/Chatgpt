@@ -96,6 +96,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
     "payments": [[
         ("💳 Payment Gateways",    "admin_gateways"),
         ("🏦 Manual Payments",     "admin_payment_methods"),
+        ("🧾 Pending Deposits",    "pd:list:0:desc"),
         ("👛 Wallets",             "acc:sec:wallets"),
         ("🌍 Multi-Currency",      "amcw:menu"),
         ("🔄 Exchange Rates",      "aerm:menu"),
@@ -195,7 +196,7 @@ _CAT_DESC: dict[str, str] = {
     "inventory":   "Stock, batches, price history &amp; reservations.",
     "suppliers":   "Suppliers, files/keys &amp; delivery manager.",
     "orders":      "Order queue, search, delivery &amp; refunds.",
-    "payments":    "Gateways, manual payments, wallets &amp; FX rates.",
+    "payments":    "Gateways, manual payments, pending deposits, wallets &amp; FX rates.",
     "customers":   "Users, CRM, bulk users &amp; reviews.",
     "loyalty":     "Loyalty, VIP, referrals, support &amp; disputes.",
     "broadcast":   "Broadcasts, announcements &amp; notifications.",

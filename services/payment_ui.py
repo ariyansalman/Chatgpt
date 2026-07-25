@@ -349,6 +349,107 @@ class PaymentMethodView:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# "Payment Under Review" — dedicated user-facing confirmation screen
+#
+# UI/UX-only redesign: one premium block, no dashed dividers, and no field
+# is ever shown twice. In particular, if the Transaction ID a gateway/user
+# supplied is identical to the Deposit ID, only the Deposit ID is shown.
+# Every payment method (built-in or admin-added later) renders through
+# this exact same template — only the label text changes — so a new
+# gateway never needs a new screen.
+# ─────────────────────────────────────────────────────────────────────────
+
+_DEFAULT_PENDING_REVIEW_NOTE = (
+    "Your payment has been received successfully and is currently waiting "
+    "for verification.\n\nYou'll receive a notification immediately after "
+    "the review is completed."
+)
+
+
+def pending_review_card(
+    *,
+    gateway_key: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    amount: str,
+    deposit_id=None,
+    order_id=None,
+    created_at=None,
+    txn_id: Optional[str] = None,
+    extra: Sequence[Tuple[str, str, object]] = (),
+    note: Optional[str] = None,
+    gateway_label_override: Optional[str] = None,
+) -> str:
+    """Build the single, premium 'Payment Under Review' confirmation screen
+    shown to a user right after they submit a payment / TXID / proof for
+    manual review.
+
+    Values are always resolved dynamically (gateway registry + live
+    transaction data) — nothing here is ever hardcoded per gateway.
+    """
+    if payment_method:
+        label = payment_method
+    else:
+        label, _emoji = gateway_meta(gateway_key, gateway_label_override)
+
+    dep_id = _display_deposit_id(deposit_id if deposit_id is not None else order_id, created_at)
+
+    # Never display the same reference twice: only show Transaction ID
+    # when it's genuinely different from the Deposit ID being shown.
+    show_txn_id = bool(txn_id) and str(txn_id) != str(dep_id)
+
+    lines = ["🟡 <b>Payment Under Review</b>", ""]
+
+    lines.append("💳 <b>Payment Method</b>")
+    lines.append(str(label))
+    lines.append("")
+
+    lines.append("💰 <b>Amount</b>")
+    lines.append(str(amount))
+    lines.append("")
+
+    if dep_id:
+        lines.append("🧾 <b>Deposit ID</b>")
+        lines.append(str(dep_id))
+        lines.append("")
+
+    if show_txn_id:
+        lines.append("🔗 <b>Transaction ID</b>")
+        lines.append(str(txn_id))
+        lines.append("")
+
+    for emoji, field_label, value in extra:
+        if value is None or value == "":
+            continue
+        lines.append(f"{emoji} <b>{field_label}</b>")
+        lines.append(str(value))
+        lines.append("")
+
+    lines.append("🔍 <b>Status</b>")
+    lines.append("Pending Review")
+    lines.append("")
+    lines.append(note or _DEFAULT_PENDING_REVIEW_NOTE)
+
+    return "\n".join(lines)
+
+
+def pending_review_keyboard(
+    *,
+    history_cb: str = "wallet_history",
+    support_cb: str = "support",
+    menu_cb: str = "main_menu",
+) -> InlineKeyboardMarkup:
+    """Standard keyboard for the 'Payment Under Review' screen:
+    📜 Deposit History · 💬 Contact Support · 🏠 Back to Menu.
+    Reuses the app's existing routes — no new callback_data is introduced.
+    """
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📜 Deposit History", callback_data=history_cb)],
+        [InlineKeyboardButton("💬 Contact Support", callback_data=support_cb)],
+        [InlineKeyboardButton("🏠 Back to Menu", callback_data=menu_cb)],
+    ])
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Admin review card
 # ─────────────────────────────────────────────────────────────────────────
 

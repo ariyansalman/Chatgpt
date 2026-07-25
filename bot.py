@@ -1359,6 +1359,18 @@ def main():
     application.add_handler(CallbackQueryHandler(_amp.payment_reject_ask,      pattern=r"^mp:rej_ask:\d+$"))
     application.add_handler(CallbackQueryHandler(_amp.payment_reject_execute,  pattern=r"^mp:rej_ok:\d+$"))
     application.add_handler(CallbackQueryHandler(_amp.edit_debitable_confirm,  pattern=r"^mp:edit_cfm:\d+:.{1,16}$"))
+
+    # ── Pending Deposit Review panel (pd:* callbacks) ──────────────────────────
+    # Admin Panel → Payments → Pending Deposits
+    from handlers import admin_pending_deposits as _apd
+    application.add_handler(CallbackQueryHandler(_apd.pending_deposits_list,    pattern=r"^pd:list:\d+:(asc|desc)$"))
+    application.add_handler(CallbackQueryHandler(_apd.deposit_detail,          pattern=r"^pd:det:\d+$"))
+    application.add_handler(CallbackQueryHandler(_apd.deposit_view_details,    pattern=r"^pd:info:\d+$"))
+    application.add_handler(CallbackQueryHandler(_apd.deposit_approve_ask,     pattern=r"^pd:appr_ask:\d+$"))
+    application.add_handler(CallbackQueryHandler(_apd.deposit_approve_execute, pattern=r"^pd:appr_ok:\d+$"))
+    application.add_handler(CallbackQueryHandler(_apd.deposit_reject_ask,      pattern=r"^pd:rej_ask:\d+$"))
+    application.add_handler(CallbackQueryHandler(_apd.deposit_reject_execute,  pattern=r"^pd:rej_ok:\d+$"))
+
     application.add_handler(CallbackQueryHandler(admin_handlers.admin_view_orders_callback, pattern="^admin_view_orders"))
     application.add_handler(CallbackQueryHandler(admin_handlers.admin_confirm_order_menu, pattern="^admin_confirm_order$"))
     application.add_handler(CallbackQueryHandler(admin_handlers.admin_cancel_order_menu, pattern="^admin_cancel_order$"))

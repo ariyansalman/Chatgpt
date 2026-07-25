@@ -1129,17 +1129,14 @@ async def payment_manual_proof(update: Update, context: ContextTypes.DEFAULT_TYP
     amount_line = f"৳{amount:.2f} BDT" if is_gateway_manual else f"${amount:.2f}"
 
     await update.message.reply_text(
-        pui.user_payment_card(
+        pui.pending_review_card(
             gateway_key="manual",
             gateway_label_override=method_name,
-            stage="pending_review",
             amount=amount_line,
             order_id=transaction_id,
             txn_id=stored_txid,
-            note="Our team will verify your payment shortly. You'll be notified the "
-                 "moment your balance is updated.",
         ),
-        reply_markup=create_main_menu_keyboard(user_id=update.effective_user.id),
+        reply_markup=pui.pending_review_keyboard(),
         parse_mode='HTML',
     )
 
@@ -2424,25 +2421,26 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                     logger.exception("Failed to send admin notification(s) for ZiniPay manual verification")
 
         # Provide user-friendly messages for known rejection reasons.
+        pending_review_kb = None
         if is_amount_mismatch and pmv_id:
-            user_msg = pui.user_payment_card(
-                gateway_key="zinipay", stage="pending_review",
+            user_msg = pui.pending_review_card(
+                gateway_key="zinipay",
                 amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
                 note="⚠️ Amount mismatch detected — our team has been notified and "
                      "will review your payment shortly.",
             )
+            pending_review_kb = pui.pending_review_keyboard()
         elif is_amount_mismatch:
             user_msg = (
                 f"❌ Amount mismatch.\n\nThe transaction amount does not match the expected "
                 f"৳{bdt_amount:.2f} BDT. Please ensure you sent the correct amount."
             )
         elif pmv_id:
-            user_msg = pui.user_payment_card(
-                gateway_key="zinipay", stage="pending_review",
+            user_msg = pui.pending_review_card(
+                gateway_key="zinipay",
                 amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
-                note="Our team has been notified and will review your transaction shortly. "
-                     "You'll be notified the moment your balance is updated.",
             )
+            pending_review_kb = pui.pending_review_keyboard()
         elif "already used" in lower_err or "duplicate" in lower_err:
             user_msg = "❌ This Transaction ID has already been used."
         elif "invalid" in lower_err:
@@ -2457,11 +2455,11 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
             user_msg = "❌ Transaction could not be verified.\n\nPlease check your TXID and try again."
 
         try:
-            await processing_msg.edit_text(user_msg, parse_mode='HTML')
+            await processing_msg.edit_text(user_msg, reply_markup=pending_review_kb, parse_mode='HTML')
             if pmv_id:
                 pui.remember_pending_message(pmv_id, processing_msg.chat_id, processing_msg.message_id)
         except Exception:
-            sent = await update.message.reply_text(user_msg, parse_mode='HTML')
+            sent = await update.message.reply_text(user_msg, reply_markup=pending_review_kb, parse_mode='HTML')
             if pmv_id:
                 pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
         return ZINIPAY_TXID
@@ -3046,13 +3044,14 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         if result.outcome == VerificationOutcome.AMOUNT_MISMATCH:
             if pmv_id:
                 sent = await update.message.reply_text(
-                    pui.user_payment_card(
-                        gateway_key="binance_pay", stage="pending_review",
+                    pui.pending_review_card(
+                        gateway_key="binance_pay",
                         amount=f"{expected_amount} {currency}", order_id=tx_id, txn_id=txid_raw,
                         extra=[("📥", "Received", f"{result.received_amount} {result.currency or currency}")],
                         note="⚠️ Amount mismatch detected — our team has been notified and "
                              "will review your payment shortly.",
                     ),
+                    reply_markup=pui.pending_review_keyboard(),
                     parse_mode='HTML',
                 )
                 pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
@@ -3064,12 +3063,11 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                 )
         elif pmv_id:
             sent = await update.message.reply_text(
-                pui.user_payment_card(
-                    gateway_key="binance_pay", stage="pending_review",
+                pui.pending_review_card(
+                    gateway_key="binance_pay",
                     amount=f"{expected_amount} {currency}", order_id=tx_id, txn_id=txid_raw,
-                    note="Our team has been notified and will review your transaction shortly. "
-                         "You'll be notified the moment your balance is updated.",
                 ),
+                reply_markup=pui.pending_review_keyboard(),
                 parse_mode='HTML',
             )
             pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
@@ -3955,13 +3953,14 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
         if result.outcome == BybitVerificationOutcome.AMOUNT_MISMATCH:
             if pmv_id:
                 sent = await update.message.reply_text(
-                    pui.user_payment_card(
-                        gateway_key="bybit_pay", stage="pending_review",
+                    pui.pending_review_card(
+                        gateway_key="bybit_pay",
                         amount=f"{expected_amount} {verify_currency}", order_id=tx_id, txn_id=txid_raw,
                         extra=[("📥", "Received", f"{result.received_amount} {result.currency or verify_currency}")],
                         note="⚠️ Amount mismatch detected — our team has been notified and "
                              "will review your payment shortly.",
                     ),
+                    reply_markup=pui.pending_review_keyboard(),
                     parse_mode='HTML',
                 )
                 pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
@@ -3973,12 +3972,11 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
         elif pmv_id:
             sent = await update.message.reply_text(
-                pui.user_payment_card(
-                    gateway_key="bybit_pay", stage="pending_review",
+                pui.pending_review_card(
+                    gateway_key="bybit_pay",
                     amount=f"{expected_amount} {verify_currency}", order_id=tx_id, txn_id=txid_raw,
-                    note="Our team has been notified and will review your transaction shortly. "
-                         "You'll be notified the moment your balance is updated.",
                 ),
+                reply_markup=pui.pending_review_keyboard(),
                 parse_mode='HTML',
             )
             pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
