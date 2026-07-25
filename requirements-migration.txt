@@ -1,0 +1,12 @@
+# One-time Turso -> Supabase PostgreSQL migration ONLY.
+#
+# Install with:
+#   pip install -r requirements-migration.txt
+#
+# These packages are NOT needed by the production bot and are intentionally
+# kept out of requirements.txt so the deployed bot never depends on the
+# Turso/libSQL driver.
+
+-r requirements.txt
+
+libsql-experimental>=0.0.41
