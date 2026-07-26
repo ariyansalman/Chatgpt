@@ -40,6 +40,54 @@ _MENU_ITEM_STYLE = {
     for key, color in DEFAULT_MENU_ITEM_COLORS.items()
 }
 
+# ---------------------------------------------------------------------------
+# Some ``menu_item_<key>_*`` rows in DEFAULTS below describe a menu item that
+# is no longer part of the live main-menu layout (utils.menu_registry
+# .DEFAULT_MENU_ITEMS) -- the setting rows are intentionally kept so existing
+# installs/admin panels that already reference them keep working. "account"
+# is one such case: the button was retired from the main menu (see the note
+# in utils/menu_registry.py), but its enabled/visible/label/emoji/style/
+# audience settings still exist as legacy, harmless config rows.
+#
+# _menu_emoji()/_menu_style() below look these up defensively instead of
+# indexing _MENU_ITEM_EMOJI / _MENU_ITEM_STYLE directly, so a future menu
+# layout change can never crash the whole app at import time the way the
+# missing "account" entry did here -- it now falls back to a sensible
+# default and logs a warning instead.
+# ---------------------------------------------------------------------------
+_RETIRED_MENU_ITEM_EMOJI_FALLBACK = {
+    "account": "👤",  # legacy Profile/Account button; see menu_registry.py
+}
+
+
+def _menu_emoji(key: str) -> str:
+    """Safe emoji lookup for a (possibly retired) menu item key."""
+    if key in _MENU_ITEM_EMOJI:
+        return _MENU_ITEM_EMOJI[key]
+    fallback = _RETIRED_MENU_ITEM_EMOJI_FALLBACK.get(key, "")
+    logger.warning(
+        "bot_config: menu item %r has no entry in DEFAULT_MENU_ITEMS; "
+        "using fallback emoji %r for its legacy menu_item_%s_emoji "
+        "setting. If %r was intentionally renamed, update "
+        "utils/menu_registry.py and the matching menu_item_%s_* rows in "
+        "utils/bot_config.py to match.",
+        key, fallback, key, key, key,
+    )
+    return fallback
+
+
+def _menu_style(key: str) -> Any:
+    """Safe style lookup for a (possibly retired) menu item key."""
+    if key in _MENU_ITEM_STYLE:
+        return _MENU_ITEM_STYLE[key]
+    logger.warning(
+        "bot_config: menu item %r has no entry in DEFAULT_MENU_ITEM_COLORS; "
+        "defaulting its legacy menu_item_%s_style setting to no color.",
+        key, key,
+    )
+    return None
+
+
 DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     # ── Payments ────────────────────────────────────────────────────────────
     ("payment_expiry_minutes", "int", 30, "payments",
@@ -1388,7 +1436,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("menu_item_products_label", "str", "", "main_menu",
      "✏️ Menu Item: Products Name",
      "Optional replacement label for the Products button."),
-    ("menu_item_products_emoji", "str", _MENU_ITEM_EMOJI["products"], "main_menu",
+    ("menu_item_products_emoji", "str", _menu_emoji("products"), "main_menu",
      "😀 Menu Item: Products Emoji",
      "Emoji shown before the Products label."),
     ("menu_item_products_audience", "str", "all", "main_menu",
@@ -1403,7 +1451,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("menu_item_topup_label", "str", "", "main_menu",
      "✏️ Menu Item: Top Up Name",
      "Optional replacement label for the Top Up button."),
-    ("menu_item_topup_emoji", "str", _MENU_ITEM_EMOJI["topup"], "main_menu",
+    ("menu_item_topup_emoji", "str", _menu_emoji("topup"), "main_menu",
      "😀 Menu Item: Top Up Emoji",
      "Emoji shown before the Top Up label."),
     ("menu_item_topup_audience", "str", "all", "main_menu",
@@ -1418,13 +1466,13 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("menu_item_wallet_label", "str", "", "main_menu",
      "✏️ Menu Item: Wallet Name",
      "Optional replacement label for the Wallet button."),
-    ("menu_item_wallet_emoji", "str", _MENU_ITEM_EMOJI["wallet"], "main_menu",
+    ("menu_item_wallet_emoji", "str", _menu_emoji("wallet"), "main_menu",
      "😀 Menu Item: Wallet Emoji",
      "Emoji shown before the Wallet label."),
     ("menu_item_wallet_audience", "str", "all", "main_menu",
      "👥 Menu Item: Wallet Audience",
      "Audience: all, admin, user, or premium."),
-    ("menu_item_wallet_style", "str", _MENU_ITEM_STYLE["wallet"], "main_menu",
+    ("menu_item_wallet_style", "str", _menu_style("wallet"), "main_menu",
      "🎨 Menu Item: Wallet Color",
      "Button color for 💳 Wallet (none/success/primary/danger)."),
     ("menu_item_orders_enabled", "bool", True, "main_menu",
@@ -1436,7 +1484,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("menu_item_orders_label", "str", "", "main_menu",
      "✏️ Menu Item: Orders Name",
      "Optional replacement label for the Orders button."),
-    ("menu_item_orders_emoji", "str", _MENU_ITEM_EMOJI["orders"], "main_menu",
+    ("menu_item_orders_emoji", "str", _menu_emoji("orders"), "main_menu",
      "😀 Menu Item: Orders Emoji",
      "Emoji shown before the Orders label."),
     ("menu_item_orders_audience", "str", "all", "main_menu",
@@ -1451,7 +1499,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("menu_item_support_label", "str", "", "main_menu",
      "✏️ Menu Item: Support Name",
      "Optional replacement label for the Support button."),
-    ("menu_item_support_emoji", "str", _MENU_ITEM_EMOJI["support"], "main_menu",
+    ("menu_item_support_emoji", "str", _menu_emoji("support"), "main_menu",
      "😀 Menu Item: Support Emoji",
      "Emoji shown before the Support label."),
     ("menu_item_support_audience", "str", "all", "main_menu",
@@ -1466,7 +1514,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("menu_item_refer_label", "str", "", "main_menu",
      "✏️ Menu Item: Refer & Earn Name",
      "Optional replacement label for the Refer & Earn button."),
-    ("menu_item_refer_emoji", "str", _MENU_ITEM_EMOJI["refer"], "main_menu",
+    ("menu_item_refer_emoji", "str", _menu_emoji("refer"), "main_menu",
      "😀 Menu Item: Refer & Earn Emoji",
      "Emoji shown before the Refer & Earn label."),
     ("menu_item_refer_audience", "str", "all", "main_menu",
@@ -1481,7 +1529,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("menu_item_account_label", "str", "", "main_menu",
      "✏️ Menu Item: Account Name",
      "Optional replacement label for the Account button."),
-    ("menu_item_account_emoji", "str", _MENU_ITEM_EMOJI["account"], "main_menu",
+    ("menu_item_account_emoji", "str", _menu_emoji("account"), "main_menu",
      "😀 Menu Item: Account Emoji",
      "Emoji shown before the Account label."),
     ("menu_item_account_audience", "str", "all", "main_menu",
@@ -1496,7 +1544,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("menu_item_language_label", "str", "", "main_menu",
      "✏️ Menu Item: Language Name",
      "Optional replacement label for the Language button."),
-    ("menu_item_language_emoji", "str", _MENU_ITEM_EMOJI["language"], "main_menu",
+    ("menu_item_language_emoji", "str", _menu_emoji("language"), "main_menu",
      "😀 Menu Item: Language Emoji",
      "Emoji shown before the Language label."),
     ("menu_item_language_audience", "str", "all", "main_menu",
@@ -1511,7 +1559,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("menu_item_admin_label", "str", "", "main_menu",
      "✏️ Menu Item: Admin Panel Name",
      "Optional replacement label for the Admin Panel button."),
-    ("menu_item_admin_emoji", "str", _MENU_ITEM_EMOJI["admin"], "main_menu",
+    ("menu_item_admin_emoji", "str", _menu_emoji("admin"), "main_menu",
      "😀 Menu Item: Admin Panel Emoji",
      "Emoji shown before the Admin Panel label."),
     ("menu_item_admin_audience", "str", "admin", "main_menu",
@@ -1521,28 +1569,28 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     # silently refuses to write them (see _BotConfigCache.set: "unknown
     # key"), which is why Reset to Default / the color-cycle button used
     # to appear to do nothing.
-    ("menu_item_products_style", "str", _MENU_ITEM_STYLE["products"], "main_menu",
+    ("menu_item_products_style", "str", _menu_style("products"), "main_menu",
      "🎨 Menu Item: Products Color",
      "Button color for 🛒 Products (none/success/primary/danger)."),
-    ("menu_item_topup_style", "str", _MENU_ITEM_STYLE["topup"], "main_menu",
+    ("menu_item_topup_style", "str", _menu_style("topup"), "main_menu",
      "🎨 Menu Item: Top Up Color",
      "Button color for 💰 Top Up (none/success/primary/danger)."),
-    ("menu_item_orders_style", "str", _MENU_ITEM_STYLE["orders"], "main_menu",
+    ("menu_item_orders_style", "str", _menu_style("orders"), "main_menu",
      "🎨 Menu Item: Orders Color",
      "Button color for 📜 Orders (none/success/primary/danger)."),
-    ("menu_item_support_style", "str", _MENU_ITEM_STYLE["support"], "main_menu",
+    ("menu_item_support_style", "str", _menu_style("support"), "main_menu",
      "🎨 Menu Item: Support Color",
      "Button color for 💬 Support (none/success/primary/danger)."),
-    ("menu_item_refer_style", "str", _MENU_ITEM_STYLE["refer"], "main_menu",
+    ("menu_item_refer_style", "str", _menu_style("refer"), "main_menu",
      "🎨 Menu Item: Refer & Earn Color",
      "Button color for 🎁 Refer & Earn (none/success/primary/danger)."),
-    ("menu_item_account_style", "str", _MENU_ITEM_STYLE["account"], "main_menu",
+    ("menu_item_account_style", "str", _menu_style("account"), "main_menu",
      "🎨 Menu Item: Account Color",
      "Button color for 👤 Account (none/success/primary/danger)."),
-    ("menu_item_language_style", "str", _MENU_ITEM_STYLE["language"], "main_menu",
+    ("menu_item_language_style", "str", _menu_style("language"), "main_menu",
      "🎨 Menu Item: Language Color",
      "Button color for 🌐 Language (none/success/primary/danger)."),
-    ("menu_item_admin_style", "str", _MENU_ITEM_STYLE["admin"], "main_menu",
+    ("menu_item_admin_style", "str", _menu_style("admin"), "main_menu",
      "🎨 Menu Item: Admin Panel Color",
      "Button color for 🛠 Admin Panel (none/success/primary/danger)."),
     ("main_menu_maintenance_msg", "text",
@@ -1756,6 +1804,58 @@ CATEGORIES = [
     ("main_menu",         "📋 Main Menu Manager"),
     ("activity_feed",     "📡 Activity Feed"),
 ]
+
+
+class BotConfigError(RuntimeError):
+    """Raised when the bot_config settings catalogue (DEFAULTS/CATEGORIES)
+    is structurally invalid.
+
+    Raised deliberately, with a message naming the exact offending key, so a
+    bad edit to this catalogue fails loudly and clearly at import time
+    instead of surfacing later as a confusing KeyError/AttributeError.
+    """
+
+
+_VALID_VALUE_TYPES = {"bool", "int", "float", "str", "text"}
+
+
+def _validate_defaults_catalogue() -> None:
+    known_categories = {c for c, _ in CATEGORIES}
+    seen_keys: set[str] = set()
+    for entry in DEFAULTS:
+        if len(entry) != 6:
+            raise BotConfigError(
+                f"utils/bot_config.py: DEFAULTS entry {entry!r} does not "
+                "have exactly 6 fields (key, value_type, default, "
+                "category, label, description)."
+            )
+        key, vtype, _default, category, _label, _description = entry
+        if not key or not isinstance(key, str):
+            raise BotConfigError(
+                f"utils/bot_config.py: DEFAULTS entry {entry!r} has an "
+                "invalid/empty key."
+            )
+        if key in seen_keys:
+            raise BotConfigError(
+                f"utils/bot_config.py: DEFAULTS has a duplicate config "
+                f"key: {key!r}."
+            )
+        seen_keys.add(key)
+        if vtype not in _VALID_VALUE_TYPES:
+            raise BotConfigError(
+                f"utils/bot_config.py: config key {key!r} has unknown "
+                f"value_type {vtype!r} (expected one of "
+                f"{sorted(_VALID_VALUE_TYPES)})."
+            )
+        if category not in known_categories:
+            raise BotConfigError(
+                f"utils/bot_config.py: config key {key!r} references "
+                f"category {category!r}, which is not listed in "
+                "CATEGORIES."
+            )
+
+
+_validate_defaults_catalogue()
 
 
 # ---------------------------------------------------------------------------

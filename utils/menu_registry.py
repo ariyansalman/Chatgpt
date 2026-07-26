@@ -91,6 +91,55 @@ DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
      "row": 5, "order": 0, "full_width": True, "admin_only": True, "emoji": "🛠"},
 ]
 
+
+class MenuConfigError(RuntimeError):
+    """Raised when a menu configuration dictionary is structurally invalid.
+
+    This is deliberately raised with a specific, actionable message so a bad
+    edit to a menu registry fails loudly and clearly at import time, instead
+    of surfacing later as a confusing ``KeyError``/``AttributeError`` from
+    whatever code happens to touch the malformed entry first.
+    """
+
+
+def _validate_default_menu_items(items: List[Dict[str, Any]]) -> None:
+    """Fail fast, with a clear message, if DEFAULT_MENU_ITEMS is malformed.
+
+    Every entry must have a unique, non-empty ``key`` (it's reused verbatim
+    as the ``menu_item_<key>_*`` bot_config setting names) plus enough
+    fields to actually render a button. This does NOT require every
+    historical key to still be present -- retiring a menu item (e.g.
+    "account", see below) is a valid, intentional layout change.
+    """
+    seen_keys: set[str] = set()
+    for idx, item in enumerate(items):
+        key = item.get("key")
+        if not key or not isinstance(key, str):
+            raise MenuConfigError(
+                f"utils/menu_registry.py: DEFAULT_MENU_ITEMS[{idx}] is "
+                "missing a valid non-empty 'key' field."
+            )
+        if key in seen_keys:
+            raise MenuConfigError(
+                "utils/menu_registry.py: DEFAULT_MENU_ITEMS has a duplicate "
+                f"menu item key: {key!r}."
+            )
+        seen_keys.add(key)
+        if not item.get("callback") and not item.get("url"):
+            raise MenuConfigError(
+                f"utils/menu_registry.py: menu item {key!r} defines neither "
+                "'callback' nor 'url' -- it can't render an actionable "
+                "button."
+            )
+        if not item.get("label_key") and not item.get("label"):
+            raise MenuConfigError(
+                f"utils/menu_registry.py: menu item {key!r} defines neither "
+                "'label_key' nor 'label' -- it has no text to display."
+            )
+
+
+_validate_default_menu_items(DEFAULT_MENU_ITEMS)
+
 # bot_config key holding an optional JSON override of the list above.
 # Shape: a JSON array of objects using the same fields documented at the
 # top of this file. Admins/future tooling can add or reposition built-in
