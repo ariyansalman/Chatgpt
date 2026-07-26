@@ -52,6 +52,7 @@ from database.models import (
     TransactionStatus,
     PaymentMethod,
     WalletLedger,
+    PendingManualVerification,
 )
 from utils.audit import log_admin_action
 from utils.permissions import has_permission
@@ -261,12 +262,61 @@ async def _render_pending_deposits_list(query, page: int, sort: str):
 
     # ── Rendering rule: pending_count == 0 -> empty state, else -> list ─────
     if total == 0:
+        # DIAGNOSTIC (rendering-only — does not affect what can be
+        # approved/rejected/queried by any other flow): this queue only
+        # ever lists Manual / bKash / Nagad deposits (the only methods that
+        # need a *human* to check a TXID/screenshot — see module
+        # docstring). If an admin sees "no deposits" here while they know a
+        # deposit exists, the most common cause is that the deposit was
+        # made through an auto-confirmed gateway instead (Crypto Wallet,
+        # Binance Pay, Bybit Pay, Cryptomus, ZiniPay, NOWPayments, Heleket,
+        # Stars) — those settle via their own API/webhook and were never
+        # meant to appear in this queue. Surfacing that count here (instead
+        # of a bare "No deposits...") turns a silent scope mismatch into a
+        # visible, actionable message, with zero change to any filter used
+        # for approval/rejection.
+        from sqlalchemy import func as _f
+        with get_db_session() as _diag_session:
+            other_pending = (
+                _diag_session.query(Transaction.payment_method, _f.count(Transaction.id))
+                .filter(
+                    Transaction.status.in_(_PENDING_STATUSES),
+                    ~Transaction.payment_method.in_(_REVIEWABLE_METHODS),
+                )
+                .group_by(Transaction.payment_method)
+                .all()
+            )
+            gateway_verifications = (
+                _diag_session.query(_f.count(PendingManualVerification.id))
+                .filter(PendingManualVerification.status == "pending")
+                .scalar() or 0
+            )
+
+        if other_pending or gateway_verifications:
+            lines = [
+                "No deposits are currently waiting for review under "
+                "Manual / bKash / Nagad.",
+                "",
+                "ℹ️ <b>Found pending activity outside this queue's scope:</b>",
+            ]
+            for pm, cnt in other_pending:
+                label, _ = pui.gateway_meta(pm.value if pm else None)
+                lines.append(f"• {label}: {cnt} awaiting its own auto-confirmation")
+            if gateway_verifications:
+                lines.append(
+                    f"• Gateway verifications: {gateway_verifications} — see "
+                    "Binance/Bybit settings, or Webhook Monitor"
+                )
+            text = "\n".join(lines)
+        else:
+            text = "No deposits are currently waiting for review."
+
         # Replace the review screen with only the empty state.  In
         # particular, do not leave list controls or a section heading beside
         # the empty message.
         await _safe_edit(
             query,
-            "No deposits are currently waiting for review.",
+            text,
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬅ Back", callback_data="admin_confirm_order")]
             ]),
