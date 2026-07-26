@@ -822,6 +822,16 @@ def main():
                 CallbackQueryHandler(payment_handlers.payment_method_nowpayments, pattern="^pay_nowpayments$"),
                 # ZiniPay (bKash/Nagad/Rocket, admin-enabled via PaymentGatewayConfig —
                 # see services/zinipay_payment.py and handlers/admin_zinipay.py)
+                # Mobile Money (BD) submenu — one distinct callback per
+                # provider button (see services/payment_selection_ui.py
+                # build_mobile_money_screen), so bKash/Nagad/Rocket each
+                # load their own payment page instead of all three falling
+                # back to bKash.
+                CallbackQueryHandler(payment_handlers.payment_method_zinipay_bkash, pattern="^pay_zinipay_bkash$"),
+                CallbackQueryHandler(payment_handlers.payment_method_zinipay_nagad, pattern="^pay_zinipay_nagad$"),
+                CallbackQueryHandler(payment_handlers.payment_method_zinipay_rocket, pattern="^pay_zinipay_rocket$"),
+                # Generic entry point (combined "BKash • Nagad • Rocket" button
+                # shown when no specific provider has been chosen yet).
                 CallbackQueryHandler(payment_handlers.payment_method_zinipay, pattern="^pay_zinipay$"),
                 # Binance Pay (admin-enabled via PaymentGatewayConfig — see
                 # services/binance_pay.py and handlers/admin_binance.py)

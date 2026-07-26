@@ -231,9 +231,9 @@ def user_payment_card(
     label, emoji = gateway_meta(gateway_key, gateway_label_override)
     fields = [
         ("💳", "Payment Method", label),
-        ("💰", "Amount", amount),
-        ("🧾", "Deposit ID", _display_deposit_id(order_id, created_at)),
-        ("🔗", "Transaction ID", txn_id),
+        ("💰", "Amount", copy_code(amount) if amount else None),
+        ("🧾", "Deposit ID", copy_code(_display_deposit_id(order_id, created_at))),
+        ("🔗", "Transaction ID", copy_code(txn_id) if txn_id else None),
     ]
     fields.extend(extra)
     return build_card(
@@ -505,8 +505,8 @@ class PaymentMethodView:
         fields = [
             ("💳", "Payment Method", self.name),
             ("💰", "Amount", copy_code(self.amount) if self.amount else None),
-            ("🧾", "Deposit ID", _display_deposit_id(self.deposit_id, self.created_at)),
-            ("🔗", "Transaction ID", self.transaction_id),
+            ("🧾", "Deposit ID", copy_code(_display_deposit_id(self.deposit_id, self.created_at))),
+            ("🔗", "Transaction ID", copy_code(self.transaction_id) if self.transaction_id else None),
         ]
         fields.extend(self.extra_fields)
         return build_card(
@@ -1106,3 +1106,81 @@ def copy_code(value) -> str:
     if value is None or value == "":
         return ""
     return f"<code>{value}</code>"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Transaction ID submission screen — ONE spec-standardized prompt
+# used by every gateway (Binance Pay, Bybit Pay, Crypto Networks, bKash,
+# Nagad, Rocket, ZiniPay, and any future manual-verification gateway).
+#
+# Categories (label auto-selected — never hardcoded per gateway):
+#   "binance_bybit"  -> Transaction ID (Order ID)
+#   "crypto"         -> TXID (Transaction Hash)
+#   "mobile_money"   -> TrxID
+#
+# Adding a brand-new gateway later never means writing a new prompt: pick
+# whichever of the three categories it belongs to (or fall back to the
+# generic "Transaction ID") and call submit_txid_prompt(). This is the
+# only place the wording lives, so it can never drift between gateways.
+# ─────────────────────────────────────────────────────────────────────────
+
+TXID_LABELS: dict[str, str] = {
+    "binance_bybit": "Transaction ID (Order ID)",
+    "crypto":        "TXID (Transaction Hash)",
+    "mobile_money":  "TrxID",
+}
+
+TXID_EXAMPLES: dict[str, str] = {
+    "binance_bybit": "1839250620476598272",
+    "crypto":        "0x9f2e1a4b7c3d8e5f6a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6b7",
+    "mobile_money":  "9XT7K2P1QA",
+}
+
+
+def txid_category_for(name: Optional[str]) -> str:
+    """Infer the submission category ('binance_bybit' / 'crypto' /
+    'mobile_money') from a gateway or manual-method name, so any
+    existing or future payment method — including admin-created ones —
+    automatically gets the correct label with zero extra configuration."""
+    key = (name or "").lower()
+    if any(tag in key for tag in ("binance", "bybit")):
+        return "binance_bybit"
+    if any(tag in key for tag in (
+        "usdt", "usdc", "crypto", "trc20", "bep20", "erc20",
+        "btc", "bitcoin", "eth", "ltc", "trx", "bnb", "ton",
+    )):
+        return "crypto"
+    if any(tag in key for tag in ("bkash", "nagad", "rocket", "upay", "mobile")):
+        return "mobile_money"
+    return "generic"
+
+
+def txid_label(category: str) -> str:
+    """Resolve the correct field label for a submission category, falling
+    back to a sensible generic label for anything not yet categorized."""
+    return TXID_LABELS.get(category, "Transaction ID")
+
+
+def txid_example(category: str) -> str:
+    return TXID_EXAMPLES.get(category, "1839250620476598272")
+
+
+def submit_txid_prompt(
+    category: str,
+    *,
+    example_value: Optional[str] = None,
+    cancel_cb: str = "cancel",
+) -> Tuple[str, InlineKeyboardMarkup]:
+    """The ONE 'submit your Transaction ID' screen — clean, compact,
+    under 4 lines, identical shape for every gateway; only the label and
+    example change per category. Returns (text, keyboard); caller sends
+    with parse_mode='HTML'."""
+    label = txid_label(category)
+    example = example_value or txid_example(category)
+    text = (
+        f"📄 <b>Submit {label}</b>\n\n"
+        f"Paste your {label} below.\n\n"
+        f"Example:\n<code>{example}</code>"
+    )
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)]])
+    return text, keyboard

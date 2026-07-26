@@ -64,6 +64,7 @@ from services import payment_selection_ui as psel
 from services import amount_selection_ui as amtsel
 from utils.bot_config import cfg
 from utils.perf import perf_track
+from utils.callback_safety import guarded_callback, safe_answer
 from telegram.error import BadRequest
 
 logger = logging.getLogger(__name__)
@@ -291,13 +292,14 @@ def _build_mobile_money_screen():
     return psel.build_mobile_money_screen(gateways)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start the wallet top-up flow: show the shared "💳 Add Funds" amount
     screen first (services/amount_selection_ui.py) — the exact same screen
     for every gateway — then the payment-method screen once an amount has
     been picked (see topup_amount_selected / topup_amount_custom_prompt)."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
 
     # Fresh start — clear any leftover state from a previous attempt.
     context.user_data.pop('topup_amount', None)
@@ -324,17 +326,18 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return AMOUNT_SELECT
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def topup_amount_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """A preset amount button (💵 $1 / $3 / $5 / $10) was tapped on the
     shared Amount Selection screen. Store the amount and move on to the
     existing, unmodified payment-method screen — every gateway shown there
     already knows the amount and won't ask for it again."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
 
     amount = amtsel.parse_preset_callback(query.data)
     if amount is None or amount <= 0:
-        await query.answer("❌ Invalid amount.", show_alert=True)
+        await safe_answer(query, "❌ Invalid amount.", show_alert=True)
         return AMOUNT_SELECT
 
     context.user_data['topup_amount'] = amount
@@ -349,6 +352,7 @@ async def topup_amount_selected(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END if is_empty else METHOD
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def topup_amount_custom_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """"✍️ Custom Amount" tapped on the shared Amount Selection screen —
     prompt for free-text entry. Handled by the existing, unmodified
@@ -356,7 +360,7 @@ async def topup_amount_custom_prompt(update: Update, context: ContextTypes.DEFAU
     method is pre-selected yet, it takes the same amount-eligible
     payment-method path it already did."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
     context.user_data.pop('topup_method', None)
     try:
         await query.edit_message_text(
@@ -369,11 +373,12 @@ async def topup_amount_custom_prompt(update: Update, context: ContextTypes.DEFAU
     return AMOUNT
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def topup_show_crypto_networks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """"🔗 Crypto Networks" tapped on the Add Funds screen — show the
     on-chain network submenu. Pure navigation: no payment is created here."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
 
     text, keyboard = _build_crypto_networks_screen()
     try:
@@ -384,11 +389,12 @@ async def topup_show_crypto_networks(update: Update, context: ContextTypes.DEFAU
     return METHOD
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def topup_show_mobile_money(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """"🇧🇩 Mobile Money (BD)" tapped on the Add Funds screen — show the
     bKash / Nagad / Rocket submenu. Pure navigation: no payment is created here."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
 
     text, keyboard = _build_mobile_money_screen()
     try:
@@ -399,11 +405,12 @@ async def topup_show_mobile_money(update: Update, context: ContextTypes.DEFAULT_
     return METHOD
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def topup_back_to_methods(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """"⬅️ Back" tapped from the Crypto Networks / Mobile Money submenu —
     return to the top-level Add Funds screen."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
 
     text, keyboard, is_empty = _build_topup_method_screen()
     try:
@@ -414,10 +421,12 @@ async def topup_back_to_methods(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END if is_empty else METHOD
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def topup_amount_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Legacy entry point kept for old in-flight conversations/links.
     Falls back to the classic 'type an amount first' flow."""
-    query = update.callback_query; await query.answer()
+    query = update.callback_query
+    await safe_answer(query)
     context.user_data.pop('topup_method', None)
     try:
         await query.edit_message_text("💬 How much would you like to add to your wallet, in USD?\nExample: 10", reply_markup=create_cancel_keyboard())
@@ -492,7 +501,10 @@ async def _ask_amount_for_gateway(update: Update, context: ContextTypes.DEFAULT_
     straight away; otherwise fall back to the classic text-entry prompt
     (e.g. old in-flight conversations / the "✍️ Custom Amount" path)."""
     query = update.callback_query
-    await query.answer()
+    # Idempotent: some callers (e.g. Bybit Pay / Binance Pay) already
+    # answered the tap immediately, before doing slower work like reading
+    # gateway config from the database — this is safe to call again.
+    await safe_answer(query)
     context.user_data['topup_method'] = ('gateway', gateway_key)
 
     pre_result = await _dispatch_with_preselected_amount(update, context)
@@ -596,8 +608,10 @@ def generate_deposit_qr_bytes(data: str):
         return None
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_heleket(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query; await query.answer()
+    query = update.callback_query
+    await safe_answer(query)
     svc = HeleketPaymentService()
     if not svc.enabled or not svc.is_configured():
         try:
@@ -617,12 +631,14 @@ async def payment_method_heleket(update: Update, context: ContextTypes.DEFAULT_T
             raise
     return METHOD
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def heleket_asset_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query=update.callback_query; await query.answer()
+    query = update.callback_query
+    await safe_answer(query)
     key=query.data.split(":",1)[1]
     asset=SUPPORTED_ASSETS.get(key)
     if not asset:
-        await query.answer("Unsupported asset",show_alert=True); return METHOD
+        await safe_answer(query, "Unsupported asset", show_alert=True); return METHOD
     currency, network, label=asset
     svc=HeleketPaymentService()
     wallet=await asyncio.to_thread(svc.create_or_get_static_wallet, update.effective_user.id, currency, network)
@@ -898,7 +914,8 @@ async def topup_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pay_button_label="🌐 Pay with NOWPayments",
             )
         if key == 'zinipay':
-            return await _finish_zinipay_payment(update, context, amount)
+            selected_provider = context.user_data.get('zinipay_provider')
+            return await _finish_zinipay_payment(update, context, amount, provider=selected_provider)
         if key == 'binance_pay':
             bp_svc = BinancePayService()
             bmin, bmax = bp_svc.min_amount, bp_svc.max_amount
@@ -1025,10 +1042,11 @@ async def topup_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== MANUAL PAYMENT FLOW ====================
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """User picked an admin-managed manual payment method — ask for the amount next."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
 
     try:
         method_id = int(query.data.split("_")[-1])
@@ -1185,7 +1203,12 @@ async def _finish_manual_payment(update: Update, context: ContextTypes.DEFAULT_T
         parse_mode='HTML',
     )
     # Ask TXID first when required; otherwise go straight to proof/note.
-    return MANUAL_TXID if req_txid else MANUAL_PROOF
+    if req_txid:
+        category = pui.txid_category_for(method_name)
+        text, keyboard = pui.submit_txid_prompt(category, cancel_cb="cancel")
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+        return MANUAL_TXID
+    return MANUAL_PROOF
 
 
 async def payment_manual_txid(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1429,7 +1452,7 @@ async def admin_manual_approve(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
 
-    if update.effective_user.id != app_settings.ADMIN_TELEGRAM_ID:
+    if update.effective_user.id != app_settings.ADMIN_TELEGRAM_ID and not is_admin(update.effective_user.id):
         await query.answer("⛔ Access denied.", show_alert=True)
         return
 
@@ -1622,7 +1645,8 @@ async def admin_manual_reject(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
 
-    if update.effective_user.id != app_settings.ADMIN_TELEGRAM_ID:
+    if update.effective_user.id != app_settings.ADMIN_TELEGRAM_ID and not is_admin(update.effective_user.id):
+        await query.answer("⛔ Access denied.", show_alert=True)
         return
 
     try:
@@ -1741,10 +1765,11 @@ async def admin_manual_reject(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Crypto Wallet payment method selection."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
 
     usd_amount = context.user_data.get('topup_amount', 0)
     user_id = update.effective_user.id
@@ -2180,7 +2205,7 @@ async def _finish_gateway_manual_payment(
         provider_label=gateway_label, provider_emoji=emoji,
         amount=amount_str, send_to=merchant_number,
         deposit_id=transaction_id,
-        instruction="📌 Send the exact amount, then reply here with your Transaction ID (TrxID).",
+        instruction="📌 Send the exact amount, then submit your TrxID.",
     )
     keyboard = pui.invoice_keyboard(
         destination_value=merchant_number, destination_copy_label="Copy Number",
@@ -2190,6 +2215,9 @@ async def _finish_gateway_manual_payment(
     await update.message.reply_text(
         message, reply_markup=keyboard, parse_mode='HTML',
     )
+
+    text, submit_keyboard = pui.submit_txid_prompt("mobile_money", cancel_cb="cancel")
+    await update.message.reply_text(text, reply_markup=submit_keyboard, parse_mode='HTML')
 
     return MANUAL_TXID
 
@@ -2202,7 +2230,8 @@ async def _finish_gateway_manual_payment(
 # no webhook, no background polling.
 
 async def _finish_zinipay_payment(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, usd_amount: float
+    update: Update, context: ContextTypes.DEFAULT_TYPE, usd_amount: float,
+    provider: Optional[str] = None,
 ):
     """Create the internal order for a ZiniPay top-up and show the payment
     instruction screen, then ask the user for their Transaction ID.
@@ -2212,6 +2241,14 @@ async def _finish_zinipay_payment(
     using the admin-configured or global exchange rate) is shown to the user
     and stored in Transaction.crypto_address so it can be used for ZiniPay
     API verification later.
+
+    ``provider`` is the specific bKash/Nagad/Rocket/Upay button the user
+    tapped on the Mobile Money submenu (see payment_method_zinipay_bkash /
+    _nagad / _rocket above). When given and that provider actually has a
+    number configured, it takes priority over the admin's configured
+    default provider — this is what makes selecting Nagad or Rocket show
+    that provider's own payment page instead of always falling back to
+    bKash.
     """
     from services.zinipay_payment import ZiniPayService
     from services.pricing import get_usd_to_bdt_rate
@@ -2245,6 +2282,29 @@ async def _finish_zinipay_payment(
 
     bdt_amount = round(usd_amount * rate, 2)
 
+    # Resolve which provider's number to show BEFORE creating the order, so
+    # the choice can be persisted on the Transaction row itself.
+    PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🟠", "rocket": "🟣", "upay": "🔵"}
+    numbers_by_provider = {
+        "bkash": bkash_num, "nagad": nagad_num, "rocket": rocket_num, "upay": upay_num,
+    }
+    requested_provider = (provider or "").strip().lower() or None
+    if requested_provider and numbers_by_provider.get(requested_provider):
+        # The user explicitly picked this provider on the Mobile Money
+        # submenu (bKash / Nagad / Rocket) — always honor that choice over
+        # the admin's configured default, as long as a number is set for it.
+        provider = requested_provider
+    else:
+        provider = default_provider if numbers_by_provider.get(default_provider) else next(
+            (p for p, n in numbers_by_provider.items() if n), None
+        )
+    send_to = numbers_by_provider.get(provider)
+    if not provider or not send_to:
+        await update.message.reply_text(
+            "❌ No payment numbers configured yet. Please contact support."
+        )
+        return ConversationHandler.END
+
     with get_db_session() as session:
         user = session.query(User).filter_by(telegram_id=telegram_id).first()
         if not user:
@@ -2259,21 +2319,60 @@ async def _finish_zinipay_payment(
         ).first()
         if existing_pending:
             _pending_amount = _plain_usd(existing_pending.amount)
-            await update.message.reply_text(
-                pui.invoice_card(
-                    method_label="bKash / Nagad / Rocket", method_emoji="🇧🇩",
+
+            # Load the provider this pending order was actually created
+            # with (stored as "bdt:<amount>:<provider>" — see the Transaction
+            # created below) so the screen always reflects what the user is
+            # really supposed to pay to, never a generic combined label.
+            # Legacy rows created before the provider was tracked
+            # ("bdt:<amount>" only) fall back to whichever provider was just
+            # requested, then the admin's default, exactly like a brand-new
+            # order would resolve it.
+            pending_provider = None
+            if existing_pending.crypto_address and existing_pending.crypto_address.startswith("bdt:"):
+                _parts = existing_pending.crypto_address.split(":")
+                if len(_parts) > 2 and _parts[2]:
+                    pending_provider = _parts[2].strip().lower()
+            if not pending_provider or not numbers_by_provider.get(pending_provider):
+                pending_provider = provider
+
+            pending_send_to = numbers_by_provider.get(pending_provider)
+            pending_emoji = PROVIDER_EMOJI.get(pending_provider, "🇧🇩")
+
+            if pending_send_to:
+                message = pui.mobile_money_invoice(
+                    provider_label=pending_provider.title(), provider_emoji=pending_emoji,
+                    amount=_pending_amount, send_to=pending_send_to,
+                    deposit_id=existing_pending.id,
+                    instruction="⚠️ You already have a pending order. Finish or cancel it "
+                                "before starting a new one.",
+                )
+                keyboard = pui.invoice_keyboard(
+                    destination_value=pending_send_to, destination_copy_label="Copy Number",
+                    amount_value=_pending_amount,
+                    submit_cb=f"zinipay_submit:{existing_pending.id}",
+                    submit_label="🧾 Submit Transaction ID",
+                )
+            else:
+                # No number configured for the resolved provider at all
+                # (e.g. admin removed it after the order was created) —
+                # still avoid the generic combined label; fall back to the
+                # amount-only card without inventing a payment number.
+                message = pui.invoice_card(
+                    method_label=f"{pending_provider.title()} Payment" if pending_provider else "Mobile Banking",
+                    method_emoji=pending_emoji,
                     amount=_pending_amount,
                     deposit_id=existing_pending.id,
                     instruction="⚠️ You already have a pending order. Finish or cancel it "
                                 "before starting a new one.",
-                ),
-                reply_markup=pui.invoice_keyboard(
+                )
+                keyboard = pui.invoice_keyboard(
                     amount_value=_pending_amount,
                     submit_cb=f"zinipay_submit:{existing_pending.id}",
                     submit_label="🧾 Submit Transaction ID",
-                ),
-                parse_mode='HTML',
-            )
+                )
+
+            await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
             return ConversationHandler.END
 
         transaction = Transaction(
@@ -2282,29 +2381,16 @@ async def _finish_zinipay_payment(
             payment_method=PaymentMethod.ZINIPAY,
             status=TransactionStatus.PENDING,
             expires_at=calculate_expiry_time(cfg.get_int("payment_expiry_minutes", 30) / 60.0),
-            # Store expected BDT amount so zinipay_txid_received can verify
-            # against the correct local-currency figure.
-            crypto_address=f"bdt:{bdt_amount:.2f}",
+            # Store expected BDT amount AND the selected provider so
+            # zinipay_txid_received can verify against the correct
+            # local-currency figure and show the right provider in any
+            # admin-review card. Format: "bdt:<amount>:<provider>".
+            crypto_address=f"bdt:{bdt_amount:.2f}:{provider}",
         )
         session.add(transaction)
         session.commit()
         session.refresh(transaction)
         tx_id = transaction.id
-
-    # Show ONLY the selected provider's number — never all providers together.
-    PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🟠", "rocket": "🟣", "upay": "🔵"}
-    numbers_by_provider = {
-        "bkash": bkash_num, "nagad": nagad_num, "rocket": rocket_num, "upay": upay_num,
-    }
-    provider = default_provider if numbers_by_provider.get(default_provider) else next(
-        (p for p, n in numbers_by_provider.items() if n), None
-    )
-    send_to = numbers_by_provider.get(provider)
-    if not provider or not send_to:
-        await update.message.reply_text(
-            "❌ No payment numbers configured yet. Please contact support."
-        )
-        return ConversationHandler.END
 
     amount_str = f"৳{bdt_amount:.2f}"
     message = pui.mobile_money_invoice(
@@ -2349,14 +2435,8 @@ async def zinipay_submit_start(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
 
     context.user_data['zinipay_tx_id'] = tx_id
-    await query.message.reply_text(
-        "🧾 Please paste your payment Transaction ID (TXID).\n\n"
-        "This is the transaction/reference ID you received from bKash / Nagad / Rocket "
-        "after completing your payment.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="zinipay_cancel_submit"),
-        ]]),
-    )
+    text, keyboard = pui.submit_txid_prompt("mobile_money", cancel_cb="zinipay_cancel_submit")
+    await query.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
     return ZINIPAY_TXID
 
 
@@ -2435,14 +2515,21 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
             return ZINIPAY_TXID
 
         usd_amount = tx.amount
-        # Recover the expected BDT amount stored at order-creation time.
-        # If the field is missing (old row or edge case) fall back to recalculating.
+        # Recover the expected BDT amount (and the provider the user was
+        # shown — "bdt:<amount>:<provider>") stored at order-creation time.
+        # Falls back gracefully for old rows that only stored "bdt:<amount>".
+        # If the field is missing entirely (old row or edge case) fall back
+        # to recalculating the amount.
         bdt_amount: float = 0.0
+        selected_provider: Optional[str] = None
         if tx.crypto_address and tx.crypto_address.startswith("bdt:"):
+            parts = tx.crypto_address.split(":")
             try:
-                bdt_amount = float(tx.crypto_address[4:])
-            except ValueError:
+                bdt_amount = float(parts[1])
+            except (IndexError, ValueError):
                 pass
+            if len(parts) > 2 and parts[2]:
+                selected_provider = parts[2]
         if bdt_amount <= 0:
             from services.pricing import get_usd_to_bdt_rate as _gbdt
             bdt_amount = round(usd_amount * _gbdt(), 2)
@@ -2538,6 +2625,10 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                                 chat_id=admin_id,
                                 text=pui.admin_review_card(
                                     gateway_key="zinipay",
+                                    gateway_label_override=(
+                                        f"{selected_provider.title()} (ZiniPay)"
+                                        if selected_provider else None
+                                    ),
                                     amount=f"৳{bdt_amount:.2f} BDT (${usd_amount:.2f} USD)",
                                     order_id=tx_id,
                                     txn_id=txid_raw,
@@ -2852,20 +2943,21 @@ async def _finish_binance_payment(update: Update, context: ContextTypes.DEFAULT_
     return ConversationHandler.END
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def binance_currency_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """User picked USDT/USDC for a Binance Pay order created without a currency yet."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
     try:
         _, tx_id_s, currency = query.data.split(":", 2)
         tx_id = int(tx_id_s)
     except (ValueError, IndexError):
-        await query.answer("Invalid selection", show_alert=True)
+        await safe_answer(query, "Invalid selection", show_alert=True)
         return ConversationHandler.END
 
     svc = BinancePayService()
     if currency not in svc.allowed_currencies:
-        await query.answer("Unsupported currency", show_alert=True)
+        await safe_answer(query, "Unsupported currency", show_alert=True)
         return METHOD
 
     with get_db_session() as session:
@@ -2937,10 +3029,8 @@ async def binance_submit_start(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
 
     context.user_data['binance_tx_id'] = tx_id
-    await query.message.reply_text(
-        "🧾 Please paste your Binance Pay Transaction ID (or Order ID) below.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="binance_cancel_submit")]]),
-    )
+    text, keyboard = pui.submit_txid_prompt("binance_bybit", cancel_cb="binance_cancel_submit")
+    await query.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
     return BINANCE_TXID
 
 
@@ -3507,15 +3597,16 @@ async def _set_bybit_type(tx_id: int, payment_type: str, network: str = "-"):
     await run_db(_update, tx_id, payment_type, network)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def bybit_type_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """User picked UID Transfer or On-chain Deposit for a pending Bybit Pay order."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
     try:
         _, tx_id_s, choice = query.data.split(":", 2)
         tx_id = int(tx_id_s)
     except (ValueError, IndexError):
-        await query.answer("Invalid selection", show_alert=True)
+        await safe_answer(query, "Invalid selection", show_alert=True)
         return ConversationHandler.END
 
     svc = BybitPayService()
@@ -3535,7 +3626,7 @@ async def bybit_type_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if choice == "uid":
         if not svc.uid:
-            await query.answer("UID Transfer is not available right now.", show_alert=True)
+            await safe_answer(query, "UID Transfer is not available right now.", show_alert=True)
             return METHOD
         await _set_bybit_type(tx_id, "uid_transfer")
         await _send_bybit_uid_screen(update, context, tx_id, usd_amount, svc, is_new_message=False)
@@ -3543,7 +3634,7 @@ async def bybit_type_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if choice == "onchain":
         if not svc.networks_with_wallets():
-            await query.answer("On-chain Deposit is not available right now.", show_alert=True)
+            await safe_answer(query, "On-chain Deposit is not available right now.", show_alert=True)
             return METHOD
         try:
             await query.edit_message_text(
@@ -3564,14 +3655,15 @@ async def bybit_type_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
                 raise
         return METHOD
 
-    await query.answer("Invalid selection", show_alert=True)
+    await safe_answer(query, "Invalid selection", show_alert=True)
     return METHOD
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def bybit_back_to_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """'⬅️ Back' from the network list back to the UID/On-chain choice."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
     try:
         tx_id = int(query.data.split(":", 1)[1])
     except (ValueError, IndexError):
@@ -3609,21 +3701,22 @@ async def bybit_back_to_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return METHOD
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def bybit_network_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """User picked TRC20 / BEP20 / ERC20 for a Bybit on-chain deposit order."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
     try:
         _, tx_id_s, network = query.data.split(":", 2)
         tx_id = int(tx_id_s)
     except (ValueError, IndexError):
-        await query.answer("Invalid selection", show_alert=True)
+        await safe_answer(query, "Invalid selection", show_alert=True)
         return ConversationHandler.END
 
     svc = BybitPayService()
     network = network.strip().upper()
     if network not in svc.networks_with_wallets():
-        await query.answer("Unsupported or unavailable network", show_alert=True)
+        await safe_answer(query, "Unsupported or unavailable network", show_alert=True)
         return METHOD
 
     with get_db_session() as session:
@@ -3733,15 +3826,9 @@ async def bybit_submit_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return ConversationHandler.END
 
     context.user_data['bybit_tx_id'] = tx_id
-    prompt = (
-        "🧾 Please paste your Bybit internal Transaction ID below."
-        if payment_type == BybitPaymentType.UID_TRANSFER else
-        "🧾 Please paste the blockchain Transaction ID (TXID) below."
-    )
-    await query.message.reply_text(
-        prompt,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="bybit_cancel_submit")]]),
-    )
+    category = "binance_bybit" if payment_type == BybitPaymentType.UID_TRANSFER else "crypto"
+    text, keyboard = pui.submit_txid_prompt(category, cancel_cb="bybit_cancel_submit")
+    await query.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
     return BYBIT_TXID
 
 
@@ -4183,6 +4270,7 @@ def _to_decimal_amount(value) -> Decimal:
         return Decimal("0")
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bkash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle bKash payment method selection — ask for amount next."""
     gmin = cfg.get_float("bkash_min_amount", 0.0)
@@ -4190,6 +4278,7 @@ async def payment_method_bkash(update: Update, context: ContextTypes.DEFAULT_TYP
     return await _ask_amount_for_gateway(update, context, "bkash", "bKash", "📱", gmin, gmax)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_nagad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Nagad payment method selection — ask for amount next."""
     gmin = cfg.get_float("nagad_min_amount", 0.0)
@@ -4197,6 +4286,7 @@ async def payment_method_nagad(update: Update, context: ContextTypes.DEFAULT_TYP
     return await _ask_amount_for_gateway(update, context, "nagad", "Nagad", "🟠", gmin, gmax)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_cryptomus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Cryptomus (USDT/crypto) payment method selection — ask for amount next.
 
@@ -4207,6 +4297,7 @@ async def payment_method_cryptomus(update: Update, context: ContextTypes.DEFAULT
     return await _ask_amount_for_gateway(update, context, "cryptomus", "Cryptomus (USDT/Crypto)", "💠")
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_nowpayments(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle NOWPayments (crypto) payment method selection — ask for amount next.
 
@@ -4215,14 +4306,63 @@ async def payment_method_nowpayments(update: Update, context: ContextTypes.DEFAU
     return await _ask_amount_for_gateway(update, context, "nowpayments", "NOWPayments (Crypto)", "🌐")
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_zinipay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle BKash • Nagad • Rocket (ZiniPay-backed) payment method selection — ask for amount next.
 
     Fully automated — no Manual mode. See services/zinipay_payment.py.
+
+    Generic entry point (callback_data == "pay_zinipay") — used when the
+    combined "BKash • Nagad • Rocket" button is tapped directly, without a
+    specific provider chosen first (e.g. from the top-level Add Funds
+    screen, before the Mobile Money submenu). No provider preference is
+    stored here, so ``_finish_zinipay_payment`` falls back to the
+    admin-configured default provider, exactly as before.
     """
+    context.user_data.pop('zinipay_provider', None)
     return await _ask_amount_for_gateway(update, context, "zinipay", "BKash • Nagad • Rocket", "🇧🇩")
 
 
+# ── Mobile Money (BD) submenu — bKash / Nagad / Rocket, each via its own
+# callback_data (see services/payment_selection_ui.py build_mobile_money_screen).
+# These three thin wrappers are the fix for the "Nagad/Rocket loads bKash"
+# bug: each records EXACTLY which provider the user tapped in
+# context.user_data['zinipay_provider'] before falling into the same
+# gateway_key="zinipay" flow every ZiniPay-backed payment already used.
+# Nothing about payment creation, verification, or the database changes —
+# only which provider's number/label/icon is shown is now correct.
+_ZINIPAY_PROVIDER_DISPLAY = {
+    "bkash": ("bKash", "🩷"),
+    "nagad": ("Nagad", "🧡"),
+    "rocket": ("Rocket", "💜"),
+}
+
+
+async def _payment_method_zinipay_provider(update: Update, context: ContextTypes.DEFAULT_TYPE, provider: str):
+    context.user_data['zinipay_provider'] = provider
+    label, emoji = _ZINIPAY_PROVIDER_DISPLAY[provider]
+    return await _ask_amount_for_gateway(update, context, "zinipay", label, emoji)
+
+
+@guarded_callback(fallback_state=ConversationHandler.END)
+async def payment_method_zinipay_bkash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mobile Money submenu — "bKash" tapped (routed via ZiniPay)."""
+    return await _payment_method_zinipay_provider(update, context, "bkash")
+
+
+@guarded_callback(fallback_state=ConversationHandler.END)
+async def payment_method_zinipay_nagad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mobile Money submenu — "Nagad" tapped (routed via ZiniPay)."""
+    return await _payment_method_zinipay_provider(update, context, "nagad")
+
+
+@guarded_callback(fallback_state=ConversationHandler.END)
+async def payment_method_zinipay_rocket(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mobile Money submenu — "Rocket" tapped (routed via ZiniPay)."""
+    return await _payment_method_zinipay_provider(update, context, "rocket")
+
+
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_binance_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Binance Pay payment method selection — ask for amount next.
 
@@ -4230,10 +4370,17 @@ async def payment_method_binance_pay(update: Update, context: ContextTypes.DEFAU
     NOT a hosted checkout link — the user pastes their own Binance Pay
     transaction ID back into the bot afterwards. See services/binance_pay.py.
     """
+    # Acknowledge the tap immediately — BinancePayService() reads its
+    # config from the database, which can be slow under load. Answering
+    # first guarantees the button never sits highlighted while that
+    # happens, and a DB hiccup here can no longer cause a Telegram
+    # callback-query timeout.
+    await safe_answer(update.callback_query)
     svc = BinancePayService()
     return await _ask_amount_for_gateway(update, context, "binance_pay", "Binance Pay", "🟡", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Bybit Pay (UID Transfer) payment method selection — ask for amount next.
 
@@ -4243,10 +4390,12 @@ async def payment_method_bybit_pay(update: Update, context: ContextTypes.DEFAULT
     On-chain deposits (TRC20/BEP20/ERC20) are handled by the dedicated
     payment_method_bybit_trc20 / bep20 / erc20 handlers below.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_pay", "Bybit Pay", "💙", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_trc20(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT TRC20 (Bybit on-chain) payment method selection — ask for amount next.
 
@@ -4254,10 +4403,12 @@ async def payment_method_bybit_trc20(update: Update, context: ContextTypes.DEFAU
     address directly. Verification uses the same Bybit V5 on-chain API as the
     former Bybit 'On-chain Deposit → TRC20' sub-menu path. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_trc20", "USDT TRC20", "💵", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_bep20(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT BEP20 (Bybit on-chain) payment method selection — ask for amount next.
 
@@ -4265,10 +4416,12 @@ async def payment_method_bybit_bep20(update: Update, context: ContextTypes.DEFAU
     address directly. Verification uses the same Bybit V5 on-chain API as the
     former Bybit 'On-chain Deposit → BEP20' sub-menu path. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_bep20", "USDT BEP20", "🟢", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_erc20(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT ERC20 (Bybit on-chain) payment method selection — ask for amount next.
 
@@ -4276,10 +4429,12 @@ async def payment_method_bybit_erc20(update: Update, context: ContextTypes.DEFAU
     address directly. Verification uses the same Bybit V5 on-chain API as the
     former Bybit 'On-chain Deposit → ERC20' sub-menu path. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_erc20", "USDT ERC20", "🔵", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_ton(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT TON payment method selection — ask for amount next.
 
@@ -4287,10 +4442,12 @@ async def payment_method_bybit_ton(update: Update, context: ContextTypes.DEFAULT
     uses the Bybit V5 on-chain deposit API (GET /v5/asset/deposit/query-record),
     identical to TRC20/BEP20/ERC20/LTC/AVAXC. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_ton", "USDT TON", "⚫", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_avaxc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT Avalanche C-Chain payment method selection — ask for amount next.
 
@@ -4298,10 +4455,12 @@ async def payment_method_bybit_avaxc(update: Update, context: ContextTypes.DEFAU
     uses the Bybit V5 on-chain deposit API (GET /v5/asset/deposit/query-record),
     identical to TRC20/BEP20/ERC20/LTC. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_avaxc", "USDT Avalanche C-Chain", "🔺", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_ltc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Litecoin (LTC) payment method selection — ask for amount next.
 
@@ -4310,10 +4469,12 @@ async def payment_method_bybit_ltc(update: Update, context: ContextTypes.DEFAULT
     Bybit V5 on-chain deposit API (GET /v5/asset/deposit/query-record) as
     TRC20/BEP20/ERC20. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_ltc", "Litecoin (LTC)", "🪙", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_base(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT Base (Coinbase Base L2) payment method selection — ask for amount next.
 
@@ -4321,10 +4482,12 @@ async def payment_method_bybit_base(update: Update, context: ContextTypes.DEFAUL
     uses the Bybit V5 on-chain deposit API (GET /v5/asset/deposit/query-record),
     identical to TRC20/BEP20/ERC20/LTC/AVAXC/TON. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_base", "USDT Base", "🔷", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_arb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT Arbitrum One payment method selection — ask for amount next.
 
@@ -4332,10 +4495,12 @@ async def payment_method_bybit_arb(update: Update, context: ContextTypes.DEFAULT
     uses the Bybit V5 on-chain deposit API (GET /v5/asset/deposit/query-record),
     identical to TRC20/BEP20/ERC20/LTC/AVAXC/TON/BASE. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_arb", "USDT Arbitrum", "🔵", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_op(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT Optimism payment method selection — ask for amount next.
 
@@ -4343,10 +4508,12 @@ async def payment_method_bybit_op(update: Update, context: ContextTypes.DEFAULT_
     uses the Bybit V5 on-chain deposit API (GET /v5/asset/deposit/query-record),
     identical to TRC20/BEP20/ERC20/LTC/AVAXC/TON/BASE/ARBONE. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_op", "USDT Optimism", "🔴", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_matic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT Polygon (MATIC) payment method selection — ask for amount next.
 
@@ -4354,10 +4521,12 @@ async def payment_method_bybit_matic(update: Update, context: ContextTypes.DEFAU
     uses the Bybit V5 on-chain deposit API (GET /v5/asset/deposit/query-record),
     identical to TRC20/BEP20/ERC20/LTC/AVAXC/TON/BASE/ARBONE/OP. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_matic", "USDT Polygon", "🟣", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bybit_sol(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle USDT Solana payment method selection — ask for amount next.
 
@@ -4365,14 +4534,16 @@ async def payment_method_bybit_sol(update: Update, context: ContextTypes.DEFAULT
     uses the Bybit V5 on-chain deposit API (GET /v5/asset/deposit/query-record),
     identical to TRC20/BEP20/ERC20/LTC/AVAXC/TON/BASE/ARBONE/OP/MATIC. See services/bybit_pay.py.
     """
+    await safe_answer(update.callback_query)
     svc = BybitPayService()
     return await _ask_amount_for_gateway(update, context, "bybit_sol", "USDT Solana", "🟢", svc.min_amount, svc.max_amount)
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Card payment via Telegram Payments (native sendInvoice flow)."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
 
     usd_amount = context.user_data.get('topup_amount', 0)
     user_id = update.effective_user.id
@@ -4457,10 +4628,11 @@ async def payment_method_card(update: Update, context: ContextTypes.DEFAULT_TYPE
     return ConversationHandler.END
 
 
+@guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Telegram Stars payment method selection — ask for amount next."""
     query = update.callback_query
-    await query.answer()
+    await safe_answer(query)
 
     stars_cfg = telegram_stars_service.get_config()
     if not stars_cfg["enabled"]:

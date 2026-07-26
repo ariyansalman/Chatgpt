@@ -166,12 +166,21 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
 
     bKash and Nagad each route to their own standalone gateway
     (``pay_bkash`` / ``pay_nagad``) when that gateway is configured, and
-    fall back to the combined ZiniPay flow (``pay_zinipay``, which already
-    covers bKash/Nagad/Rocket) when the standalone one isn't. Rocket has no
-    standalone flow today, so it always routes through ZiniPay. Any other
-    BD mobile-money gateway added in the future (not bkash/nagad/zinipay)
-    still appears automatically, using its own label/emoji, after these
-    three.
+    fall back to the combined ZiniPay flow when the standalone one isn't.
+    Rocket has no standalone flow today, so it always routes through
+    ZiniPay. Any other BD mobile-money gateway added in the future (not
+    bkash/nagad/zinipay) still appears automatically, using its own
+    label/emoji, after these three.
+
+    IMPORTANT: each of the three ZiniPay-backed buttons (bKash / Nagad /
+    Rocket) gets its OWN callback_data — ``pay_zinipay_bkash`` /
+    ``pay_zinipay_nagad`` / ``pay_zinipay_rocket`` — instead of all three
+    sharing the plain ``pay_zinipay`` callback. Telegram has no notion of
+    "which button in this row was tapped" beyond callback_data, so three
+    buttons pointing at the same callback_data are indistinguishable to the
+    bot and it can only ever show one (previously: always bKash). The
+    generic ``pay_zinipay`` callback is left untouched for any other caller
+    that still uses it.
     """
     _, _, mobile = _split(gateways)
     by_key = {gw["key"]: gw for gw in mobile}
@@ -186,7 +195,7 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
         used_keys.add("bkash")
     elif has_zinipay:
         emoji, label = _MOBILE_MONEY_DISPLAY["bkash"]
-        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji)])
+        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_bkash")])
 
     if "nagad" in by_key:
         emoji, label = _MOBILE_MONEY_DISPLAY["nagad"]
@@ -194,11 +203,11 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
         used_keys.add("nagad")
     elif has_zinipay:
         emoji, label = _MOBILE_MONEY_DISPLAY["nagad"]
-        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji)])
+        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_nagad")])
 
     if has_zinipay:
         emoji, label = _MOBILE_MONEY_DISPLAY["rocket"]
-        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji)])
+        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_rocket")])
         used_keys.add("zinipay")
 
     # Any future BD mobile-money gateway that isn't bkash/nagad/zinipay.
