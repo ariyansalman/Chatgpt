@@ -28,6 +28,20 @@ from utils import (
     notify_admin, check_user_banned, is_admin, sanitize_message,
 )
 from config.settings import settings as app_settings
+
+
+def _plain_usd(amount: float) -> str:
+    """Plain USD amount for invoice screens only.
+
+    ``format_price`` appends a secondary-currency conversion, e.g.
+    ``$12.50 (~৳1,375.00)``, when the admin has a display currency
+    configured. That is an exchange-rate figure, and the invoice spec is
+    explicit: no exchange rate ever appears on a payment invoice. Use this
+    instead of ``format_price`` for every Amount field on an invoice card.
+    """
+    return f"${amount:.2f}"
+
+
 from services.crypto_bot import CryptoBotService
 from services.bkash_payment import BkashPaymentService
 from services.nagad_payment import NagadPaymentService
@@ -1768,24 +1782,17 @@ async def payment_method_crypto(update: Update, context: ContextTypes.DEFAULT_TY
                 existing_pending.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')
                 if existing_pending.expires_at else 'N/A'
             )
-            message = pui.user_payment_card(
-                gateway_key="cryptobot",
-                stage="waiting",
-                amount=pui.copy_code(format_price(existing_pending.amount)),
-                order_id=existing_pending.id,
-                created_at=existing_pending.created_at,
-                extra=[("🪙", "Accepted Assets", "BTC · TON · USDT · USDC · ETH · LTC · BNB · TRX and more"),
-                       ("⏰", "Expires", expires_str)],
-                note="⚠️ You already have a pending CryptoBot payment — tap below to finish it. "
-                     "You can't start a new deposit until this one is completed or expired.",
+            _pending_amount = _plain_usd(existing_pending.amount)
+            message = pui.invoice_card(
+                method_label="CryptoBot", method_emoji="🤖",
+                amount=_pending_amount, deposit_id=existing_pending.id,
+                created_at=existing_pending.created_at, expires_at=expires_str,
+                instruction="⚠️ You already have a pending payment — tap below to finish it.",
             )
-
-            # Create keyboard with payment button
-            keyboard = [
-                [InlineKeyboardButton("💳 Pay with Any Crypto", url=pay_url)],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            reply_markup = pui.invoice_keyboard(
+                amount_value=_pending_amount,
+                pay_url=pay_url, pay_url_label="💳 Pay with Any Crypto",
+            )
 
             try:
                 await query.edit_message_text(
@@ -1868,25 +1875,18 @@ async def payment_method_crypto(update: Update, context: ContextTypes.DEFAULT_TY
             # Fallback for unexpected format
             pay_url = payment_address
 
-        # Show payment instructions
-        message = pui.user_payment_card(
-            gateway_key="cryptobot",
-            stage="created",
-            amount=pui.copy_code(format_price(usd_amount)),
-            order_id=transaction.id,
-            created_at=transaction.created_at,
-            extra=[("🪙", "Accepted Assets", "BTC · TON · USDT · USDC · ETH · LTC · BNB · TRX and more"),
-                   ("⏱", "Expires in", "30 minutes")],
-            note="👉 Tap below to open the payment page and pay with any supported cryptocurrency. "
-                 "Your balance will be credited automatically the moment payment is confirmed.",
+        # Show payment invoice
+        _amount_str = _plain_usd(usd_amount)
+        message = pui.invoice_card(
+            method_label="CryptoBot", method_emoji="🤖",
+            amount=_amount_str, deposit_id=transaction.id,
+            created_at=transaction.created_at, expires_at="30 minutes",
+            instruction="👉 Tap below to pay with any supported cryptocurrency.",
         )
-
-        # Create keyboard with payment button
-        keyboard = [
-            [InlineKeyboardButton("💳 Pay with Any Crypto", url=pay_url)],
-            [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = pui.invoice_keyboard(
+            amount_value=_amount_str,
+            pay_url=pay_url, pay_url_label="💳 Pay with Any Crypto",
+        )
 
         try:
             await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='HTML')
@@ -2011,29 +2011,25 @@ async def _finish_gateway_automated_payment(
                 existing_pending.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')
                 if existing_pending.expires_at else 'N/A'
             )
-            message = pui.user_payment_card(
-                gateway_key=gateway_key,
-                gateway_label_override=gateway_label,
-                stage="waiting",
-                amount=format_price(existing_pending.amount),
-                order_id=existing_pending.id,
-                extra=[("⏰", "Expires", expires_str)],
-                note="⚠️ You already have a pending payment for this gateway — tap below "
-                     "to finish it. You can't start a new order until this one is "
-                     "completed or expired.",
+            _pending_amount = _plain_usd(existing_pending.amount)
+            message = pui.invoice_card(
+                method_label=gateway_label, method_emoji="💳",
+                amount=_pending_amount, deposit_id=existing_pending.id,
+                expires_at=expires_str,
+                instruction="⚠️ You already have a pending payment — tap below to finish it.",
             )
-            keyboard = []
-            if pay_url:
-                keyboard.append([InlineKeyboardButton(pay_button_label, url=pay_url)])
-            else:
-                message += "\n\n⚠️ The payment link is missing — please contact support with your Deposit ID above."
+            if not pay_url:
+                message += "\n\n⚠️ Payment link missing — contact support with your Deposit ID above."
                 logger.warning(
                     "Existing pending %s transaction #%s has no valid pay_url (crypto_address=%r)",
                     gateway_label, existing_pending.id, existing_pending.crypto_address,
                 )
-            keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+            keyboard = pui.invoice_keyboard(
+                amount_value=_pending_amount,
+                pay_url=pay_url, pay_url_label=pay_button_label,
+            )
             await update.message.reply_text(
-                message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML',
+                message, reply_markup=keyboard, parse_mode='HTML',
             )
             return ConversationHandler.END
 
@@ -2100,28 +2096,25 @@ async def _finish_gateway_automated_payment(
 
         pay_url = _extract_pay_url(reference)
 
-        message = pui.user_payment_card(
-            gateway_key=gateway_key,
-            gateway_label_override=gateway_label,
-            stage="created",
-            amount=format_price(usd_amount),
-            order_id=transaction.id,
-            extra=[("⏱", "Expires in", "30 minutes")],
-            note=f"👉 Tap below to pay via {gateway_label}. Your balance will be "
-                 f"credited automatically the moment payment is confirmed.",
+        _amount_str = _plain_usd(usd_amount)
+        message = pui.invoice_card(
+            method_label=gateway_label, method_emoji="💳",
+            amount=_amount_str, deposit_id=transaction.id,
+            expires_at="30 minutes",
+            instruction=f"👉 Tap below to pay via {gateway_label}.",
         )
-        keyboard = []
-        if pay_url:
-            keyboard.append([InlineKeyboardButton(pay_button_label, url=pay_url)])
-        else:
-            message += "\n\n⚠️ The payment link is missing — please contact support with your Deposit ID above."
+        if not pay_url:
+            message += "\n\n⚠️ Payment link missing — contact support with your Deposit ID above."
             logger.warning(
                 "New %s transaction #%s has no valid pay_url (reference=%r)",
                 gateway_label, transaction.id, reference,
             )
-        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+        keyboard = pui.invoice_keyboard(
+            amount_value=_amount_str,
+            pay_url=pay_url, pay_url_label=pay_button_label,
+        )
         await update.message.reply_text(
-            message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML',
+            message, reply_markup=keyboard, parse_mode='HTML',
         )
 
     return ConversationHandler.END
@@ -2182,22 +2175,20 @@ async def _finish_gateway_manual_payment(
     context.user_data['manual_req_proof'] = True
     context.user_data['manual_method_id'] = None
 
-    message = pui.user_payment_card(
-        gateway_key=gateway_key,
-        gateway_label_override=f"{gateway_label} (Manual)",
-        stage="waiting",
-        amount=f"৳{bdt_amount:.2f} BDT (≈ ${usd_amount:.2f})",
-        order_id=transaction_id,
-        extra=[("📞", "Send to", f"<code>{merchant_number}</code>")],
-        note=(
-            f"📝 <b>Payment Instructions</b>\n"
-            f"{instructions or f'Send the amount above via {gateway_label} to the number shown.'}\n\n"
-            f"👉 After sending, reply here with your <b>Transaction ID (TrxID)</b> to continue."
-        ),
+    amount_str = f"৳{bdt_amount:.2f}"
+    message = pui.mobile_money_invoice(
+        provider_label=gateway_label, provider_emoji=emoji,
+        amount=amount_str, send_to=merchant_number,
+        deposit_id=transaction_id,
+        instruction="📌 Send the exact amount, then reply here with your Transaction ID (TrxID).",
     )
-    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
+    keyboard = pui.invoice_keyboard(
+        destination_value=merchant_number, destination_copy_label="Copy Number",
+        amount_value=amount_str,
+        submit_cb=None, cancel_cb="cancel",
+    )
     await update.message.reply_text(
-        message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML',
+        message, reply_markup=keyboard, parse_mode='HTML',
     )
 
     return MANUAL_TXID
@@ -2267,18 +2258,20 @@ async def _finish_zinipay_payment(
             status=TransactionStatus.PENDING,
         ).first()
         if existing_pending:
+            _pending_amount = _plain_usd(existing_pending.amount)
             await update.message.reply_text(
-                pui.user_payment_card(
-                    gateway_key="zinipay", stage="waiting",
-                    amount=format_price(existing_pending.amount),
-                    order_id=existing_pending.id,
-                    note="⚠️ You already have a pending order for this gateway. "
-                         "Please complete or cancel it before starting a new one.",
+                pui.invoice_card(
+                    method_label="bKash / Nagad / Rocket", method_emoji="🇧🇩",
+                    amount=_pending_amount,
+                    deposit_id=existing_pending.id,
+                    instruction="⚠️ You already have a pending order. Finish or cancel it "
+                                "before starting a new one.",
                 ),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🧾 Submit TXID", callback_data=f"zinipay_submit:{existing_pending.id}"),
-                    InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
-                ]]),
+                reply_markup=pui.invoice_keyboard(
+                    amount_value=_pending_amount,
+                    submit_cb=f"zinipay_submit:{existing_pending.id}",
+                    submit_label="🧾 Submit Transaction ID",
+                ),
                 parse_mode='HTML',
             )
             return ConversationHandler.END
@@ -2298,62 +2291,32 @@ async def _finish_zinipay_payment(
         session.refresh(transaction)
         tx_id = transaction.id
 
-    # Build the wallet numbers block — only show lines that are configured.
-    PROVIDER_EMOJI = {
-        "bkash":  "💗",
-        "nagad":  "🟠",
-        "rocket": "🟣",
-        "upay":   "🔵",
+    # Show ONLY the selected provider's number — never all providers together.
+    PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🟠", "rocket": "🟣", "upay": "🔵"}
+    numbers_by_provider = {
+        "bkash": bkash_num, "nagad": nagad_num, "rocket": rocket_num, "upay": upay_num,
     }
-    wallet_lines = []
-    for provider, number in [
-        ("bkash",  bkash_num),
-        ("nagad",  nagad_num),
-        ("rocket", rocket_num),
-        ("upay",   upay_num),
-    ]:
-        if number:
-            star = " ⭐" if provider == default_provider else ""
-            emoji = PROVIDER_EMOJI[provider]
-            wallet_lines.append(
-                f"  {emoji} <b>{provider.title()}{star}:</b>  <code>{number}</code>"
-            )
-
-    if not wallet_lines:
+    provider = default_provider if numbers_by_provider.get(default_provider) else next(
+        (p for p, n in numbers_by_provider.items() if n), None
+    )
+    send_to = numbers_by_provider.get(provider)
+    if not provider or not send_to:
         await update.message.reply_text(
             "❌ No payment numbers configured yet. Please contact support."
         )
         return ConversationHandler.END
 
-    wallet_block = "\n".join(wallet_lines)
-
-    # Default instructions if admin hasn't set custom ones.
-    if not instructions_text:
-        instructions_text = (
-            "1. Open your mobile banking app.\n"
-            "2. Send the exact amount.\n"
-            "3. Copy your Transaction ID (TXID).\n"
-            "4. Tap \"Submit Transaction ID\"."
-        )
-
-    message = pui.user_payment_card(
-        gateway_key="zinipay",
-        stage="waiting",
-        amount=f"৳{bdt_amount:.2f} BDT (≈ ${usd_amount:.2f})",
-        order_id=tx_id,
-        extra=[
-            ("💱", "Rate", f"1 USD = {rate:.2f} BDT"),
-            ("⏱", "Expires in", "30 minutes"),
-        ],
-        note=(
-            f"📲 <b>Send exactly ৳{bdt_amount:.2f} to:</b>\n{wallet_block}\n\n"
-            f"📋 <b>Steps:</b>\n{instructions_text}"
-        ),
+    amount_str = f"৳{bdt_amount:.2f}"
+    message = pui.mobile_money_invoice(
+        provider_label=provider.title(), provider_emoji=PROVIDER_EMOJI[provider],
+        amount=amount_str, send_to=send_to,
+        deposit_id=tx_id, expires_at="30 minutes",
     )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🧾 Submit Transaction ID", callback_data=f"zinipay_submit:{tx_id}")],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
-    ])
+    keyboard = pui.invoice_keyboard(
+        destination_value=send_to, destination_copy_label="Copy Number",
+        amount_value=amount_str,
+        submit_cb=f"zinipay_submit:{tx_id}", submit_label="🧾 Submit Transaction ID",
+    )
     await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
     return ConversationHandler.END
 
@@ -2926,31 +2889,17 @@ async def binance_currency_selected(update: Update, context: ContextTypes.DEFAUL
 
 async def _send_binance_payment_screen(update, context, tx_id: int, usd_amount: float,
                                         currency: str, svc: "BinancePayService", is_new_message: bool):
-    instructions = svc.instructions.strip() if svc.instructions else (
-        "1. Open Binance App → Pay → Send\n"
-        "2. Enter the Binance Pay ID shown above\n"
-        f"3. Send the exact {currency} amount\n"
-        "4. Open the completed Binance Pay transaction\n"
-        "5. Copy the Binance Pay Transaction ID / Order ID\n"
-        "6. Return to the bot\n"
-        "7. Tap \"Submit Transaction ID\"\n"
-        "8. Paste the transaction ID"
+    amount_str = f"{usd_amount:.2f} {currency}"
+    message = pui.binance_bybit_invoice(
+        method_label="Binance Pay", method_emoji="🟡",
+        amount=amount_str, pay_id=svc.pay_id,
+        deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
     )
-    message = pui.user_payment_card(
-        gateway_key="binance_pay",
-        stage="waiting",
-        amount=f"{usd_amount:.2f} {currency}",
-        order_id=tx_id,
-        extra=[
-            ("🆔", "Pay ID", f"<code>{svc.pay_id}</code>"),
-            ("⏱", "Expires in", f"{svc.order_expiry_minutes} minutes"),
-        ],
-        note=f"📋 <b>Steps:</b>\n{instructions}",
+    keyboard = pui.invoice_keyboard(
+        destination_value=svc.pay_id, destination_copy_label="Copy Pay ID",
+        amount_value=amount_str,
+        submit_cb=f"binance_submit:{tx_id}", submit_label="📄 Submit Transaction ID",
     )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📄 Submit Transaction ID", callback_data=f"binance_submit:{tx_id}")],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
-    ])
     if is_new_message:
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
     else:
@@ -3698,31 +3647,17 @@ async def bybit_network_selected(update: Update, context: ContextTypes.DEFAULT_T
 
 async def _send_bybit_uid_screen(update, context, tx_id: int, usd_amount: float,
                                   svc: "BybitPayService", is_new_message: bool):
-    instructions = svc.instructions.strip() if svc.instructions else (
-        "1. Open Bybit App → Assets → Transfer\n"
-        "2. Select \"UID Transfer\"\n"
-        f"3. Enter the UID shown above and send exactly {usd_amount:.2f} {BYBIT_CURRENCY}\n"
-        "4. Open the completed transfer in your Bybit history\n"
-        "5. Copy the Transaction ID\n"
-        "6. Return to the bot\n"
-        "7. Tap \"Submit Transaction ID\"\n"
-        "8. Paste the Transaction ID"
+    amount_str = f"{usd_amount:.2f} {BYBIT_CURRENCY}"
+    message = pui.binance_bybit_invoice(
+        method_label="Bybit Pay", method_emoji="🔷",
+        amount=amount_str, pay_id=svc.uid,
+        deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
     )
-    message = pui.user_payment_card(
-        gateway_key="bybit_pay",
-        stage="waiting",
-        amount=f"{usd_amount:.2f} {BYBIT_CURRENCY}",
-        order_id=tx_id,
-        extra=[
-            ("🆔", "UID", f"<code>{svc.uid}</code>"),
-            ("⏱", "Expires in", f"{svc.order_expiry_minutes} minutes"),
-        ],
-        note=f"📋 <b>Steps:</b>\n{instructions}",
+    keyboard = pui.invoice_keyboard(
+        destination_value=svc.uid, destination_copy_label="Copy Pay ID",
+        amount_value=amount_str,
+        submit_cb=f"bybit_submit:{tx_id}", submit_label="📄 Submit Transaction ID",
     )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📄 Submit Transaction ID", callback_data=f"bybit_submit:{tx_id}")],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
-    ])
     if is_new_message:
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
     else:
@@ -3738,49 +3673,25 @@ async def _send_bybit_onchain_screen(update, context, tx_id: int, usd_amount: fl
                                       *, locked_rate: Optional[float] = None,
                                       locked_crypto_amount: Optional[float] = None):
     address = svc.wallet_for_network(network)
-    _NETWORK_LABELS = {"LTC": "Litecoin (LTC)"}
     if locked_crypto_amount is not None and locked_rate is not None:
-        # Non-stablecoin order (e.g. LTC) — show locked rate and exact crypto amount.
-        net_label = _NETWORK_LABELS.get(network, network)
-        message = pui.user_payment_card(
-            gateway_key="bybit_pay",
-            gateway_label_override=f"Bybit Pay — {net_label}",
-            stage="waiting",
-            amount=f"${usd_amount:.2f} USD",
-            order_id=tx_id,
-            extra=[
-                ("💱", "Rate", f"1 LTC = ${locked_rate:.2f} USD"),
-                ("📤", "Send exactly", f"<code>{locked_crypto_amount:.8f} LTC</code>"),
-                ("🌐", "Network", net_label),
-                ("📮", "Deposit Address", f"<code>{address}</code>"),
-                ("⏱", "Rate locked for", f"{svc.order_expiry_minutes} minutes"),
-            ],
-            note=f"⚠️ Send exactly <b>{locked_crypto_amount:.8f} LTC</b> to the address above using the "
-                 f"<b>Litecoin</b> network. Sending any other amount, asset, or network may delay or "
-                 f"prevent automatic verification.\n\nAfter sending, copy the blockchain Transaction ID "
-                 f"(TXID) and tap \"Submit Transaction ID\" below.",
+        # Non-stablecoin order (e.g. LTC) — the exact crypto amount already
+        # bakes in the rate, so no separate exchange-rate line is needed.
+        amount_str = f"{locked_crypto_amount:.8f} LTC"
+        message = pui.crypto_invoice(
+            network="LTC", amount=amount_str, wallet_address=address,
+            deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
         )
     else:
-        message = pui.user_payment_card(
-            gateway_key="bybit_pay",
-            gateway_label_override=f"Bybit Pay — USDT ({network})",
-            stage="waiting",
-            amount=f"{usd_amount:.2f} {BYBIT_CURRENCY}",
-            order_id=tx_id,
-            extra=[
-                ("🌐", "Network", network),
-                ("📮", "Deposit Address", f"<code>{address}</code>"),
-                ("⏱", "Expires in", f"{svc.order_expiry_minutes} minutes"),
-            ],
-            note=f"⚠️ Send only <b>{BYBIT_CURRENCY}</b> using <b>{network}</b>. Sending any other "
-                 f"asset or using a different network may result in permanent loss of funds.\n\n"
-                 f"After sending, copy the blockchain Transaction ID (TXID) and tap "
-                 f"\"Submit Transaction ID\" below.",
+        amount_str = f"{usd_amount:.2f} {BYBIT_CURRENCY}"
+        message = pui.crypto_invoice(
+            network=network, amount=amount_str, wallet_address=address,
+            deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
         )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📄 Submit Transaction ID", callback_data=f"bybit_submit:{tx_id}")],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
-    ])
+    keyboard = pui.invoice_keyboard(
+        destination_value=address, destination_copy_label="Copy Address",
+        amount_value=amount_str,
+        submit_cb=f"bybit_submit:{tx_id}", submit_label="📄 Submit TXID",
+    )
     if is_new_message:
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
     else:
@@ -4515,13 +4426,11 @@ async def payment_method_card(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         try:
             await query.edit_message_text(
-                pui.user_payment_card(
-                    gateway_key="card",
-                    stage="waiting",
-                    amount=pui.copy_code(format_price(usd_amount)),
-                    order_id=transaction_id,
-                    created_at=transaction_created_at,
-                    note="👉 Please complete the secure card payment below.",
+                pui.invoice_card(
+                    method_label="Card Payment", method_emoji="💳",
+                    amount=_plain_usd(usd_amount),
+                    deposit_id=transaction_id, created_at=transaction_created_at,
+                    instruction="👉 Please complete the secure card payment below.",
                 ),
                 parse_mode='HTML',
             )
@@ -4634,14 +4543,11 @@ async def _finish_stars_payment(update: Update, context: ContextTypes.DEFAULT_TY
     # Send a short notice, then send the invoice.
     try:
         await update.message.reply_text(
-            pui.user_payment_card(
-                gateway_key="stars",
-                stage="waiting",
-                amount=pui.copy_code(format_price(usd_amount)),
-                order_id=transaction_id,
-                created_at=transaction_created_at,
-                extra=[("⭐", "Cost", f"{stars_amount} Stars")],
-                note="👉 Please complete the Stars payment below.",
+            pui.invoice_card(
+                method_label="Telegram Stars", method_emoji="⭐",
+                amount=f"{stars_amount} ⭐ Stars ({_plain_usd(usd_amount)})",
+                deposit_id=transaction_id, created_at=transaction_created_at,
+                instruction="👉 Please complete the Stars payment below.",
             ),
             parse_mode='HTML',
         )

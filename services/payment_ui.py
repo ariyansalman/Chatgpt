@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterable, Optional, Sequence, Tuple
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 
 # ─────────────────────────────────────────────────────────────────────────
 # Visual constants
@@ -246,6 +246,196 @@ def user_payment_card(
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# THE unified payment INVOICE template ("waiting for payment" screen).
+#
+# One template, used by every gateway — current and future. It shows
+# ONLY: Payment Method, Amount, Payment Destination, Network (crypto
+# only), Deposit ID, Expiration, and one short instruction. No exchange
+# rate, no long numbered steps, no duplicate "waiting" sections, no extra
+# warnings, no extra spacing. Amount / Payment Destination / Deposit ID /
+# Network / Expiration are always monospace (`<code>`) so Telegram lets
+# the user tap-to-copy them directly — the native, silent equivalent of a
+# "Copy" button (no popup, no confirmation message, ever).
+#
+# ``invoice_keyboard`` adds real "Copy" buttons on top of that using
+# Telegram's native copy-to-clipboard button (``copy_text``, Bot API 8.0+)
+# — tapping it copies the value with zero server round-trip, so there is
+# no callback, no toast, and no way for it to ever send a message.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Dynamic "Payment Destination" label per gateway family (spec: Binance /
+# Bybit -> Pay ID, Crypto -> Wallet Address, bKash / Nagad / Rocket ->
+# Send Money To). Anything not listed falls back to a sensible default so
+# a brand-new gateway never needs to touch this file to look right.
+_DESTINATION_LABELS: dict[str, str] = {
+    "binance_pay": "Pay ID",
+    "bybit_pay":   "Pay ID",
+    "bkash":       "Send Money To",
+    "nagad":       "Send Money To",
+    "rocket":      "Send Money To",
+    "zinipay":     "Send Money To",
+}
+
+
+def destination_label_for(gateway_key: Optional[str], *, is_crypto: bool = False) -> str:
+    """Resolve the dynamic 'Payment Destination' label for a gateway."""
+    if is_crypto:
+        return "Wallet Address"
+    key = (gateway_key or "").lower()
+    if key in _DESTINATION_LABELS:
+        return _DESTINATION_LABELS[key]
+    if any(tag in key for tag in ("usdt", "usdc", "crypto", "trc20", "bep20", "erc20", "btc", "ltc")):
+        return "Wallet Address"
+    if any(tag in key for tag in ("bkash", "nagad", "rocket", "mobile")):
+        return "Send Money To"
+    return "Payment Destination"
+
+
+def invoice_card(
+    *,
+    method_label: str,
+    method_emoji: str = "💳",
+    amount: str,
+    destination_label: Optional[str] = None,
+    destination_value: Optional[str] = None,
+    network: Optional[str] = None,
+    deposit_id=None,
+    created_at=None,
+    expires_at: Optional[str] = None,
+    instruction: Optional[str] = None,
+) -> str:
+    """Render THE one invoice card. Every gateway — built-in or added
+    later — must go through this function so every payment invoice in the
+    bot is guaranteed to look identical and contain only the approved
+    fields. Do not add fields here; extend ``instruction`` instead."""
+    lines = [f"{method_emoji} <b>{method_label}</b>", ""]
+
+    lines.append("💰 <b>Amount</b>")
+    lines.append(f"<code>{amount}</code>")
+
+    if destination_value:
+        label = destination_label or "Payment Destination"
+        emoji = "🆔" if "pay id" in label.lower() else (
+            "📥" if "wallet" in label.lower() else "📱"
+        )
+        lines.append("")
+        lines.append(f"{emoji} <b>{label}</b>")
+        lines.append(f"<code>{destination_value}</code>")
+
+    if network:
+        lines.append("")
+        lines.append("🌐 <b>Network</b>")
+        lines.append(f"<code>{network}</code>")
+
+    dep = _display_deposit_id(deposit_id, created_at)
+    if dep:
+        lines.append("")
+        lines.append("🧾 <b>Deposit ID</b>")
+        lines.append(f"<code>{dep}</code>")
+
+    if expires_at:
+        lines.append("")
+        lines.append("⏳ <b>Expires</b>")
+        lines.append(f"<code>{expires_at}</code>")
+
+    lines.append("")
+    lines.append(instruction or "📌 Send the exact amount, then submit your Transaction ID.")
+
+    return "\n".join(lines)
+
+
+def invoice_keyboard(
+    *,
+    destination_value: Optional[str] = None,
+    destination_copy_label: str = "Copy",
+    amount_value: Optional[str] = None,
+    pay_url: Optional[str] = None,
+    pay_url_label: Optional[str] = None,
+    submit_cb: Optional[str] = None,
+    submit_label: str = "📄 Submit Transaction ID",
+    cancel_cb: Optional[str] = "cancel",
+) -> InlineKeyboardMarkup:
+    """The one action-row layout used by every invoice: optional silent
+    Copy buttons, then Submit (or an external Pay link), then Cancel —
+    identical order for every gateway.
+
+    Copy buttons use Telegram's native ``copy_text`` button — the value is
+    copied to the user's clipboard entirely client-side. No callback is
+    fired, so nothing here can ever produce a confirmation message,
+    alert, or popup.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+
+    copy_row: list[InlineKeyboardButton] = []
+    if destination_value:
+        copy_row.append(InlineKeyboardButton(
+            f"📋 {destination_copy_label}",
+            copy_text=CopyTextButton(str(destination_value)),
+        ))
+    if amount_value:
+        copy_row.append(InlineKeyboardButton(
+            "💰 Copy Amount",
+            copy_text=CopyTextButton(str(amount_value)),
+        ))
+    if copy_row:
+        rows.append(copy_row)
+
+    if pay_url:
+        rows.append([InlineKeyboardButton(pay_url_label or "💳 Pay Now", url=pay_url)])
+    elif submit_cb:
+        rows.append([InlineKeyboardButton(submit_label, callback_data=submit_cb)])
+
+    if cancel_cb:
+        rows.append([InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)])
+
+    return InlineKeyboardMarkup(rows)
+
+
+def binance_bybit_invoice(
+    *, method_label: str, method_emoji: str, amount: str, pay_id: str,
+    deposit_id=None, created_at=None, expires_at: Optional[str] = None,
+    instruction: Optional[str] = None,
+) -> str:
+    """Binance Pay / Bybit Pay (UID transfer) invoice — spec template."""
+    return invoice_card(
+        method_label=method_label, method_emoji=method_emoji, amount=amount,
+        destination_label="Pay ID", destination_value=pay_id,
+        deposit_id=deposit_id, created_at=created_at, expires_at=expires_at,
+        instruction=instruction or "📌 Send the exact amount, then submit your Transaction ID.",
+    )
+
+
+def crypto_invoice(
+    *, network: str, amount: str, wallet_address: str,
+    deposit_id=None, created_at=None, expires_at: Optional[str] = None,
+    instruction: Optional[str] = None,
+) -> str:
+    """On-chain crypto (USDT/LTC/... on any network) invoice — spec template."""
+    return invoice_card(
+        method_label=f"USDT ({network})" if network.upper() != "LTC" else "Litecoin (LTC)",
+        method_emoji="🪙", amount=amount,
+        destination_label="Wallet Address", destination_value=wallet_address,
+        network=network, deposit_id=deposit_id, created_at=created_at, expires_at=expires_at,
+        instruction=instruction or f"⚠️ Send only via {network}, then submit your TXID.",
+    )
+
+
+def mobile_money_invoice(
+    *, provider_label: str, provider_emoji: str, amount: str, send_to: str,
+    deposit_id=None, created_at=None, expires_at: Optional[str] = None,
+    instruction: Optional[str] = None,
+) -> str:
+    """bKash / Nagad / Rocket invoice — spec template. Shows ONLY the one
+    provider that was actually selected — never all providers at once."""
+    return invoice_card(
+        method_label=f"{provider_label} Payment", method_emoji=provider_emoji, amount=amount,
+        destination_label="Send Money To", destination_value=send_to,
+        deposit_id=deposit_id, created_at=created_at, expires_at=expires_at,
+        instruction=instruction or "📌 Send the exact amount, then submit your TrxID.",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # PaymentMethodView — THE single dynamic contract.
 #
 # Every payment method — built-in (Binance Pay, Bybit Pay, ZiniPay,
@@ -297,20 +487,28 @@ class PaymentMethodView:
         return None
 
     def render(self) -> str:
-        """Build the identical card layout used by every payment method."""
+        """While waiting for payment, every payment method — built-in or
+        admin-added — renders through the exact same unified invoice
+        template (``invoice_card``). Other lifecycle stages (rejected,
+        expired, ...) keep the fuller status-card layout."""
+        if self.stage in ("created", "waiting"):
+            return invoice_card(
+                method_label=self.name, method_emoji=self.emoji,
+                amount=self.amount or "",
+                destination_label=("Wallet Address" if self.network else "Payment Destination"),
+                destination_value=self.account_number,
+                network=self.network,
+                deposit_id=self.deposit_id, created_at=self.created_at,
+                expires_at=self.expires_at,
+                instruction=self._auto_note() or self.instructions,
+            )
         fields = [
             ("💳", "Payment Method", self.name),
             ("💰", "Amount", copy_code(self.amount) if self.amount else None),
             ("🧾", "Deposit ID", _display_deposit_id(self.deposit_id, self.created_at)),
             ("🔗", "Transaction ID", self.transaction_id),
-            ("🏷", "Send To", self.account_label),
-            ("🔢", "Payment Number", copy_code(self.account_number) if self.account_number else None),
-            ("🌐", "Network / Currency", self.network),
-            ("⏱", "Expires", self.expires_at),
         ]
         fields.extend(self.extra_fields)
-        if self.instructions:
-            fields.append(("📋", "Instructions", self.instructions))
         return build_card(
             title=_STAGE_TITLE.get(self.stage, "Payment Update"),
             title_emoji=self.emoji,
@@ -321,8 +519,16 @@ class PaymentMethodView:
 
     def keyboard(self) -> InlineKeyboardMarkup:
         """Build the identical action keyboard used by every payment method:
-        an optional 'Pay Now' link (only if a hosted checkout URL exists)
-        plus Cancel — never gateway-specific buttons."""
+        optional silent Copy buttons, a 'Pay Now' link (only if a hosted
+        checkout URL exists), and Cancel — never gateway-specific buttons."""
+        if self.stage in ("created", "waiting"):
+            return invoice_keyboard(
+                destination_value=self.account_number,
+                destination_copy_label="Copy Address" if self.network else "Copy",
+                amount_value=self.amount,
+                pay_url=self.pay_url, pay_url_label=f"💳 Pay with {self.name}",
+                cancel_cb=self.cancel_cb,
+            )
         rows = []
         if self.pay_url:
             rows.append([InlineKeyboardButton(f"💳 Pay with {self.name}", url=self.pay_url)])
