@@ -139,14 +139,14 @@ _VERIFICATION_RESULT_LABEL = {
 def _network_for(tx) -> str | None:
     """Best-effort network/currency hint for the admin card's 🌐 Network
     field. Manual/bKash/Nagad deposits don't always have one; returns None
-    (row is simply omitted by build_card) when there's nothing to show."""
-    if tx.payment_method == PaymentMethod.BKASH:
-        return "bKash (BDT)"
-    if tx.payment_method == PaymentMethod.NAGAD:
-        return "Nagad (BDT)"
-    if getattr(tx, "crypto_network", None):
-        return tx.crypto_network
-    return None
+    (row is simply omitted by build_card) when there's nothing to show.
+
+    Sourced from the Payment Gateway Registry rather than hardcoded
+    per-gateway comparisons — a future gateway's ``network`` metadata is
+    picked up automatically.
+    """
+    from services.payment_workflow import network_hint
+    return network_hint(tx.payment_method, fallback_network=getattr(tx, "crypto_network", None))
 
 
 def _deposit_detail_msg(tx, user) -> str:
@@ -156,7 +156,6 @@ def _deposit_detail_msg(tx, user) -> str:
     in the bot (bKash/Nagad, Binance Pay, Bybit Pay, ZiniPay) already uses.
     No handler builds its own message; this function only supplies values.
     """
-    name    = pui.customer_display(user.username if user else None, user.telegram_id if user else None)
     amount  = f"${tx.amount:.2f}" if tx.amount is not None else "—"
     txn_id  = html.escape(str(tx.txid or tx.proof or "—")) if (tx.txid or tx.proof) else None
     return pui.admin_review_card(
@@ -166,7 +165,7 @@ def _deposit_detail_msg(tx, user) -> str:
         order_id=tx.id,
         created_at=tx.created_at,
         txn_id=txn_id,
-        customer_name=name,
+        username=user.username if user else None,
         user_id=user.telegram_id if user else None,
         network=_network_for(tx),
         verification_result=_VERIFICATION_RESULT_LABEL[True],
@@ -565,16 +564,19 @@ async def deposit_approve_execute(update: Update, context: ContextTypes.DEFAULT_
             await _safe_edit(query, "❌ Deposit not found after update.")
             return
 
-        # bKash/Nagad Manual mode stores `amount` in BDT — convert to USD
-        # with the store's deposit rate before crediting the wallet
-        # (wallet_balance is always USD), same as the existing
-        # admin_manual_approve flow in handlers/payment_handlers.py.
-        is_gateway_manual = tx.payment_method in (PaymentMethod.BKASH, PaymentMethod.NAGAD)
+        # Gateways settling in a non-USD currency (e.g. bKash/Nagad, which
+        # settle in BDT) need conversion before crediting the wallet
+        # (wallet_balance is always USD). Sourced from the Payment Gateway
+        # Registry's per-gateway `currency`/`to_usd` metadata instead of a
+        # hardcoded BKASH/NAGAD check, so a future non-USD gateway inherits
+        # this automatically.
+        from services.payment_workflow import is_foreign_currency_gateway, credited_usd_amount, native_currency_label
+        is_gateway_manual = is_foreign_currency_gateway(tx.payment_method)
         if is_gateway_manual:
-            from services.pricing import convert_currency
-            credited_usd = convert_currency(tx.amount, "BDT", "USD")
+            credited_usd = credited_usd_amount(tx.payment_method, tx.amount)
+            native_ccy = native_currency_label(tx.payment_method) or "BDT"
             tx.admin_note = (
-                f"Manual {tx.payment_method.value} deposit: ৳{tx.amount:.2f} BDT → "
+                f"Manual {tx.payment_method.value} deposit: ৳{tx.amount:.2f} {native_ccy} → "
                 f"${credited_usd:.2f} USD credited (deposit rate applied) — "
                 f"approved by admin {admin_tg_id}"
             )
@@ -766,7 +768,8 @@ async def deposit_reject_execute(update: Update, context: ContextTypes.DEFAULT_T
         _ = tx.manual_method if tx else None  # noqa: F841
         u  = session.query(User).filter_by(id=tx.user_id).first() if tx else None
         if tx:
-            is_gateway_manual = tx.payment_method in (PaymentMethod.BKASH, PaymentMethod.NAGAD)
+            from services.payment_workflow import is_foreign_currency_gateway
+            is_gateway_manual = is_foreign_currency_gateway(tx.payment_method)
             method_label = _method_label(tx)
             amount = float(tx.amount or 0.0)
         if u:

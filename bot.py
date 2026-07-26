@@ -701,6 +701,19 @@ def main():
         logger.error(f"Configuration error: {e}")
         return
 
+    # ── Payment Gateway Registry: register every gateway once so the rest
+    # of the payment stack (creation, auto-verification, the Pending
+    # Deposits queue, admin approve/reject) can look gateways up by
+    # capability instead of hardcoding names. See
+    # services/payment_gateway_registry.py / payment_gateway_bootstrap.py.
+    try:
+        from services.payment_gateway_bootstrap import ensure_bootstrapped
+        ensure_bootstrapped()
+    except Exception:
+        logger.exception("Payment gateway registry bootstrap failed — "
+                         "gateway-driven UI (Pending Deposits filtering, "
+                         "currency conversion) will fall back to defaults")
+
     # ── Auto-migration: apply any missing schema changes on startup ────────
     # Must run BEFORE initialize_database() so enum types exist before
     # create_all() tries to create tables that reference them.
@@ -765,10 +778,25 @@ def main():
     topup_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(payment_handlers.topup_start, pattern="^topup$")],
         states={
+            # Shared "💳 Add Funds" amount screen (services/amount_selection_ui.py) —
+            # the very first thing shown, before any gateway/method is picked.
+            # Every current and future payment gateway reaches the method
+            # screen only after this state, already knowing the amount.
+            payment_handlers.AMOUNT_SELECT: [
+                CallbackQueryHandler(payment_handlers.topup_amount_selected, pattern="^topup_amt_\\d+(\\.\\d+)?$"),
+                CallbackQueryHandler(payment_handlers.topup_amount_custom_prompt, pattern="^topup_amt_custom$"),
+            ],
             payment_handlers.AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, payment_handlers.topup_amount)],
             payment_handlers.METHOD: [
                 # "Back to Menu" button on the payment-method selection screen.
                 CallbackQueryHandler(user_handlers.main_menu_callback, pattern="^main_menu$"),
+                # Add Funds screen redesign — 🔗 Crypto Networks / 🇧🇩 Mobile
+                # Money (BD) submenus and their ⬅️ Back button. Pure UI
+                # navigation only; every gateway button inside these
+                # submenus still uses the existing "^pay_...$" patterns below.
+                CallbackQueryHandler(payment_handlers.topup_show_crypto_networks, pattern="^topup_menu_crypto$"),
+                CallbackQueryHandler(payment_handlers.topup_show_mobile_money, pattern="^topup_menu_mobile$"),
+                CallbackQueryHandler(payment_handlers.topup_back_to_methods, pattern="^topup_menu_back$"),
                 CallbackQueryHandler(payment_handlers.topup_amount_path, pattern="^topup_amount_path$"),
                 CallbackQueryHandler(payment_handlers.payment_method_heleket, pattern="^pay_heleket$"),
                 CallbackQueryHandler(payment_handlers.heleket_asset_selected, pattern="^heleket_asset:"),

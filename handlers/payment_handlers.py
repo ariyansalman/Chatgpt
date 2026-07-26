@@ -46,6 +46,8 @@ from services.telegram_stars import telegram_stars_service
 from services import gateway_manual_mode as gw_mode
 from services.pricing import convert_currency
 from services import payment_ui as pui
+from services import payment_selection_ui as psel
+from services import amount_selection_ui as amtsel
 from utils.bot_config import cfg
 from utils.perf import perf_track
 from telegram.error import BadRequest
@@ -128,7 +130,7 @@ def _cancel_user_pending_transactions(session, user_id: int, payment_method=None
 
 
 # Conversation states for top-up
-AMOUNT, METHOD, MANUAL_PROOF, MANUAL_TXID = range(4)
+AMOUNT, METHOD, MANUAL_PROOF, MANUAL_TXID, AMOUNT_SELECT = range(5)
 
 # Separate conversation state for the Binance Pay "Submit Transaction ID" flow
 # (kept out of the main topup_conv_handler states since it's entered from its
@@ -152,23 +154,13 @@ BULK_DELIVERY_THRESHOLD = 10
 
 
 
-def _build_topup_method_screen(amount: float = None):
-    """Build the "choose a payment method" screen content (text + keyboard).
+def _collect_topup_gateways():
+    """Gather the currently available gateways + admin manual methods.
 
-    Shared by ``topup_start`` (the normal entry point) and the Cancel
-    handlers (``cancel_topup`` / ``cancel_payment_page``), which now behave
-    like a Back tap straight to this screen instead of showing a dead-end
-    "Payment Cancelled" card.
-
-    Pass ``amount`` to include the confirmed amount in the header text.
-
-    Returns ``(text, keyboard, is_empty)`` — ``is_empty`` is True when no
-    gateway or manual payment method is configured at all, in which case
-    the caller should end any in-progress conversation.
-
-    Gateway order: Payment Providers → USDT Networks → Other Crypto →
-    Local Payment. The keyboard groups them visually via
-    ``create_payment_method_keyboard``.
+    Pure data collection — no rendering. This is the single place that
+    decides *which* payment methods exist right now (unchanged business
+    logic); ``services/payment_selection_ui.py`` is the single place that
+    decides how they're laid out on screen. Returns ``(gateways, method_objs)``.
     """
     gateways = []
 
@@ -240,6 +232,27 @@ def _build_topup_method_screen(amount: float = None):
             self.id, self.emoji, self.name, self.min_amount = i, e, n, mn
 
     method_objs = [_M(*d) for d in methods_data]
+    return gateways, method_objs
+
+
+def _build_topup_method_screen(amount: float = None):
+    """Build the "💳 Add Funds" payment-method selection screen (text +
+    keyboard) via the shared ``services/payment_selection_ui`` component.
+
+    Shared by ``topup_start`` (the normal entry point), ``topup_back_to_methods``
+    (the Crypto Networks / Mobile Money submenus' Back button), and the
+    Cancel handlers (``cancel_topup`` / ``cancel_payment_page``), which all
+    behave like a tap straight back to this screen instead of a dead-end
+    "Payment Cancelled" card.
+
+    Returns ``(text, keyboard, is_empty)`` — ``is_empty`` is True when no
+    gateway or manual payment method is configured at all, in which case
+    the caller should end any in-progress conversation. ``amount`` is
+    accepted for backward compatibility with existing call sites but no
+    longer changes the rendered text — the redesigned screen always shows
+    the same minimal "Select a payment method" message.
+    """
+    gateways, method_objs = _collect_topup_gateways()
 
     if not method_objs and not gateways:
         text = (
@@ -248,17 +261,27 @@ def _build_topup_method_screen(amount: float = None):
         )
         return text, create_cancel_keyboard(), True
 
-    if amount is not None:
-        text = f"💰 <b>Top Up Wallet</b>\n\nAmount: <code>${amount:.2f}</code>\n\nSelect your preferred payment method below."
-    else:
-        text = "💰 <b>Top Up Wallet</b>\n\nSelect your preferred payment method below."
-    keyboard = create_payment_method_keyboard(method_objs, gateways)
+    text, keyboard = psel.build_payment_selection_screen(gateways, method_objs)
     return text, keyboard, False
 
 
+def _build_crypto_networks_screen():
+    """Build the "🔗 Crypto Networks" submenu (text + keyboard)."""
+    gateways, _ = _collect_topup_gateways()
+    return psel.build_crypto_networks_screen(gateways)
+
+
+def _build_mobile_money_screen():
+    """Build the "🇧🇩 Mobile Money (BD)" submenu (text + keyboard)."""
+    gateways, _ = _collect_topup_gateways()
+    return psel.build_mobile_money_screen(gateways)
+
+
 async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start the wallet top-up flow: show all available payment methods up front,
-    before asking for an amount (amount is collected after a method is chosen)."""
+    """Start the wallet top-up flow: show the shared "💳 Add Funds" amount
+    screen first (services/amount_selection_ui.py) — the exact same screen
+    for every gateway — then the payment-method screen once an amount has
+    been picked (see topup_amount_selected / topup_amount_custom_prompt)."""
     query = update.callback_query
     await query.answer()
 
@@ -266,8 +289,109 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('topup_amount', None)
     context.user_data.pop('topup_method', None)
 
+    # If nothing is configured at all, skip straight to the same "no
+    # payment methods available" message the method screen would show —
+    # no point asking for an amount first in that case.
     text, keyboard, is_empty = _build_topup_method_screen()
+    if is_empty:
+        try:
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
+        return ConversationHandler.END
 
+    amt_text, amt_keyboard = amtsel.build_amount_selection_screen()
+    try:
+        await query.edit_message_text(amt_text, reply_markup=amt_keyboard, parse_mode="HTML")
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+    return AMOUNT_SELECT
+
+
+async def topup_amount_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """A preset amount button (💵 $1 / $3 / $5 / $10) was tapped on the
+    shared Amount Selection screen. Store the amount and move on to the
+    existing, unmodified payment-method screen — every gateway shown there
+    already knows the amount and won't ask for it again."""
+    query = update.callback_query
+    await query.answer()
+
+    amount = amtsel.parse_preset_callback(query.data)
+    if amount is None or amount <= 0:
+        await query.answer("❌ Invalid amount.", show_alert=True)
+        return AMOUNT_SELECT
+
+    context.user_data['topup_amount'] = amount
+    context.user_data.pop('topup_method', None)
+
+    text, keyboard, is_empty = _build_topup_method_screen()
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+    return ConversationHandler.END if is_empty else METHOD
+
+
+async def topup_amount_custom_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"✍️ Custom Amount" tapped on the shared Amount Selection screen —
+    prompt for free-text entry. Handled by the existing, unmodified
+    topup_amount() text handler (AMOUNT state) exactly as before; since no
+    method is pre-selected yet, it takes the same amount-eligible
+    payment-method path it already did."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop('topup_method', None)
+    try:
+        await query.edit_message_text(
+            "💬 How much would you like to add to your wallet, in USD?\nExample: 10",
+            reply_markup=create_cancel_keyboard(),
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+    return AMOUNT
+
+
+async def topup_show_crypto_networks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"🔗 Crypto Networks" tapped on the Add Funds screen — show the
+    on-chain network submenu. Pure navigation: no payment is created here."""
+    query = update.callback_query
+    await query.answer()
+
+    text, keyboard = _build_crypto_networks_screen()
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+    return METHOD
+
+
+async def topup_show_mobile_money(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"🇧🇩 Mobile Money (BD)" tapped on the Add Funds screen — show the
+    bKash / Nagad / Rocket submenu. Pure navigation: no payment is created here."""
+    query = update.callback_query
+    await query.answer()
+
+    text, keyboard = _build_mobile_money_screen()
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+    return METHOD
+
+
+async def topup_back_to_methods(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"⬅️ Back" tapped from the Crypto Networks / Mobile Money submenu —
+    return to the top-level Add Funds screen."""
+    query = update.callback_query
+    await query.answer()
+
+    text, keyboard, is_empty = _build_topup_method_screen()
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -300,13 +424,67 @@ def _amount_range_hint(gmin: float, gmax: float) -> str:
     return ""
 
 
+# ── Amount-Selection-screen integration ──────────────────────────────────
+# The shared Amount Selection screen (services/amount_selection_ui.py) now
+# collects the amount BEFORE a gateway/method is chosen. When that's the
+# case (the normal case going forward), the various "user picked gateway X
+# — now ask for the amount" entry points below must skip the prompt and go
+# straight to the existing, unmodified topup_amount() validation/creation
+# pipeline — the exact same code path that already ran when a user *typed*
+# an amount. These two tiny proxies exist only to satisfy topup_amount()'s
+# expectations (update.message.text / .reply_text, update.effective_user)
+# from a callback-query update, without changing topup_amount() itself or
+# anything it calls.
+class _PreselectedAmountMessage:
+    __slots__ = ("text", "_message")
+
+    def __init__(self, message, text: str):
+        self._message = message
+        self.text = text
+
+    def reply_text(self, *args, **kwargs):
+        return self._message.reply_text(*args, **kwargs)
+
+
+class _PreselectedAmountUpdate:
+    __slots__ = ("message", "effective_user")
+
+    def __init__(self, message, effective_user):
+        self.message = message
+        self.effective_user = effective_user
+
+
+async def _dispatch_with_preselected_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """If ``context.user_data['topup_amount']`` is already set (the user
+    picked it on the Amount Selection screen), feed it straight into
+    topup_amount() — the same function that already validates the amount
+    against this gateway/method's limits and creates the payment — instead
+    of prompting the user to type it again. Returns None (meaning "no
+    amount yet, prompt as usual") when nothing was pre-selected."""
+    amount = context.user_data.get('topup_amount')
+    if not amount:
+        return None
+    query = update.callback_query
+    faux_message = _PreselectedAmountMessage(query.message, str(amount))
+    faux_update = _PreselectedAmountUpdate(faux_message, query.from_user)
+    return await topup_amount(faux_update, context)
+
+
 async def _ask_amount_for_gateway(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                    gateway_key: str, label: str, emoji: str,
                                    gmin: float = 0.0, gmax: float = 0.0):
-    """Shared step: user picked an automated gateway — now ask for the amount."""
+    """Shared step: user picked an automated gateway. If an amount was
+    already chosen on the Amount Selection screen, create the payment
+    straight away; otherwise fall back to the classic text-entry prompt
+    (e.g. old in-flight conversations / the "✍️ Custom Amount" path)."""
     query = update.callback_query
     await query.answer()
     context.user_data['topup_method'] = ('gateway', gateway_key)
+
+    pre_result = await _dispatch_with_preselected_amount(update, context)
+    if pre_result is not None:
+        return pre_result
+
     hint = _amount_range_hint(gmin, gmax)
     try:
         await query.edit_message_text(
@@ -641,10 +819,10 @@ async def topup_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         method_objs = [_M(*d) for d in methods_data]
 
-        message = f"💰 <b>Top Up Wallet</b>\n\nAmount: <code>${amount:.2f}</code>\n\nSelect your preferred payment method below."
+        message, keyboard = psel.build_payment_selection_screen(gateways, method_objs)
         await update.message.reply_text(
             message,
-            reply_markup=create_payment_method_keyboard(method_objs, gateways),
+            reply_markup=keyboard,
             parse_mode="HTML",
         )
         return METHOD
@@ -868,6 +1046,11 @@ async def payment_method_manual(update: Update, context: ContextTypes.DEFAULT_TY
     method_name, method_emoji, mmin, mmax = _m
 
     context.user_data['topup_method'] = ('manual', method_id)
+
+    pre_result = await _dispatch_with_preselected_amount(update, context)
+    if pre_result is not None:
+        return pre_result
+
     hint = _amount_range_hint(mmin, mmax)
     try:
         await query.edit_message_text(
@@ -1104,7 +1287,8 @@ async def payment_manual_proof(update: Update, context: ContextTypes.DEFAULT_TYP
             else:
                 method = session.query(ManualPaymentMethod).filter_by(id=tx.manual_method_id).first()
                 method_name = method.name if method else "Manual"
-            is_gateway_manual = tx.payment_method in (PaymentMethod.BKASH, PaymentMethod.NAGAD)
+            from services.payment_workflow import is_foreign_currency_gateway
+            is_gateway_manual = is_foreign_currency_gateway(tx.payment_method)
             return {
                 "method_name": method_name,
                 "is_gateway_manual": is_gateway_manual,
@@ -1173,7 +1357,8 @@ async def payment_manual_proof(update: Update, context: ContextTypes.DEFAULT_TYP
         amount=amount_line,
         order_id=transaction_id,
         txn_id=stored_txid,
-        customer_name=pui.customer_display(update.effective_user.username, tg_id),
+        full_name=update.effective_user.full_name,
+        username=update.effective_user.username,
         user_id=tg_id,
         status_key="pending_review",
         note=f"📝 <b>Proof:</b> {proof_text}",
@@ -1270,9 +1455,7 @@ async def admin_manual_approve(update: Update, context: ContextTypes.DEFAULT_TYP
         # payment_manual_proof, so no auto/API transaction is ever at risk).
         flipped = session.query(Transaction).filter(
             Transaction.id == tx_id,
-            Transaction.payment_method.in_([
-                PaymentMethod.MANUAL, PaymentMethod.BKASH, PaymentMethod.NAGAD,
-            ]),
+            Transaction.payment_method.in_(pui.reviewable_methods()),
             Transaction.status.in_([
                 TransactionStatus.PENDING,
                 TransactionStatus.AWAITING_CONFIRMATION,
@@ -1291,7 +1474,8 @@ async def admin_manual_approve(update: Update, context: ContextTypes.DEFAULT_TYP
         if not tx:
             return
 
-        is_gateway_manual = tx.payment_method in (PaymentMethod.BKASH, PaymentMethod.NAGAD)
+        from services.payment_workflow import is_foreign_currency_gateway
+        is_gateway_manual = is_foreign_currency_gateway(tx.payment_method)
         if is_gateway_manual:
             # bKash/Nagad Manual mode stores `amount` in BDT (the real money
             # the user was asked to send) — convert to USD with the store's
@@ -1436,9 +1620,7 @@ async def admin_manual_reject(update: Update, context: ContextTypes.DEFAULT_TYPE
         with get_db_session() as session:
             flipped = session.query(Transaction).filter(
                 Transaction.id == _tx_id,
-                Transaction.payment_method.in_([
-                    PaymentMethod.MANUAL, PaymentMethod.BKASH, PaymentMethod.NAGAD,
-                ]),
+                Transaction.payment_method.in_(pui.reviewable_methods()),
                 Transaction.status.in_([
                     TransactionStatus.PENDING,
                     TransactionStatus.AWAITING_CONFIRMATION,
@@ -1457,7 +1639,8 @@ async def admin_manual_reject(update: Update, context: ContextTypes.DEFAULT_TYPE
             _user_tg_id = None
             _amount = 0.0
             if tx:
-                _is_gateway_manual = tx.payment_method in (PaymentMethod.BKASH, PaymentMethod.NAGAD)
+                from services.payment_workflow import is_foreign_currency_gateway
+                _is_gateway_manual = is_foreign_currency_gateway(tx.payment_method)
             if user:
                 _user_tg_id = user.telegram_id
                 _amount = tx.amount
@@ -1733,10 +1916,14 @@ async def _finish_gateway_payment(
     *, payment_method, service_cls, gateway_key: str, gateway_label: str,
     emoji: str, pay_button_label: str,
 ):
-    """Dispatcher: routes bKash/Nagad to their manual-mode flow if the admin
-    has enabled it (see services/gateway_manual_mode.py), otherwise creates
-    the payment via the automated gateway. Cryptomus always goes automated."""
-    if gateway_key in ("bkash", "nagad") and gw_mode.is_manual(gateway_key):
+    """Dispatcher: routes gateways that support a manual-mode toggle (per
+    the Payment Gateway Registry — currently bKash/Nagad) to their
+    manual-mode flow if the admin has enabled it (see
+    services/gateway_manual_mode.py), otherwise creates the payment via the
+    automated gateway. Gateways without the toggle (e.g. Cryptomus) always
+    go automated."""
+    from services.payment_workflow import supports_manual_toggle
+    if supports_manual_toggle(gateway_key) and gw_mode.is_manual(gateway_key):
         return await _finish_gateway_manual_payment(
             update, context, usd_amount,
             payment_method=payment_method, gateway_key=gateway_key,
@@ -2336,31 +2523,23 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         # of the same TXID don't spam admins with duplicate notifications. ──
         pmv_id = None
         try:
+            from services.payment_workflow import enqueue_pending_review
             with get_db_session() as _sess:
-                existing_pmv = _sess.query(PendingManualVerification).filter_by(
-                    gateway="zinipay",
+                pmv = enqueue_pending_review(
+                    _sess,
+                    gateway_id="zinipay",
+                    telegram_user_id=telegram_id,
                     internal_order_id=tx_id,
                     submitted_txid=txid_raw,
-                ).first()
-                if existing_pmv:
-                    pmv_id = existing_pmv.id
-                else:
-                    pmv = PendingManualVerification(
-                        gateway="zinipay",
-                        telegram_user_id=telegram_id,
-                        internal_order_id=tx_id,
-                        submitted_txid=txid_raw,
-                        amount=usd_amount,
-                        currency="USD",
-                        payment_type="mobile_banking",
-                        auto_outcome="AUTO_VERIFY_FAILED",
-                        auto_detail=(f"{error_detail} (expected ৳{bdt_amount:.2f} BDT)")[:500],
-                        status="pending",
-                    )
-                    _sess.add(pmv)
-                    _sess.commit()
-                    _sess.refresh(pmv)
-                    pmv_id = pmv.id
+                    amount=usd_amount,
+                    currency="USD",
+                    payment_type="mobile_banking",
+                    auto_outcome="AUTO_VERIFY_FAILED",
+                    auto_detail=(f"{error_detail} (expected ৳{bdt_amount:.2f} BDT)")[:500],
+                )
+                _sess.commit()
+                _sess.refresh(pmv)
+                pmv_id = pmv.id
         except Exception:
             logger.exception("Failed to create PendingManualVerification (zinipay)")
 
@@ -2389,8 +2568,6 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
 
             if review_claimed:
                 try:
-                    _uname = update.effective_user.username
-                    _uname_display = f"@{_uname}" if _uname else "(no username)"
                     order_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
                     for admin_id in _gateway_admin_recipient_ids():
                         try:
@@ -2401,7 +2578,8 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                                     amount=f"৳{bdt_amount:.2f} BDT (${usd_amount:.2f} USD)",
                                     order_id=tx_id,
                                     txn_id=txid_raw,
-                                    customer_name=_uname_display,
+                                    full_name=update.effective_user.full_name,
+                                    username=update.effective_user.username,
                                     user_id=telegram_id,
                                     time_str=order_time,
                                     status_key="pending_review",
@@ -2950,30 +3128,22 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         pmv_id = None
         if result.outcome in _BINANCE_ADMIN_NOTIFY_OUTCOMES:
             try:
+                from services.payment_workflow import enqueue_pending_review
                 with get_db_session() as _sess:
-                    existing_pmv = _sess.query(PendingManualVerification).filter_by(
-                        gateway="binance_pay",
+                    pmv = enqueue_pending_review(
+                        _sess,
+                        gateway_id="binance_pay",
+                        telegram_user_id=telegram_id,
                         internal_order_id=tx_id,
                         submitted_txid=txid_raw,
-                    ).first()
-                    if existing_pmv:
-                        pmv_id = existing_pmv.id
-                    else:
-                        pmv = PendingManualVerification(
-                            gateway="binance_pay",
-                            telegram_user_id=telegram_id,
-                            internal_order_id=tx_id,
-                            submitted_txid=txid_raw,
-                            amount=expected_amount,
-                            currency=currency,
-                            auto_outcome=outcome_str,
-                            auto_detail=detail_str[:500] if detail_str else None,
-                            status="pending",
-                        )
-                        _sess.add(pmv)
-                        _sess.commit()
-                        _sess.refresh(pmv)
-                        pmv_id = pmv.id
+                        amount=expected_amount,
+                        currency=currency,
+                        auto_outcome=outcome_str,
+                        auto_detail=detail_str[:500] if detail_str else None,
+                    )
+                    _sess.commit()
+                    _sess.refresh(pmv)
+                    pmv_id = pmv.id
             except Exception:
                 logger.exception("Failed to create PendingManualVerification (binance)")
 
@@ -3011,8 +3181,6 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                         VerificationOutcome.CURRENCY_MISMATCH: f"Wrong currency — expected {currency}, received {result.currency or 'unknown'}",
                     }
                     reason = reason_map.get(result.outcome, f"Verification failed ({outcome_str})")
-                    _uname = update.effective_user.username
-                    _uname_display = f"@{_uname}" if _uname else f"(no username)"
                     for admin_id in _gateway_admin_recipient_ids():
                         try:
                             await context.bot.send_message(
@@ -3022,7 +3190,8 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                                     amount=f"{expected_amount} {currency}",
                                     order_id=tx_id,
                                     txn_id=txid_raw,
-                                    customer_name=_uname_display,
+                                    full_name=update.effective_user.full_name,
+                                    username=update.effective_user.username,
                                     user_id=telegram_id,
                                     status_key="pending_review",
                                     note=f"⚠️ <b>Auto-verify failed:</b> {reason}",
@@ -3853,32 +4022,24 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
         pmv_id = None
         if result.outcome in _BYBIT_ADMIN_NOTIFY_OUTCOMES:
             try:
+                from services.payment_workflow import enqueue_pending_review
                 with get_db_session() as _sess:
-                    existing_pmv = _sess.query(PendingManualVerification).filter_by(
-                        gateway="bybit_pay",
+                    pmv = enqueue_pending_review(
+                        _sess,
+                        gateway_id="bybit_pay",
+                        telegram_user_id=telegram_id,
                         internal_order_id=tx_id,
                         submitted_txid=txid_raw,
-                    ).first()
-                    if existing_pmv:
-                        pmv_id = existing_pmv.id
-                    else:
-                        pmv = PendingManualVerification(
-                            gateway="bybit_pay",
-                            telegram_user_id=telegram_id,
-                            internal_order_id=tx_id,
-                            submitted_txid=txid_raw,
-                            amount=expected_amount,
-                            currency=verify_currency,
-                            payment_type=payment_type,
-                            network=network,
-                            auto_outcome=outcome_str,
-                            auto_detail=detail_str[:500] if detail_str else None,
-                            status="pending",
-                        )
-                        _sess.add(pmv)
-                        _sess.commit()
-                        _sess.refresh(pmv)
-                        pmv_id = pmv.id
+                        amount=expected_amount,
+                        currency=verify_currency,
+                        payment_type=payment_type,
+                        network=network,
+                        auto_outcome=outcome_str,
+                        auto_detail=detail_str[:500] if detail_str else None,
+                    )
+                    _sess.commit()
+                    _sess.refresh(pmv)
+                    pmv_id = pmv.id
             except Exception:
                 logger.exception("Failed to create PendingManualVerification (bybit)")
 
@@ -3918,8 +4079,6 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                         BybitVerificationOutcome.NOT_CONFIGURED: "⚙️ Bybit Pay API is not configured",
                     }
                     reason = bybit_reason_map.get(result.outcome, outcome_str)
-                    _uname_b = update.effective_user.username
-                    _uname_display_b = f"@{_uname_b}" if _uname_b else "(no username)"
                     _net_detail = f" • Network: {payment_type}/{network}" if payment_type else ""
                     admin_ids = _gateway_admin_recipient_ids()
                     for admin_id in admin_ids:
@@ -3931,7 +4090,8 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                                     amount=f"{expected_amount} {verify_currency}",
                                     order_id=tx_id,
                                     txn_id=txid_raw,
-                                    customer_name=_uname_display_b,
+                                    full_name=update.effective_user.full_name,
+                                    username=update.effective_user.username,
                                     user_id=telegram_id,
                                     status_key="pending_review",
                                     extra=[("🌐", "Network", f"{payment_type}/{network}")] if payment_type else (),
@@ -4407,6 +4567,11 @@ async def payment_method_stars(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
 
     context.user_data['topup_method'] = ('gateway', 'stars')
+
+    pre_result = await _dispatch_with_preselected_amount(update, context)
+    if pre_result is not None:
+        return pre_result
+
     try:
         await query.edit_message_text(
             "⭐ Telegram Stars selected.\n\n💬 How much would you like to add to your wallet, in USD?\nExample: 10",
@@ -6432,6 +6597,19 @@ _PMV_GATEWAY_LABELS = {
 }
 
 
+def _pmv_gateway_label(gateway: str) -> str:
+    """Display label for a PendingManualVerification's gateway. Checks the
+    cosmetic override table above first (purely for wording polish on the
+    three gateways known today), then falls back to the Payment Gateway
+    Registry's ``display_name`` for any gateway registered after this file
+    was last touched, and finally to the raw key so nothing ever breaks."""
+    if gateway in _PMV_GATEWAY_LABELS:
+        return _PMV_GATEWAY_LABELS[gateway]
+    from services.payment_gateway_registry import registry
+    g = registry.get(gateway)
+    return g.display_name if g else gateway
+
+
 async def _pmv_resolve(
     update,
     context,
@@ -6498,7 +6676,7 @@ async def _pmv_resolve(
                 logger.warning("Failed to write audit log for PMV rejection %s", pmv_id)
             session.commit()
 
-            gateway_label = _PMV_GATEWAY_LABELS.get(gateway, gateway)
+            gateway_label = _pmv_gateway_label(gateway)
             gateway_ui_key = gateway
             # Clean up the earlier "could not verify automatically" notice so
             # the user only sees the final status.
@@ -6571,7 +6749,7 @@ async def _pmv_resolve(
 
         # Record the verified transaction (skip UNIQUE violation if already credited)
         from services.wallet import credit_locked, WalletError
-        gateway_label = _PMV_GATEWAY_LABELS.get(gateway, gateway)
+        gateway_label = _pmv_gateway_label(gateway)
         try:
             if gateway == "binance_pay":
                 bpt = BinancePayTransaction(
@@ -7219,7 +7397,7 @@ async def admin_reject_reason_received(update, context, reason_override: str = N
     pmv_id = reject_data['pmv_id']
     tx_id = reject_data['tx_id']
     gateway = reject_data['gateway']
-    gw_label = _PMV_GATEWAY_LABELS.get(gateway, gateway)
+    gw_label = _pmv_gateway_label(gateway)
 
     with get_db_session() as session:
         pmv = session.query(PendingManualVerification).filter_by(id=pmv_id, gateway=gateway).first()

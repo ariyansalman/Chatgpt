@@ -1,0 +1,213 @@
+"""
+Payment Selection UI — single, reusable "choose a payment method" component.
+════════════════════════════════════════════════════════════════════════════
+
+Every screen a user sees while picking how to add funds (the top-level
+selector, the Crypto Networks submenu, the Mobile Money (BD) submenu) is
+rendered by the three builder functions in this module, from the exact same
+``gateways`` list that ``handlers/payment_handlers.py`` already builds today.
+
+This module is presentation-only — same contract as services/payment_ui.py:
+it never decides which gateways are enabled/configured, never creates a
+payment, and never invents a new callback_data value for an existing
+gateway. Every button's callback_data is still ``pay_<gateway_key>`` or
+``pay_pm_<manual_method_id>``, exactly as before, so every existing
+CallbackQueryHandler in bot.py keeps routing unmodified.
+
+Scaling story — why a new gateway never needs a UI change:
+  • ``classify()`` buckets a gateway key/label into "top" (its own button,
+    e.g. Bybit Pay / Binance Pay), "crypto_network" (collapses into the
+    🔗 Crypto Networks submenu), or "mobile_money_bd" (collapses into the
+    🇧🇩 Mobile Money (BD) submenu) — purely from keyword hints, the same
+    technique services/payment_ui.py already uses to auto-assign emoji to
+    an unknown gateway.
+  • Registering a brand-new gateway in services/payment_gateway_bootstrap.py
+    and adding its key to the ``gateways`` list built by
+    handlers/payment_handlers.py is the only step required for it to show
+    up in the right screen here automatically.
+"""
+from __future__ import annotations
+
+from typing import Iterable, List, Optional, Sequence, Tuple
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+# Full checkout flows that are always their own top-level button. Note that
+# a couple of these are registered with payment_type="crypto" in the
+# gateway registry (services/payment_gateway_bootstrap.py) — that field
+# describes settlement currency, not "is this an on-chain network picker",
+# so it isn't what decides placement here.
+_TOP_LEVEL_KEYS = {"bybit_pay", "binance_pay"}
+
+# Keyword hints — mirrors the _EMOJI_HINTS table in services/payment_ui.py
+# so classification and emoji-inference stay in sync without a shared
+# lookup table. A brand-new gateway key/label is matched the same way an
+# unknown gateway already gets a sensible emoji today.
+_CRYPTO_NETWORK_HINTS: Tuple[str, ...] = (
+    "usdt", "usdc", "trc20", "bep20", "erc20", "ton", "sol", "avax", "avaxc",
+    "matic", "arb", "op", "base", "ltc", "litecoin", "crypto", "coin",
+    "bitcoin", "btc", "eth", "trx", "bnb", "cryptomus", "nowpayments",
+    "heleket", "cryptobot",
+)
+_MOBILE_MONEY_BD_HINTS: Tuple[str, ...] = (
+    "bkash", "nagad", "rocket", "upay", "zinipay", "mobile money", "bdt",
+)
+
+# Preferred display order for the well-known crypto networks (spec order).
+# Anything not listed here is appended after, in the order it was received —
+# so a brand-new network still appears, just at the end of the list.
+_CRYPTO_NETWORK_ORDER: Tuple[str, ...] = (
+    "bybit_trc20", "bybit_bep20", "bybit_erc20", "bybit_ton",
+    "bybit_sol", "bybit_avaxc", "bybit_ltc",
+)
+
+
+def classify(key: str, label: str = "") -> str:
+    """Return "top" | "crypto_network" | "mobile_money_bd" for one gateway."""
+    if key in _TOP_LEVEL_KEYS:
+        return "top"
+    text = f"{key} {label}".lower()
+    if any(h in text for h in _MOBILE_MONEY_BD_HINTS):
+        return "mobile_money_bd"
+    if any(h in text for h in _CRYPTO_NETWORK_HINTS):
+        return "crypto_network"
+    return "top"
+
+
+def _btn(gw: dict, label: Optional[str] = None, emoji: Optional[str] = None,
+         callback_key: Optional[str] = None) -> InlineKeyboardButton:
+    text = f'{emoji or gw.get("emoji", "💳")} {label or gw["label"]}'
+    return InlineKeyboardButton(text, callback_data=f'pay_{callback_key or gw["key"]}')
+
+
+def _split(gateways: Optional[Iterable[dict]]):
+    top: List[dict] = []
+    crypto: List[dict] = []
+    mobile: List[dict] = []
+    for gw in gateways or []:
+        bucket = classify(gw["key"], gw.get("label", ""))
+        if bucket == "crypto_network":
+            crypto.append(gw)
+        elif bucket == "mobile_money_bd":
+            mobile.append(gw)
+        else:
+            top.append(gw)
+    # Bybit Pay / Binance Pay always lead, in that order, when present.
+    priority = {"bybit_pay": 0, "binance_pay": 1}
+    top.sort(key=lambda g: priority.get(g["key"], 2))
+    return top, crypto, mobile
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Screen 1 — 💳 Add Funds (top-level selector)
+# ─────────────────────────────────────────────────────────────────────────
+
+def build_payment_selection_screen(
+    gateways: Optional[Sequence[dict]],
+    methods: Optional[Sequence] = (),
+) -> Tuple[str, InlineKeyboardMarkup]:
+    """Build the redesigned Add Funds screen: one row per top-level
+    gateway/manual method, a Crypto Networks row (only if any crypto-network
+    gateway is available), a Mobile Money (BD) row (only if any is
+    available), and Back to Main Menu."""
+    top, crypto, mobile = _split(gateways)
+
+    rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in top]
+
+    for m in (methods or []):
+        rows.append([InlineKeyboardButton(
+            f"{m.emoji or '💳'} {m.name}", callback_data=f"pay_pm_{m.id}",
+        )])
+
+    if crypto:
+        rows.append([InlineKeyboardButton("🔗 Crypto Networks", callback_data="topup_menu_crypto")])
+    if mobile:
+        rows.append([InlineKeyboardButton("🇧🇩 Mobile Money (BD)", callback_data="topup_menu_mobile")])
+
+    rows.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")])
+
+    text = "💳 <b>Add Funds</b>\n\nSelect a payment method."
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Screen 2 — 🔗 Crypto Networks
+# ─────────────────────────────────────────────────────────────────────────
+
+def build_crypto_networks_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, InlineKeyboardMarkup]:
+    _, crypto, _ = _split(gateways)
+    order = {key: i for i, key in enumerate(_CRYPTO_NETWORK_ORDER)}
+    crypto_sorted = sorted(crypto, key=lambda g: order.get(g["key"], len(order)))
+
+    rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in crypto_sorted]
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
+    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+
+    text = "🔗 <b>Crypto Networks</b>\n\nSelect a network."
+    return text, InlineKeyboardMarkup(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Screen 3 — 🇧🇩 Mobile Money (BD)
+# ─────────────────────────────────────────────────────────────────────────
+
+# Canonical (emoji, display label) for the three BD mobile-money providers,
+# per the redesign spec — applied regardless of which underlying gateway
+# key currently serves that provider.
+_MOBILE_MONEY_DISPLAY = {
+    "bkash":  ("🩷", "bKash"),
+    "nagad":  ("🧡", "Nagad"),
+    "rocket": ("💜", "Rocket"),
+}
+
+
+def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, InlineKeyboardMarkup]:
+    """Render bKash / Nagad / Rocket as three distinct buttons.
+
+    bKash and Nagad each route to their own standalone gateway
+    (``pay_bkash`` / ``pay_nagad``) when that gateway is configured, and
+    fall back to the combined ZiniPay flow (``pay_zinipay``, which already
+    covers bKash/Nagad/Rocket) when the standalone one isn't. Rocket has no
+    standalone flow today, so it always routes through ZiniPay. Any other
+    BD mobile-money gateway added in the future (not bkash/nagad/zinipay)
+    still appears automatically, using its own label/emoji, after these
+    three.
+    """
+    _, _, mobile = _split(gateways)
+    by_key = {gw["key"]: gw for gw in mobile}
+    has_zinipay = "zinipay" in by_key
+
+    rows: List[List[InlineKeyboardButton]] = []
+    used_keys = set()
+
+    if "bkash" in by_key:
+        emoji, label = _MOBILE_MONEY_DISPLAY["bkash"]
+        rows.append([_btn(by_key["bkash"], label=label, emoji=emoji)])
+        used_keys.add("bkash")
+    elif has_zinipay:
+        emoji, label = _MOBILE_MONEY_DISPLAY["bkash"]
+        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji)])
+
+    if "nagad" in by_key:
+        emoji, label = _MOBILE_MONEY_DISPLAY["nagad"]
+        rows.append([_btn(by_key["nagad"], label=label, emoji=emoji)])
+        used_keys.add("nagad")
+    elif has_zinipay:
+        emoji, label = _MOBILE_MONEY_DISPLAY["nagad"]
+        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji)])
+
+    if has_zinipay:
+        emoji, label = _MOBILE_MONEY_DISPLAY["rocket"]
+        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji)])
+        used_keys.add("zinipay")
+
+    # Any future BD mobile-money gateway that isn't bkash/nagad/zinipay.
+    for key, gw in by_key.items():
+        if key not in used_keys:
+            rows.append([_btn(gw)])
+
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
+    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+
+    text = "🇧🇩 <b>Mobile Money (BD)</b>\n\nSelect a provider."
+    return text, InlineKeyboardMarkup(rows)

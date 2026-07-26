@@ -30,6 +30,15 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
+# Registers every payment gateway's capabilities once for this process too
+# — this is a separate process from bot.py, so it needs its own bootstrap
+# call. Idempotent / safe to call from multiple processes.
+try:
+    from services.payment_gateway_bootstrap import ensure_bootstrapped as _ensure_gateways_bootstrapped
+    _ensure_gateways_bootstrapped()
+except Exception:
+    logging.getLogger(__name__).exception("Payment gateway registry bootstrap failed in webhook_server")
+
 # ── V27: Webhook observability middleware ──────────────────────────────────
 # These hooks add observability-only logging without modifying any payment
 # logic or response codes.  Failures are swallowed — a logging error must

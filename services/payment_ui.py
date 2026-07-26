@@ -473,8 +473,45 @@ def pending_review_keyboard(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Admin review card
+# Admin review card — compact moderation layout
+#
+# THE single admin review card used for every payment method and every
+# manual-review surface (generic manual, bKash/Nagad manual mode, the
+# initial deposit-request notification, and Binance/Bybit/ZiniPay
+# failed-auto-verification review). One template, one visual language,
+# regardless of which gateway or which surface renders it.
+#
+# Layout is fixed and identical everywhere:
+#   🆔 Deposit ID → status → 👤 User → 💳 Gateway → 💰 Amount →
+#   🧾 Transaction ID → 🕒 Submitted → (verify reminder, pending only).
+# Monospace (tap-to-copy) is used for Deposit ID, Telegram ID, Amount,
+# Transaction ID, and Submitted Time. Optional context (network,
+# verification result, per-gateway extras, free-form notes) still renders
+# — nothing that used to be shown is silently dropped — it just appears
+# after the fixed fields instead of crowding the core layout.
 # ─────────────────────────────────────────────────────────────────────────
+
+_ADMIN_TITLES: dict[str, str] = {
+    "pending_review":  "🔔 New Deposit Request",
+    "approved":        "✅ Deposit Approved",
+    "rejected":        "❌ Deposit Rejected",
+    "expired":         "⌛ Deposit Expired",
+    "cancelled":       "🚫 Deposit Cancelled",
+    "failed":          "⚠️ Deposit Failed",
+    "waiting_payment": "🔔 Deposit Request",
+}
+
+
+def _status_parts(status_key: str) -> Tuple[str, str]:
+    """Split a status badge ('🟡 Pending Review') into its emoji and text
+    so the compact admin card can show the emoji on the label line and
+    the plain text on the value line, instead of repeating it."""
+    raw = STATUS_BADGES.get(status_key, status_key)
+    if " " in raw:
+        emoji, text = raw.split(" ", 1)
+        return emoji, text
+    return "•", raw
+
 
 def admin_review_card(
     *,
@@ -484,6 +521,8 @@ def admin_review_card(
     created_at=None,
     txn_id: Optional[str] = None,
     customer_name: Optional[str] = None,
+    full_name: Optional[str] = None,
+    username: Optional[str] = None,
     user_id=None,
     network: Optional[str] = None,
     verification_result: Optional[str] = None,
@@ -493,35 +532,75 @@ def admin_review_card(
     note: Optional[str] = None,
     gateway_label_override: Optional[str] = None,
 ) -> str:
-    """Build THE single admin review card used for every payment method and
-    every manual-review surface (generic manual, bKash/Nagad manual mode,
-    and Binance/Bybit/ZiniPay failed-auto-verification review).
+    """Build THE single admin review card. See module comment block above
+    for the layout contract.
 
-    Field order is fixed and identical everywhere:
-    💳 Payment Method → 💰 Amount → 🧾 Deposit ID → 🔗 Transaction ID →
-    👤 Customer → 🆔 Telegram ID → 🌐 Network → ⚠ Verification Result → status.
-    ``network`` / ``verification_result`` are omitted automatically when not
-    applicable (e.g. a plain bank-transfer submission has no network).
+    Name resolution for the 👤 User block: prefers ``full_name`` (+
+    ``@username`` when present); falls back to a caller-supplied
+    ``customer_name`` string (legacy callers that already pre-formatted
+    it); falls back to ``User {user_id}`` when no name is known at all.
+    The username segment is simply omitted when there is no Telegram
+    username — never a placeholder like "(no username)".
     """
-    label, emoji = gateway_meta(gateway_key, gateway_label_override)
-    fields = [
-        ("💳", "Payment Method", label),
-        ("💰", "Amount", amount),
-        ("🧾", "Deposit ID", _display_deposit_id(order_id, created_at)),
-        ("🔗", "Transaction ID", txn_id),
-        ("👤", "Customer", customer_name),
-        ("🆔", "Telegram ID", user_id),
-        ("🌐", "Network", network),
-        ("⚠", "Verification Result", verification_result),
-    ]
-    fields.extend(extra)
-    return build_card(
-        title="Payment Review",
-        title_emoji="🛎️",
-        fields=fields,
-        status_key=status_key,
-        note=note,
+    gateway_label, _ = gateway_meta(gateway_key, gateway_label_override)
+    deposit_id = _display_deposit_id(order_id, created_at)
+    status_emoji, status_text = _status_parts(status_key)
+    title = _ADMIN_TITLES.get(status_key, "🔔 Deposit Update")
+
+    if full_name and username:
+        name_line = f"{full_name} (@{username})"
+    elif full_name:
+        name_line = full_name
+    elif username:
+        name_line = f"@{username}"
+    elif customer_name:
+        name_line = customer_name
+    elif user_id is not None:
+        name_line = f"User {user_id}"
+    else:
+        name_line = None
+
+    submitted = time_str or (
+        created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if created_at else now_str()
     )
+
+    lines = [f"<b>{title}</b>", ""]
+
+    def block(field_emoji: str, field_label: str, *value_lines) -> None:
+        vals = [v for v in value_lines if v not in (None, "")]
+        if not vals:
+            return
+        lines.append(f"{field_emoji} <b>{field_label}</b>")
+        lines.extend(str(v) for v in vals)
+        lines.append("")
+
+    block("🆔", "Deposit ID", f"<code>{deposit_id}</code>" if deposit_id else None)
+    block(status_emoji, "Status", status_text)
+    block("👤", "User", name_line, f"<code>{user_id}</code>" if user_id is not None else None)
+    block("💳", "Gateway", gateway_label)
+    block("💰", "Amount", f"<code>{amount}</code>" if amount else None)
+    # Skip Transaction ID when it's identical to the Deposit ID — the same
+    # reference never needs to be shown twice.
+    if txn_id and str(txn_id) != str(deposit_id):
+        block("🧾", "Transaction ID", f"<code>{txn_id}</code>")
+    block("🌐", "Network", network)
+    block("⚠", "Verification Result", verification_result)
+    for field_emoji, field_label, value in extra:
+        block(field_emoji, field_label, value if value not in (None, "") else None)
+    block("🕒", "Submitted", f"<code>{submitted}</code>" if submitted else None)
+
+    if note:
+        lines.append(note)
+        lines.append("")
+
+    if status_key == "pending_review":
+        lines.append("⚠️ Verify the Transaction ID before approving.")
+        lines.append("")
+
+    while lines and lines[-1] == "":
+        lines.pop()
+
+    return "\n".join(lines)
 
 
 def admin_resolution_suffix(action: str, actor_label: str, reason: Optional[str] = None) -> str:
@@ -577,6 +656,20 @@ async def clear_pending_user_message(bot, pmv_id: int) -> None:
         pass
 
 
+def _extract_user_id_from_cb(view_user_cb: Optional[str]) -> Optional[str]:
+    """Best-effort pull of the trailing Telegram user id out of a
+    ``view_user_cb`` like ``admin_view_user_pmv_123456789`` so the
+    keyboard can offer a direct "Message User" link without any caller
+    having to pass the id separately or a new callback/handler being
+    introduced — the link is a plain ``tg://user?id=`` deep link, not a
+    bot callback, so it needs no routing of its own.
+    """
+    if not view_user_cb:
+        return None
+    tail = view_user_cb.rsplit("_", 1)[-1]
+    return tail if tail.isdigit() else None
+
+
 def admin_review_keyboard(
     *,
     verify_cb: Optional[str] = None,
@@ -586,24 +679,27 @@ def admin_review_keyboard(
     back_cb: Optional[str] = None,
 ) -> InlineKeyboardMarkup:
     """Standard admin review keyboard. Order is always:
-    🔄 Verify Again, ✅ Approve, ❌ Reject, 👤 View User, ⬅ Back.
-    A button is omitted only if its callback wasn't provided (e.g. some
-    gateways have no automated re-verification, or a caller has no natural
-    "back" destination), but relative order among the buttons that *are*
-    present never changes.
+    ✅ Approve / ❌ Reject, then 🔄 Verify Again / 👤 View User, then
+    💬 Message User, then ⬅ Back. A button is omitted only if its
+    callback wasn't provided (e.g. some gateways have no automated
+    re-verification, or a caller has no natural "back" destination), but
+    relative order among the buttons that *are* present never changes.
     """
-    row1, row2, row3 = [], [], []
-    if verify_cb:
-        row1.append(InlineKeyboardButton("🔄 Verify Again", callback_data=verify_cb))
+    row1, row2, row3, row4 = [], [], [], []
     if approve_cb:
         row1.append(InlineKeyboardButton("✅ Approve", callback_data=approve_cb))
     if reject_cb:
-        row2.append(InlineKeyboardButton("❌ Reject", callback_data=reject_cb))
+        row1.append(InlineKeyboardButton("❌ Reject", callback_data=reject_cb))
+    if verify_cb:
+        row2.append(InlineKeyboardButton("🔄 Verify Again", callback_data=verify_cb))
     if view_user_cb:
         row2.append(InlineKeyboardButton("👤 View User", callback_data=view_user_cb))
+    msg_user_id = _extract_user_id_from_cb(view_user_cb)
+    if msg_user_id:
+        row3.append(InlineKeyboardButton("💬 Message User", url=f"tg://user?id={msg_user_id}"))
     if back_cb:
-        row3.append(InlineKeyboardButton("⬅ Back", callback_data=back_cb))
-    rows = [r for r in (row1, row2, row3) if r]
+        row4.append(InlineKeyboardButton("⬅ Back", callback_data=back_cb))
+    rows = [r for r in (row1, row2, row3, row4) if r]
     return InlineKeyboardMarkup(rows or [[InlineKeyboardButton("🔄 Refresh", callback_data="noop")]])
 
 
@@ -727,9 +823,19 @@ def payment_expired_keyboard() -> InlineKeyboardMarkup:
 def reviewable_methods():
     """The payment methods whose PENDING/AWAITING_CONFIRMATION Transaction
     rows represent a deposit genuinely waiting on a human (as opposed to a
-    gateway still waiting on its own webhook/API confirmation)."""
+    gateway still waiting on its own webhook/API confirmation).
+
+    Sourced from the central Payment Gateway Registry (see
+    services/payment_gateway_registry.py / payment_gateway_bootstrap.py)
+    instead of a hardcoded tuple — a newly registered gateway with
+    verification_mode="manual"/"hybrid" is picked up automatically.
+    """
     from database.models import PaymentMethod
-    return (PaymentMethod.MANUAL, PaymentMethod.BKASH, PaymentMethod.NAGAD)
+    from services.payment_gateway_bootstrap import ensure_bootstrapped
+    from services.payment_workflow import reviewable_payment_methods
+
+    ensure_bootstrapped()
+    return reviewable_payment_methods(PaymentMethod)
 
 
 def pending_tx_statuses():

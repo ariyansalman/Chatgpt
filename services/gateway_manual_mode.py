@@ -21,8 +21,20 @@ from typing import Optional
 from database import get_db_session
 from database.models import PaymentGatewayConfig
 
-GATEWAYS = ("bkash", "nagad")
 DEFAULT_MODE = "auto"
+
+
+def _toggle_eligible_gateways() -> tuple:
+    """Gateways that support flipping between an automated API flow and an
+    admin-managed manual flow, per the Payment Gateway Registry (currently
+    bKash/Nagad) — replaces a hardcoded ("bkash", "nagad") tuple so a
+    future gateway registered with ``supports_manual_toggle=True``
+    inherits this automatically with no code change here."""
+    from services.payment_gateway_bootstrap import ensure_bootstrapped
+    from services.payment_gateway_registry import registry
+
+    ensure_bootstrapped()
+    return tuple(g.gateway_id for g in registry.all() if g.supports_manual_toggle)
 
 
 def _get_or_create_config(session, gateway: str) -> PaymentGatewayConfig:
@@ -37,7 +49,7 @@ def _get_or_create_config(session, gateway: str) -> PaymentGatewayConfig:
 
 def get_mode(gateway: str) -> str:
     """Return "auto" or "manual" for the given gateway ("bkash"/"nagad")."""
-    if gateway not in GATEWAYS:
+    if gateway not in _toggle_eligible_gateways():
         return DEFAULT_MODE
     with get_db_session() as session:
         row = _get_or_create_config(session, gateway)
