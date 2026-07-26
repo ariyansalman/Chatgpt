@@ -1811,22 +1811,11 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
         from database import Transaction, TransactionStatus, PaymentMethod
         from services import payment_ui as _pui
 
-        # SYNCHRONIZATION FIX: was a locally hand-copied filter that could
-        # (and did) drift out of sync with handlers/admin_pending_deposits.py
-        # and handlers/admin_dashboard.py. Now sourced from one shared
-        # definition — see services/payment_ui.count_pending_deposits.
-        _counts = _pui.count_pending_deposits(session)
-        pending_review_count = _counts["deposits"]
-        gateway_verification_count = _counts["gateway_verifications"]
-
-        # Collect display tuples for legacy inline-confirm rows — all within
-        # the session so attribute reads never hit a detached-instance error.
-        tx_rows = (
-            session.query(Transaction)
-            .filter(Transaction.status == TransactionStatus.PENDING)
-            .order_by(Transaction.created_at.desc())
-            .all()
-        )
+        # The rendered rows are the source of truth for this screen. Derive
+        # the counter and empty/list branch from this exact result so the
+        # Back action cannot show a stale empty state beside live rows.
+        tx_rows = _pui.pending_deposit_rows(session, sort_desc=True)
+        pending_review_count = len(tx_rows)
         for txn in tx_rows:
             _u = session.query(User).filter_by(id=txn.user_id).first()
             uname = (
@@ -1847,8 +1836,9 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
         [InlineKeyboardButton(review_label, callback_data="pd:list:0:desc")],
     ]
 
-    # Secondary section — legacy inline confirmations
-    if tx_display:
+    # Secondary section — legacy inline confirmations. It is only rendered
+    # when the same pending-deposit result is non-empty.
+    if pending_review_count > 0:
         keyboard.append(
             [InlineKeyboardButton("── Manual Confirmations ──", callback_data="noop")]
         )
@@ -1862,7 +1852,7 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     # ── Header ─────────────────────────────────────────────────────────────
-    if pending_review_count:
+    if pending_review_count > 0:
         header = (
             f"💳 <b>Payments</b>\n\n"
             f"⚠️ <b>{pending_review_count}</b> deposit(s) awaiting manual review.\n"
@@ -1870,11 +1860,6 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
         )
     else:
         header = "💳 <b>Payments</b>\n\nNo deposits are currently waiting for review."
-    if gateway_verification_count:
-        header += (
-            f"\n⚠️ <b>{gateway_verification_count}</b> gateway verification(s) also "
-            "awaiting review (Binance/Bybit/ZiniPay panels)."
-        )
 
     try:
         await query.edit_message_text(

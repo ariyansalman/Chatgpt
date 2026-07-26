@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 # Placeholder items: callback action → (emoji, display title, description)
 _PLACEHOLDERS: dict[str, tuple[str, str, str]] = {
     "logs":    ("📝", "Activity Logs",   "Admin action history and event stream."),
-    "db":      ("🗄️", "Database Status", "Connection pool, table sizes, and query stats."),
     "cache":   ("🧹", "Cache Manager",   "View and flush in-memory and Redis caches."),
     "backup":  ("📤", "Backup",          "Export a full database snapshot."),
     "restore": ("📥", "Restore",         "Import a previously exported database snapshot."),
@@ -37,21 +36,18 @@ async def system_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     text_ = (
         "🖥️ <b>System Tools</b>\n\n"
-        "Live diagnostics are marked 🟢. "
-        "Items marked 🚧 are reserved for a future update."
+        "Live diagnostics for the running bot."
     )
     kb = [
-        # Live tools
+        # Live tools only. The former "Activity Logs / Database Status /
+        # Cache Manager / Backup / Restore" buttons here were unfinished
+        # placeholders with no backend ("coming soon" screens). Cache
+        # Manager and Backups are real, working features and live under
+        # Tools on the main panel instead — no functionality was removed.
         [InlineKeyboardButton("📈 System Health",    callback_data="acc:sys:health"),
          InlineKeyboardButton("🔄 Background Jobs",  callback_data="acc:sys:jobs")],
         [InlineKeyboardButton("📐 Schema Drift",     callback_data="acc:sys:drift"),
          InlineKeyboardButton("🔧 Maintenance",      callback_data="admin_maintenance_toggle")],
-        # Placeholders (🚧 future)
-        [InlineKeyboardButton("📝 Activity Logs 🚧", callback_data="acc:sys:logs"),
-         InlineKeyboardButton("🗄️ Database Status 🚧", callback_data="acc:sys:db")],
-        [InlineKeyboardButton("🧹 Cache Manager 🚧", callback_data="acc:sys:cache"),
-         InlineKeyboardButton("📤 Backup 🚧",        callback_data="acc:sys:backup")],
-        [InlineKeyboardButton("📥 Restore 🚧",       callback_data="acc:sys:restore")],
         # Navigation
         [InlineKeyboardButton("🔙 Back",             callback_data="acc:root")],
     ]
@@ -95,6 +91,9 @@ async def route(action, rest, update, context):
     if action == "health":
         await _render_health(update, context)
         return
+    if action == "db":
+        await _render_db_status(update, context)
+        return
     if action == "drift":
         await _render_drift(update, context)
         return
@@ -120,6 +119,65 @@ async def _render_health(update, context):
         lines.append(f"• Live tables: <b>{len(insp.get_table_names())}</b>")
     except Exception as e:
         lines.append(f"❌ {e}")
+    try:
+        await query.answer()
+        try:
+            await query.edit_message_text("\n".join(lines),
+                                          reply_markup=_kb_back(),
+                                          parse_mode="HTML")
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
+    except Exception:
+        pass
+
+
+async def _render_db_status(update, context):
+    """🗄 Database Status — read-only connection, pool, and table-size
+    report. Same SELECT 1 / inspect() pattern as _render_health above, with
+    more detail. No writes, no schema changes."""
+    query = update.callback_query
+    lines = ["🗄 <b>Database Status</b>", ""]
+    try:
+        with get_db_session() as s:
+            s.execute(text("SELECT 1"))
+        lines.append(f"• Engine: <code>{engine.url.drivername}</code>")
+        lines.append("• Connectivity: 🟢 ok")
+
+        pool = getattr(engine, "pool", None)
+        if pool is not None:
+            for label, fn in (
+                ("Pool size", "size"), ("Checked out", "checkedout"),
+                ("Overflow", "overflow"), ("Checked in", "checkedin"),
+            ):
+                fn_obj = getattr(pool, fn, None)
+                if callable(fn_obj):
+                    try:
+                        lines.append(f"• {label}: <b>{fn_obj()}</b>")
+                    except Exception:
+                        pass
+
+        insp = inspect(engine)
+        table_names = insp.get_table_names()
+        lines.append(f"• Live tables: <b>{len(table_names)}</b>")
+
+        counts = []
+        with get_db_session() as s:
+            for tname in table_names:
+                try:
+                    n = s.execute(text(f'SELECT COUNT(*) FROM "{tname}"')).scalar()
+                    counts.append((tname, n or 0))
+                except Exception:
+                    continue
+        counts.sort(key=lambda t: t[1], reverse=True)
+        if counts:
+            lines.append("")
+            lines.append("<b>Largest tables:</b>")
+            for tname, n in counts[:10]:
+                lines.append(f"  • {tname}: <b>{n:,}</b> rows")
+    except Exception as e:
+        lines.append(f"❌ {e}")
+    log_admin_action(update.effective_user.id, "system.db_status_view")
     try:
         await query.answer()
         try:

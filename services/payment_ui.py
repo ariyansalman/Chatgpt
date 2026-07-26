@@ -738,6 +738,28 @@ def pending_tx_statuses():
     return (TransactionStatus.PENDING, TransactionStatus.AWAITING_CONFIRMATION)
 
 
+def pending_deposit_rows(session, sort_desc: bool = True):
+    """Load the live pending-deposit rows used by the admin UI.
+
+    The list itself is the authoritative result for the screen.  Callers
+    derive the displayed count and empty/list branch from this same result
+    instead of running a separate count query that can disagree with the
+    rows rendered immediately afterwards.
+    """
+    from database.models import Transaction
+
+    col = Transaction.created_at.desc() if sort_desc else Transaction.created_at.asc()
+    return (
+        session.query(Transaction)
+        .filter(
+            Transaction.payment_method.in_(reviewable_methods()),
+            Transaction.status.in_(pending_tx_statuses()),
+        )
+        .order_by(col)
+        .all()
+    )
+
+
 def count_pending_deposits(session) -> dict:
     """Return the live, authoritative pending-review counts.
 
@@ -750,14 +772,9 @@ def count_pending_deposits(session) -> dict:
     from sqlalchemy import func as _f
     from database.models import Transaction, PendingManualVerification
 
-    deposits = (
-        session.query(_f.count(Transaction.id))
-        .filter(
-            Transaction.payment_method.in_(reviewable_methods()),
-            Transaction.status.in_(pending_tx_statuses()),
-        )
-        .scalar() or 0
-    )
+    # Keep the displayed counter on the exact same live row result used by
+    # the Pending Deposits list and its empty-state branch.
+    deposits = len(pending_deposit_rows(session))
     gateway_verifications = (
         session.query(_f.count(PendingManualVerification.id))
         .filter(PendingManualVerification.status == "pending")

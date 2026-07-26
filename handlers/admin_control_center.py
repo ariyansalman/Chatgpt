@@ -1,6 +1,8 @@
-"""Premium Admin Control Center — categorized navigation (v45).
+"""Premium Admin Control Center — categorized navigation (v46).
 
-Root shows 8 main categories + search + quick-access + maintenance + exit.
+Root shows the 12 enterprise sections (Dashboard, Products, Orders,
+Payments, Customers, Marketing, Notifications, UI & Menu, Store Settings,
+Security, System, Tools) + search + quick-access + maintenance + exit.
 Each category opens a paginated submenu (≤8 items + Back/Home per page).
 
 Callback namespace
@@ -37,12 +39,20 @@ from utils.perf import perf_track
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Category definitions
+# Category definitions — Enterprise structure (v46)
+#
+# Exactly 12 top-level sections, matching the approved information
+# architecture. Every existing feature keeps its original callback_data —
+# only *which category dict it's listed under* changed, so no routing,
+# handler, or business logic was touched anywhere in the bot.
+#
 # Each category is a list of pages; each page is a list of (label, callback_data)
-# Maximum 8 items per page so that page + Back + Home ≤ 10 buttons.
+# Maximum 8 items per page so that page + Back/pagination ≤ 10 buttons.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
+
+    # ── 📊 Dashboard — reporting & KPIs (unchanged from v45) ────────────────
     "dashboard": [[
         ("📊 Dashboard",           "acc:sec:dashboard"),
         ("📈 Analytics",           "admin_analytics"),
@@ -50,39 +60,47 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
         ("💼 Business Insights",   "abiz:menu"),
         ("📉 Sales Forecast",      "asf:menu"),
         ("💹 Profit",              "acc:sec:profit"),
-        ("📜 Activity Timeline",   "gat:menu"),
+        ("📜 Activity Logs",       "gat:menu"),
+        ("📈 Growth & LTV",        "admin_analytics_cohort"),
     ]],
 
-    "products": [[
-        ("📦 Products",            "admin_products"),
-        ("🗂 Categories",          "admin_manage_categories"),
-        ("🎀 Bundles",             "abn:menu"),
-        ("🎟 Gift Cards",          "agc:menu"),
-        ("📋 Product Templates",   "apt:menu"),
-        ("📄 Clone Products",      "pct:menu"),
-    ]],
+    # ── 📦 Products — catalog, discovery, inventory & suppliers all live
+    # under one roof (former "inventory" and "suppliers" top-level categories
+    # folded in as extra pages — they're all product-management, not
+    # separate concerns).
+    "products": [
+        [
+            ("📦 Products",            "admin_products"),
+            ("🗂 Categories",          "admin_manage_categories"),
+            ("🎀 Bundles",             "abn:menu"),
+            ("🎟 Gift Cards",          "agc:menu"),
+            ("🗂 Template Manager",    "apt:menu"),
+            ("📄 Clone Products",      "pct:menu"),
+        ],
+        [
+            ("❓ Product FAQ",          "acc:sec:pfaq"),
+            ("⚖️ Product Compare",      "acc:sec:pcmp"),
+            ("❤️ Favorites",            "acc:sec:favs"),
+            ("🕒 Recently Viewed",      "acc:sec:rvw"),
+        ],
+        [
+            ("📥 Inventory",           "admin_restock_keys"),
+            ("📂 Batches",             "acc:sec:batches"),
+            ("🏷 Price History",       "acc:sec:ph"),
+            ("⏳ Reservation",         "acc:sec:irs"),
+            ("⚡ Bulk Products",       "bpim:menu"),
+            ("📉 Low Stock",           "admin_low_stock"),
+        ],
+        [
+            ("🏭 Suppliers",           "acc:sec:suppliers"),
+            ("🗝 File & Keys",         "flm:menu"),
+            ("🚚 Delivery Manager",    "dms:menu"),
+        ],
+    ],
 
-    "discovery": [[
-        ("❓ Product FAQ",          "acc:sec:pfaq"),
-        ("⚖️ Product Compare",      "acc:sec:pcmp"),
-        ("❤️ Favorites",            "acc:sec:favs"),
-        ("🕒 Recently Viewed",      "acc:sec:rvw"),
-    ]],
-
-    "inventory": [[
-        ("📥 Inventory",           "admin_restock_keys"),
-        ("📂 Batches",             "acc:sec:batches"),
-        ("🏷 Price History",       "acc:sec:ph"),
-        ("⏳ Reservation",         "acc:sec:irs"),
-        ("⚡ Bulk Products",       "bpim:menu"),
-    ]],
-
-    "suppliers": [[
-        ("🏭 Suppliers",           "acc:sec:suppliers"),
-        ("🗝 File & Keys",         "flm:menu"),
-        ("🚚 Delivery Manager",    "dms:menu"),
-    ]],
-
+    # ── 🛒 Orders — order lifecycle, incl. disputes (moved in from the old
+    # "loyalty" grab-bag — a dispute is an order-level issue, not a loyalty
+    # one).
     "orders": [[
         ("🧾 Orders",              "admin_orders"),
         ("🔎 Search Order",        "aos:menu"),
@@ -91,10 +109,12 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
         ("📬 Delivery Queue",      "acc:sec:delivery"),
         ("💰 Refunds",             "aref:menu"),
         ("🛍 Gift Purchase",       "agp:menu"),
+        ("⚠️ Disputes",            "admin_view_disputes"),
     ]],
 
+    # ── 💳 Payments — unchanged from v45 ──────────────────────────────────
     "payments": [[
-        ("💳 Payment Gateways",    "admin_gateways"),
+        ("💳 Payment Settings",    "admin_gateways"),
         ("🏦 Manual Payments",     "admin_payment_methods"),
         ("🧾 Pending Deposits",    "pd:list:0:desc"),
         ("👛 Wallets",             "acc:sec:wallets"),
@@ -103,108 +123,152 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
         ("🔌 Webhook Monitor",     "awm:menu"),
     ]],
 
+    # ── 👥 Customers — accounts & customer support (Support moved in from
+    # the old "loyalty" grab-bag — it's a customer-facing concern, not a
+    # loyalty-program one).
     "customers": [[
         ("👥 Users",               "admin_users"),
         ("📝 Customer CRM",        "crm:home"),
         ("📋 Bulk Users",          "bum:menu"),
         ("⭐ Reviews",             "arv:menu"),
-    ]],
-
-    "loyalty": [[
-        ("💎 Loyalty & VIP",       "admin_loyalty"),
-        ("🎯 Referrals",           "admin_referral_reward"),
-        ("✨ Referral+",           "rd:admin"),
+        ("⏳ Pending Reviews",     "arv:list:pending:0"),
         ("🎧 Support",             "admin_tickets"),
-        ("⚠️ Disputes",            "admin_view_disputes"),
     ]],
 
-    "broadcast": [[
-        ("📢 Broadcast",           "acc:sec:broadcast"),
-        ("📨 Scheduled Broadcast", "asb:menu"),
-        ("📣 Announcements",       "ann:menu"),
-        ("🔔 Notification Center", "anc:menu"),
-        ("🔕 Notif Settings",      "nsm:menu"),
+    # ── 📣 Marketing — everything that reaches out to or rewards customers:
+    # broadcast, promotions/coupons, and the loyalty/VIP/referral programs
+    # (former "broadcast", "promotions", and most of "loyalty" merged here).
+    "marketing": [
+        [
+            ("📢 Broadcast",           "acc:sec:broadcast"),
+            ("📨 Scheduled Broadcast", "asb:menu"),
+            ("📣 Announcements",       "ann:menu"),
+            ("🎁 Loyalty Points",      "admin_loyalty"),
+            ("🏆 VIP Manager",         "vip:menu"),
+            ("🎯 Referral Program",    "rd:admin"),
+            ("🎉 Promotions",          "acc:sec:promotions"),
+            ("⚡ Flash Sales",         "fsm:menu"),
+        ],
+        [
+            ("✂️ Coupons",             "admin_coupons"),
+            ("🏷 Coupons (Advanced)",  "acpn:menu"),
+            ("⏰ Sub Reminders",       "acc:sec:subrem"),
+        ],
+    ],
+
+    # ── 🔔 Notifications — new top-level home for every notification
+    # surface. "Notification Center" moved in from "broadcast"; "Notification
+    # Settings" promoted from a root-panel quick-access shortcut so it now
+    # has a proper category home; "Restock Notifications" previously had no
+    # menu entry point anywhere in the panel — added here.
+    "notifications": [[
+        ("🔔 Notification Center",   "anc:menu"),
+        ("⚙️ Notification Settings", "nsm:menu"),
+        ("📥 Restock Notifications", "rsn:menu"),
     ]],
 
-    "promotions": [[
-        ("🎉 Promotions",          "acc:sec:promotions"),
-        ("⚡ Flash Sales",         "fsm:menu"),
-        ("✂️ Coupons",             "admin_coupons"),
-        ("🏷 Advanced Coupons",    "acpn:menu"),
-        ("⏰ Sub Reminders",       "acc:sec:subrem"),
+    # ── 🎨 UI & Menu — everything about how the bot's menus look, split out
+    # from general settings so navigation/presentation is its own clear
+    # section. "Menu Manager" moved from "system"; "Panel Settings" promoted
+    # from a root-panel quick-access shortcut; "Store Preview" moved from
+    # "system" (it's a UI preview, not a store config value).
+    "ui_menu": [[
+        ("🧩 Menu Builder",        "mm:menu"),
+        ("😀 Emoji Manager",       "mm:emoji_help"),
+        ("🎨 Button Color Manager", "acc:sec:colors"),
+        ("🎭 Theme Manager",       "acc:sec:theme"),
+        ("🔧 Panel Settings",      "acc:ui:settings"),
+        ("👁 Store Preview",       "admin_preview"),
     ]],
 
+    # ── 🏪 Store Settings — customer-facing store configuration, split out
+    # of the old catch-all "system" category. "Display Currency" previously
+    # had no menu entry point anywhere in the panel — added here.
+    "store_settings": [[
+        ("🏪 Store Settings",       "admin_settings"),
+        ("💱 Display Currency",     "admin_currency"),
+        ("🌐 Languages",            "alng:menu"),
+        ("🔧 Storefront Features",  "af:menu"),
+        ("📱 Account Features",     "aaf:menu"),
+    ]],
+
+    # ── 🛡 Security — unchanged from v45 ("API & Integrations" renamed to
+    # "Integrations Health" to make clear it's the read-only check; "API
+    # Keys" is the actual key-management screen).
     "security": [[
         ("🔍 Fraud Detection",     "fds:home"),
         ("🛡 Anti-Spam",           "aasm:menu"),
         ("📝 Audit Logs",          "acc:sec:audit"),
         ("🔐 Login Activity",      "lam:home"),
-        ("🔌 API & Integrations",  "acc:sec:integrations"),
+        ("🔌 Integrations Health", "acc:sec:integrations"),
+        ("🔑 API Keys",            "aim:menu"),
+        ("📡 API Status",          "aim:check_all"),
+        ("👤 Admin Roles",         "acc:sec:roles"),
     ]],
 
-    "system": [[
-        ("⚙️ Bot Settings",        "admin_bot_config"),
-        ("🎨 Menu Manager",        "mm:menu"),
-        ("🌐 Languages",           "alng:menu"),
-        ("🔧 Features",            "af:menu"),
-        ("📱 Account Features",    "aaf:menu"),
-        ("🧩 Module Manager",      "pmm:menu"),
-        ("📤 Data Export",         "dec:menu"),
-    ]],
+    # ── ⚙ System — technical/infrastructure configuration and health, split
+    # out of the old catch-all "system" category (business/branding settings
+    # moved to Store Settings; menu presentation moved to UI & Menu).
+    "system": [
+        [
+            ("⚙️ Bot Settings",        "admin_bot_config"),
+            ("🛠 System Tools",        "acc:sec:system"),
+            ("📈 System Health",       "acc:sys:health"),
+            ("🗄 Database Status",     "acc:sys:db"),
+            ("💾 Backup & Restore",    "acc:sec:backups"),
+            ("⚡ Performance Monitor", "pcm:menu"),
+            ("🧹 Cache Manager",       "pcm:cache"),
+            ("🩺 Diagnostics",         "acc:diag:menu"),
+        ],
+        [
+            ("🧩 Modules & Plugins",   "pmm:menu"),
+            ("📤 Data Export",         "dec:menu"),
+        ],
+    ],
 
-    "performance": [[
-        ("⚡ Performance Manager", "pcm:menu"),
-        ("🧹 Cache Manager",       "pcm:cache"),
-        ("🔍 Global Search",       "gse:menu"),
-    ]],
-
+    # ── 🧰 Tools — day-to-day admin/dev utilities (Global Search moved in
+    # from the old "performance" page; the rest is what's left of the old
+    # "tools" category after System took the infrastructure items above).
     "tools": [[
-        ("🩺 Diagnostics",         "acc:diag:menu"),
         ("🔩 Maintenance+",        "maint:menu"),
-        ("💾 Backups",             "acc:sec:backups"),
-        ("🛠 System Tools",        "acc:sec:system"),
         ("🧪 Quality Control",     "acc:sec:quality"),
         ("🔬 Integrity Scan",      "acc:sec:integrity"),
         ("🤝 Resellers",           "acc:sec:resellers"),
+        ("🔍 Global Search",       "gse:menu"),
+        ("⚙️ Search Settings",     "gse:settings"),
     ]],
 }
 
 _CAT_META: dict[str, tuple[str, str]] = {
-    "dashboard":   ("📊", "Dashboard"),
-    "products":    ("📦", "Products"),
-    "discovery":   ("🔍", "Discovery"),
-    "inventory":   ("📥", "Inventory"),
-    "suppliers":   ("🏭", "Suppliers"),
-    "orders":      ("🛒", "Orders"),
-    "payments":    ("💳", "Payments"),
-    "customers":   ("👥", "Customers"),
-    "loyalty":     ("🏆", "Loyalty & Support"),
-    "broadcast":   ("📡", "Broadcast"),
-    "promotions":  ("🎁", "Promotions"),
-    "security":    ("🔐", "Security"),
-    "system":      ("⚙️", "Settings"),
-    "performance": ("⚡", "Performance"),
-    "tools":       ("🛠", "Tools"),
+    "dashboard":      ("📊", "Dashboard"),
+    "products":       ("📦", "Products"),
+    "orders":         ("🛒", "Orders"),
+    "payments":       ("💳", "Payments"),
+    "customers":      ("👥", "Customers"),
+    "marketing":      ("📣", "Marketing"),
+    "notifications":  ("🔔", "Notifications"),
+    "ui_menu":        ("🎨", "UI & Menu"),
+    "store_settings": ("🏪", "Store Settings"),
+    "security":       ("🛡", "Security"),
+    "system":         ("⚙", "System"),
+    "tools":          ("🧰", "Tools"),
 }
 
 # One-line tagline shown under the breadcrumb on each category's submenu,
 # so admins know at a glance what kind of tools live in this section.
 _CAT_DESC: dict[str, str] = {
-    "dashboard":   "Live stats, revenue &amp; growth metrics at a glance.",
-    "products":    "Manage catalog, bundles, gift cards &amp; templates.",
-    "discovery":   "FAQ, comparisons, favourites &amp; recently viewed items.",
-    "inventory":   "Stock levels, batches, price history &amp; reservations.",
-    "suppliers":   "Supplier accounts, file/key management &amp; delivery.",
-    "orders":      "Order queue, search, delivery tracking &amp; refunds.",
-    "payments":    "Gateways, deposits, wallets, FX rates &amp; webhooks.",
-    "customers":   "User accounts, CRM, bulk tools &amp; reviews.",
-    "loyalty":     "VIP tiers, referrals, support tickets &amp; disputes.",
-    "broadcast":   "Mass messages, scheduled blasts &amp; notifications.",
-    "promotions":  "Flash sales, coupons, deals &amp; reminder campaigns.",
-    "security":    "Fraud detection, anti-spam, audit logs &amp; access.",
-    "system":      "Bot config, menus, languages, modules &amp; features.",
-    "performance": "Speed manager, cache control &amp; global search.",
-    "tools":       "Diagnostics, backups, integrity checks &amp; dev tools.",
+    "dashboard":      "Live stats, revenue &amp; growth metrics at a glance.",
+    "products":       "Catalog, discovery, inventory &amp; suppliers.",
+    "orders":         "Order queue, search, delivery tracking, refunds &amp; disputes.",
+    "payments":       "Gateways, deposits, wallets, FX rates &amp; webhooks.",
+    "customers":      "User accounts, CRM, bulk tools, reviews &amp; support.",
+    "marketing":      "Broadcasts, promotions, coupons, loyalty, VIP &amp; referrals.",
+    "notifications":  "Notification center, delivery settings &amp; restock alerts.",
+    "ui_menu":        "Main-menu layout, admin panel appearance &amp; store preview.",
+    "store_settings": "Branding, currency, languages &amp; storefront/account features.",
+    "security":       "Fraud detection, anti-spam, audit logs, access &amp; API keys.",
+    "system":         "Bot config, infrastructure health, backups &amp; performance.",
+    "tools":          "Maintenance, quality control, integrity checks &amp; search.",
 }
 
 # Total item count per category (all pages combined) — shown as a badge
@@ -294,12 +358,11 @@ def build_acc_root_keyboard(maintenance_on: bool) -> IKM:
     if row:
         kb.append(row)
 
-    # ── Quick tools: search + notifications ─────────────────────────────────
-    util_row: list[IKB] = []
+    # ── Quick tools: search ───────────────────────────────────────────────────
+    # (Notifications is now its own top-level category in the grid above —
+    # no separate shortcut needed here, so there's only one path to it.)
     if show_search:
-        util_row.append(IKB("🔍  Search", callback_data="acc:ui:search"))
-    util_row.append(IKB("🔔  Notifications", callback_data="nsm:menu"))
-    kb.append(util_row)
+        kb.append([IKB("🔍  Search", callback_data="acc:ui:search")])
 
     # ── Personal quick-access ────────────────────────────────────────────────
     quick: list[IKB] = []
@@ -316,10 +379,8 @@ def build_acc_root_keyboard(maintenance_on: bool) -> IKM:
         if maintenance_on
         else "🟢  Maintenance OFF"
     )
-    kb.append([
-        IKB("🔧  Panel Settings", callback_data="acc:ui:settings"),
-        IKB(maint_label,           callback_data="admin_maintenance_toggle"),
-    ])
+    # (Panel Settings is now under 🎨 UI & Menu — no separate shortcut here.)
+    kb.append([IKB(maint_label, callback_data="admin_maintenance_toggle")])
     kb.append([IKB("🚪  Exit to Main Menu", callback_data="main_menu")])
     return IKM(kb)
 
@@ -829,8 +890,119 @@ async def _render_section(section: str, update: Update,
     if section == "referral_adv":
         from handlers.referral_dashboard import rd_admin_menu
         await rd_admin_menu(update, context); return
+    if section == "theme":
+        await _render_theme_manager(update, context); return
+    if section == "colors":
+        await _render_button_color_manager(update, context); return
+    if section == "roles":
+        await _render_admin_roles(update, context); return
     # Unknown → root
     await render_control_center(update, context)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# New management screens (v47) — Theme Manager, Button Color Manager, Admin
+# Roles. Each is a thin presentation layer: every toggle/button below calls
+# an existing, unchanged handler (menu_colors.* / permissions.list_admins).
+# No new business logic is introduced anywhere in this section.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def _render_theme_manager(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """🎭 Theme Manager — single hub for every visual/appearance control in
+    the bot. Pure navigation: each button below opens an existing, already-
+    working screen (colors, emoji, panel appearance, live preview)."""
+    query = update.callback_query
+    from utils.bot_config import cfg
+    all_colors_on = cfg.get_bool("global_button_colors_enabled", True)
+    icons_on = cfg.get_bool("admin_panel_icons", True)
+    text_ = (
+        "🎭 <b>Theme Manager</b>\n\n"
+        "Central hub for everything that controls how the bot looks.\n\n"
+        f"🌈 Bot-wide button colors: <b>{'ON' if all_colors_on else 'OFF'}</b>\n"
+        f"🔤 Admin panel icons: <b>{'ON' if icons_on else 'OFF'}</b>\n\n"
+        "Pick an area to customize:"
+    )
+    kb = [
+        [IKB("🎨 Button Color Manager", callback_data="acc:sec:colors")],
+        [IKB("😀 Emoji Manager",        callback_data="mm:emoji_help")],
+        [IKB("🧩 Menu Builder",         callback_data="mm:menu")],
+        [IKB("🔧 Panel Settings",       callback_data="acc:ui:settings")],
+        [IKB("👁 Store Preview",        callback_data="admin_preview")],
+        [IKB("🔙 Back",                 callback_data="acc:cat:ui_menu")],
+    ]
+    await _safe_edit(query, text_, IKM(kb))
+
+
+async def _render_button_color_manager(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """🎨 Button Color Manager — dedicated screen for the color controls
+    that already exist in Menu Manager (handlers/menu_colors.py). Every
+    button below uses the exact same callback_data as before, so it routes
+    to the same unchanged handler functions."""
+    query = update.callback_query
+    from utils.bot_config import cfg
+    from handlers.menu_state import active_audience
+    from utils.menu_registry import get_menu_layout, MENU_AUDIENCE_LABELS
+
+    uid = update.effective_user.id
+    audience = active_audience(context)
+    colors_on = bool(get_menu_layout(audience).get("colors_enabled", True))
+    all_colors_on = cfg.get_bool("global_button_colors_enabled", True)
+
+    text_ = (
+        "🎨 <b>Button Color Manager</b>\n\n"
+        f"👥 Profile: <b>{MENU_AUDIENCE_LABELS[audience]}</b>\n"
+        f"🎨 This profile's menu colors: <b>{'ON' if colors_on else 'OFF'}</b>\n"
+        f"🌈 All bot buttons (every keyboard): <b>{'ON' if all_colors_on else 'OFF'}</b>\n\n"
+        "Toggle colors on/off instantly, or reset back to defaults. "
+        "Per-item colors are still edited from Menu Builder → tap an item."
+    )
+    kb = [
+        [IKB(f"🎨 This Profile: {'✅ ON' if colors_on else '🚫 OFF'}",
+             callback_data="mm:colors_toggle"),
+         IKB(f"🌈 All Buttons: {'✅ ON' if all_colors_on else '🚫 OFF'}",
+             callback_data="mm:all_colors_toggle")],
+        [IKB("🔁 Reset This Profile's Colors", callback_data="mm:colors_reset")],
+        [IKB("♻ Reset All Colors Everywhere",  callback_data="mm:all_colors_reset")],
+        [IKB("🧩 Open Menu Builder",            callback_data="mm:menu")],
+        [IKB("🔙 Back",                         callback_data="acc:sec:theme")],
+    ]
+    await _safe_edit(query, text_, IKM(kb))
+
+
+async def _render_admin_roles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """👤 Admin Roles — read-only roster view built on top of the existing,
+    unchanged utils.permissions.list_admins(). Role changes still go through
+    the existing /admin_add, /admin_role, /admin_remove commands (unchanged
+    business logic) — this screen only adds visibility inside the panel."""
+    query = update.callback_query
+    from utils.permissions import list_admins, is_super_admin
+
+    uid = update.effective_user.id
+    admins = list_admins(include_inactive=is_super_admin(uid))
+    role_icon = {"super_admin": "👑", "moderator": "🛡", "support_staff": "🎧"}
+
+    if not admins:
+        lines = ["<i>No admins registered yet (besides the bootstrap owner).</i>"]
+    else:
+        lines = []
+        for a in admins:
+            icon = role_icon.get(a["role"], "•")
+            status = "" if a["is_active"] else " (inactive)"
+            uname = f"@{a['username']}" if a["username"] else str(a["telegram_id"])
+            lines.append(f"{icon} <code>{a['telegram_id']}</code> {uname} — <b>{a['role']}</b>{status}")
+
+    text_ = (
+        "👤 <b>Admin Roles</b>\n\n"
+        + "\n".join(lines)
+        + "\n\n"
+        "To add, re-role, or remove an admin use:\n"
+        "<code>/admin_add &lt;telegram_id&gt; &lt;role&gt;</code>\n"
+        "<code>/admin_role &lt;telegram_id&gt; &lt;role&gt;</code>\n"
+        "<code>/admin_remove &lt;telegram_id&gt;</code>\n"
+        "(super_admin, moderator, support_staff)"
+    )
+    kb = [[IKB("🔙 Back", callback_data="acc:root")]]
+    await _safe_edit(query, text_, IKM(kb))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

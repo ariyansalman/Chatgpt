@@ -221,36 +221,43 @@ async def pending_deposits_list(update: Update, context: ContextTypes.DEFAULT_TY
         page, sort = 0, "desc"
     sort = "asc" if sort == "asc" else "desc"
 
-    from sqlalchemy import func as _f
     with get_db_session() as session:
-        base_filter = (
-            Transaction.payment_method.in_(_REVIEWABLE_METHODS),
-            Transaction.status.in_(_PENDING_STATUSES),
-        )
-        total = (
-            session.query(_f.count(Transaction.id))
-            .filter(*base_filter)
-            .scalar() or 0
-        )
-        col = Transaction.created_at.asc() if sort == "asc" else Transaction.created_at.desc()
-        txs = (
-            session.query(Transaction)
-            .filter(*base_filter)
-            .order_by(col)
-            .offset(page * _PAGE_SZ)
-            .limit(_PAGE_SZ)
-            .all()
-        )
+        # Use one live result for the count, empty-state decision, and page
+        # rows.  A separate COUNT query can observe a different state from
+        # the rows selected immediately afterwards.
+        pending_rows = pui.pending_deposit_rows(session, sort_desc=sort == "desc")
+        total = len(pending_rows)
+
+        # Keep a page requested after the last item from producing a
+        # misleading empty page.  This uses the same live result, rather
+        # than issuing another query that could disagree with the count.
+        total_pages = max(1, (total + _PAGE_SZ - 1) // _PAGE_SZ)
+        page = min(page, total_pages - 1)
+        start = page * _PAGE_SZ
+        txs = pending_rows[start:start + _PAGE_SZ]
         rows = []
         for tx in txs:
             u = session.query(User).filter_by(id=tx.user_id).first()
             username = f"@{u.username}" if (u and u.username) else f"ID:{u.telegram_id if u else '?'}"
-            amt_str  = f"{tx.amount:.2f}" if tx.amount is not None else "—"
+            amt_str = f"{tx.amount:.2f}" if tx.amount is not None else "—"
             rows.append((tx.id, username, amt_str))
 
     total_pages = max(1, (total + _PAGE_SZ - 1) // _PAGE_SZ)
     next_sort   = "asc" if sort == "desc" else "desc"
     sort_lbl    = "🕒 Freshest" if sort == "desc" else "🕰 Oldest"
+
+    if total == 0:
+        # Replace the review screen with only the empty state.  In
+        # particular, do not leave list controls or a section heading beside
+        # the empty message.
+        await _safe_edit(
+            query,
+            "No deposits are currently waiting for review.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅ Back", callback_data="admin_confirm_order")]
+            ]),
+        )
+        return
 
     kb = []
     for tx_id, username, amt_str in rows:
@@ -272,24 +279,7 @@ async def pending_deposits_list(update: Update, context: ContextTypes.DEFAULT_TY
         [InlineKeyboardButton("⬅ Back", callback_data="admin_confirm_order")],
     ]
 
-    # SYNCHRONIZATION FIX: Binance Pay / Bybit Pay / ZiniPay submissions that
-    # failed auto-verification are a separate, real "waiting for a human"
-    # state (PendingManualVerification, reviewed from each gateway's own
-    # panel — see admin_binance.py / admin_bybit.py). They're intentionally
-    # not listed here (this list only ever showed reviewable-Transaction
-    # rows and always will — see module docstring), but the count is now
-    # always surfaced on this same screen so it can never look like "0
-    # deposits waiting" while one of those is actually sitting in a review
-    # queue elsewhere.
-    with get_db_session() as _cs:
-        _counts = pui.count_pending_deposits(_cs)
-    gw_count = _counts["gateway_verifications"]
     header = f"🧾 <b>Pending Deposits</b> ({total})\nDeposits waiting for manual review."
-    if gw_count:
-        header += (
-            f"\n⚠️ <b>{gw_count}</b> gateway verification(s) also awaiting review "
-            "(Binance/Bybit/ZiniPay panels)."
-        )
 
     await _safe_edit(query, header, InlineKeyboardMarkup(kb))
 
