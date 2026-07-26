@@ -123,7 +123,7 @@ async def admin_cryptomus_edit_merchant_uuid_start(update: Update, context: Cont
             "💬 Send your Cryptomus <b>Merchant UUID</b> "
             "(Cryptomus dashboard → Settings → API).",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 Cancel", callback_data="admin_cryptomus_view")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="admin_cryptomus_view")]]
             ),
             parse_mode='HTML',
         )
@@ -161,7 +161,7 @@ async def admin_cryptomus_edit_api_key_start(update: Update, context: ContextTyp
             "(Cryptomus dashboard → Settings → API).\n\n"
             "🔒 This value is sensitive — it won't be echoed back after saving.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 Cancel", callback_data="admin_cryptomus_view")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="admin_cryptomus_view")]]
             ),
             parse_mode='HTML',
         )

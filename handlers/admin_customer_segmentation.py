@@ -166,7 +166,7 @@ async def cseg_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     counts = await asyncio.to_thread(get_segment_counts)
-    lines = ["🎯 <b>CUSTOMER SEGMENTATION</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"]
+    lines = ["🎯 <b>Customer Segmentation</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"]
     for key, label, desc in SEGMENT_DEFS:
         cnt = counts.get(key, 0)
         lines.append(f"  {label}: <b>{cnt}</b>")

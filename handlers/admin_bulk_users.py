@@ -149,7 +149,7 @@ async def bum_search_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _safe_edit(query, f"⛔ Manager is {_mgr_status()}.", _back_main_kb()); return
 
     text = (
-        "🔍 <b>SEARCH USERS</b>\n\n"
+        "🔍 <b>Search Users</b>\n\n"
         "Select search field:"
     )
     kb = [
@@ -207,7 +207,7 @@ async def bum_search_receive(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ConversationHandler.END
 
-    text = f"🔍 <b>SEARCH RESULTS</b> — {total} found\n\n"
+    text = f"🔍 <b>Search Results</b> — {total} found\n\n"
     for u in results[:10]:
         ban_icon = "⛔" if u["is_banned"] else "✅"
         text += (
@@ -241,7 +241,7 @@ async def bum_filter_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_active():
         await _safe_edit(query, f"⛔ Manager is {_mgr_status()}.", _back_main_kb()); return
 
-    text = "🔽 <b>FILTER USERS</b>\n\nSelect a filter to view users:"
+    text = "🔽 <b>Filter Users</b>\n\nSelect a filter to view users:"
     kb = []
     for ftype, label in FILTER_LABELS.items():
         kb.append([InlineKeyboardButton(label, callback_data=f"bum:filter:show:{ftype}")])
@@ -293,7 +293,7 @@ async def bum_bulk_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_enabled():
         await _safe_edit(query, f"⛔ Manager is {_mgr_status()}.", _back_main_kb()); return
 
-    text = "⚡ <b>BULK USER ACTIONS</b>\n\nSelect an action:"
+    text = "⚡ <b>Bulk User Actions</b>\n\nSelect an action:"
     kb = [
         [InlineKeyboardButton("⛔ Bulk Ban",            callback_data="bum:bulk:action:ban"),
          InlineKeyboardButton("✅ Bulk Unban",           callback_data="bum:bulk:action:unban")],
@@ -331,7 +331,7 @@ async def bum_bulk_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             await _safe_edit(
                 query,
-                "⚠️ <b>DELETE INACTIVE USERS</b>\n\n"
+                "⚠️ <b>Delete Inactive Users</b>\n\n"
                 "This will delete users who:\n"
                 "  • Have not been seen in 90+ days\n"
                 "  • Have never ordered\n"
@@ -344,7 +344,7 @@ async def bum_bulk_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "broadcast":
         await _safe_edit(
             query,
-            "📢 <b>BULK BROADCAST</b>\n\n"
+            "📢 <b>Bulk Broadcast</b>\n\n"
             "Select which users to broadcast to:",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton(label, callback_data=f"bum:bulk:broadcast:filter:{ftype}")]
@@ -544,7 +544,7 @@ async def bum_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE)
                      module="bulk_users")
 
     await update.message.reply_text(
-        f"📢 <b>BROADCAST COMPLETE</b>\n\n"
+        f"📢 <b>Broadcast Complete</b>\n\n"
         f"✅ Sent: <b>{sent}</b>\n"
         f"❌ Failed: <b>{failed}</b>",
         reply_markup=_back_main_kb(), parse_mode="HTML",
@@ -639,7 +639,7 @@ async def bum_export_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_active():
         await _safe_edit(query, f"⛔ Manager is {_mgr_status()}.", _back_main_kb()); return
 
-    text = "📤 <b>EXPORT USERS</b>\n\nSelect scope:"
+    text = "📤 <b>Export Users</b>\n\nSelect scope:"
     kb = [
         [InlineKeyboardButton(label, callback_data=f"bum:export:filter:{ftype}")]
         for ftype, label in FILTER_LABELS.items()
@@ -740,7 +740,7 @@ async def bum_history_export(update: Update, context: ContextTypes.DEFAULT_TYPE)
             for r in records
         ]
 
-    text = "📋 <b>USER EXPORT HISTORY</b>\n\n"
+    text = "📋 <b>User Export History</b>\n\n"
     text += "No records yet." if not rows else ""
     for rid, fmt, scope, count, ts in rows:
         text += f"📤 <b>#{rid}</b> [{fmt.upper()}] filter={scope} — {ts}\n   {count} rows\n\n"
@@ -781,7 +781,7 @@ async def bum_history_actions(update: Update, context: ContextTypes.DEFAULT_TYPE
             for r in records
         ]
 
-    text = "📋 <b>BULK USER ACTION HISTORY</b>\n\n"
+    text = "📋 <b>Bulk User Action History</b>\n\n"
     text += "No records yet." if not rows else ""
     for rid, atype, scope, ok, fail, ts in rows:
         text += f"⚡ <b>#{rid}</b> {atype} scope={scope or '—'} — {ts}\n   ✅{ok} ❌{fail}\n\n"
@@ -815,7 +815,7 @@ async def bum_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action_log = cfg.get_bool("bulk_user_action_log_enabled", True)
 
     text = (
-        f"⚙️ <b>BULK USER MANAGER — SETTINGS</b>\n\n"
+        f"⚙️ <b>Bulk User Manager — Settings</b>\n\n"
         f"Status: {_STATUS_EMOJI.get(status, '⚪')} {status.title()}\n"
         f"Max Export Rows: <b>{export_limit}</b>\n"
         f"Delete Confirmation: {'✅' if del_confirm else '⚪'}\n"

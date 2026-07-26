@@ -332,7 +332,7 @@ def build_comparison_message(telegram_id: int) -> tuple[str, list[int]]:
 
             # Build message
             n = len(products)
-            lines = [f"⚖️ <b>PRODUCT COMPARISON</b> ({n} product{'s' if n > 1 else ''})\n"]
+            lines = [f"⚖️ <b>Product Comparison</b> ({n} product{'s' if n > 1 else ''})\n"]
 
             sep = "─" * 30
 

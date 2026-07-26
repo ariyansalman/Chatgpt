@@ -74,7 +74,7 @@ async def arec_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     stats = await asyncio.to_thread(get_recommendation_stats)
     text = (
-        "🎯 <b>RECOMMENDATION ENGINE</b>\n"
+        "🎯 <b>Recommendation Engine</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📌 Total pinned recommendations: <b>{stats['total_pins']}</b>\n"
     )

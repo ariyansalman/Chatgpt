@@ -91,7 +91,7 @@ async def diag_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     latest = get_latest_record()
 
     lines = [
-        f"🩺 <b>SYSTEM DIAGNOSTICS CENTER</b>",
+        f"🩺 <b>System Diagnostics Center</b>",
         f"Status: {status_emoji} {status.title()}",
         "",
     ]

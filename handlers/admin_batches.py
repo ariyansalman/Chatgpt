@@ -34,7 +34,7 @@ async def batches_menu(update, context, page: int = 0):
         rows = s.query(InventoryBatch).order_by(InventoryBatch.created_at.desc()).all()
     slice_, page, pages = paginate(rows, page)
     kb = []
-    lines = ["📦 <b>INVENTORY BATCHES</b>",
+    lines = ["📦 <b>Inventory Batches</b>",
              f"Total: {len(rows)}", ""]
     for b in slice_:
         kb.append([InlineKeyboardButton(

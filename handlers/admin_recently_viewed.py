@@ -94,7 +94,7 @@ async def recently_viewed_admin_menu(update, context):
     ) or "—"
 
     lines = [
-        "🕒 <b>RECENTLY VIEWED SETTINGS</b>",
+        "🕒 <b>Recently Viewed Settings</b>",
         "",
         f"<b>Feature Status:</b>  {_status_label()}",
         "",

@@ -52,17 +52,28 @@ def _format_preset_label(amount: float) -> str:
 
 def build_amount_selection_screen(
     preset_amounts: Sequence[float] = DEFAULT_PRESET_AMOUNTS,
+    min_deposit: "float | None" = None,
+    currency: str = "USD",
 ) -> Tuple[str, InlineKeyboardMarkup]:
     """Build the "💳 Add Funds" amount-selection screen (text + keyboard).
 
     This is the exact same screen for every payment gateway — current and
     future — since it's rendered once, before any gateway is chosen.
+
+    ``min_deposit``/``currency`` are purely informational display values —
+    the caller reads them from the existing admin-configured settings and
+    passes them in; this module still never enforces or decides them.
     """
-    text = (
-        "💳 <b>Add Funds</b>\n\n"
-        "Select an amount or enter a custom amount in USD.\n\n"
-        "👇 Choose an option."
-    )
+    lines = [
+        "💳 <b>Add Funds</b>\n",
+        "Add funds to your wallet by selecting a preset amount or entering "
+        "a custom amount.\n",
+    ]
+    if min_deposit is not None:
+        lines.append(f"• Minimum Deposit: ${min_deposit:.2f} {currency}")
+    lines.append(f"• Currency: {currency}")
+    lines.append("\nChoose an amount below.")
+    text = "\n".join(lines)
 
     rows: list[list[InlineKeyboardButton]] = []
     # Two preset buttons per row, in the order given.
@@ -79,7 +90,7 @@ def build_amount_selection_screen(
         rows.append(row)
 
     rows.append([InlineKeyboardButton("✍️ Custom Amount", callback_data=CUSTOM_AMOUNT_CALLBACK)])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data=CANCEL_CALLBACK)])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data=CANCEL_CALLBACK)])
 
     return text, InlineKeyboardMarkup(rows)
 

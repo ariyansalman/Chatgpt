@@ -60,7 +60,7 @@ async def _safe_edit(query, text: str, reply_markup=None, parse_mode: str = "HTM
 
 def _back_main_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")
+        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
     ]])
 
 
@@ -278,7 +278,7 @@ async def wishlist_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not items:
         text = header + "\nYour wishlist is empty.\n\nBrowse products and tap ❤️ Add to Wishlist."
         kb = [[InlineKeyboardButton("🛍 Browse Products", callback_data="products")],
-              [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]]
+              [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         await _safe_edit(query, text, InlineKeyboardMarkup(kb))
         return
 
@@ -299,7 +299,7 @@ async def wishlist_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb.append(row)
 
     kb.append([InlineKeyboardButton("🛍 Browse Products", callback_data="products")])
-    kb.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    kb.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     await _safe_edit(query, text, InlineKeyboardMarkup(kb))
 
 
@@ -474,7 +474,7 @@ async def price_alerts_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         kb = [
             [InlineKeyboardButton("🛍 Browse Products", callback_data="products")],
-            [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ]
         await _safe_edit(query, text, InlineKeyboardMarkup(kb))
         return
@@ -490,7 +490,7 @@ async def price_alerts_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
 
     kb.append([InlineKeyboardButton("🛍 Browse Products", callback_data="products")])
-    kb.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    kb.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     await _safe_edit(query, text, InlineKeyboardMarkup(kb))
 
 
@@ -668,7 +668,7 @@ async def quick_buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         kb = [
             [InlineKeyboardButton("🛍 Browse Products", callback_data="products")],
-            [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ]
         await _safe_edit(query, text, InlineKeyboardMarkup(kb))
         return
@@ -689,7 +689,7 @@ async def quick_buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             callback_data=f"uf:qb:b:{product.id}",
         )])
 
-    kb.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    kb.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     await _safe_edit(query, text, InlineKeyboardMarkup(kb))
 
 
@@ -810,7 +810,7 @@ async def preferred_payment_menu(update: Update, context: ContextTypes.DEFAULT_T
         )])
     if current:
         kb.append([InlineKeyboardButton("🗑 Clear Preference", callback_data="uf:pp:s:clear")])
-    kb.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    kb.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
     await _safe_edit(query, text, InlineKeyboardMarkup(kb))
 
@@ -917,7 +917,7 @@ async def buy_again_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         kb = [
             [InlineKeyboardButton("🛍 Browse Products", callback_data="products")],
-            [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ]
         await _safe_edit(query, text, InlineKeyboardMarkup(kb))
         return
@@ -932,5 +932,5 @@ async def buy_again_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             callback_data=f"buy_{product.id}",
         )])
 
-    kb.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    kb.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     await _safe_edit(query, text, InlineKeyboardMarkup(kb))

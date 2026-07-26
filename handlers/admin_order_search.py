@@ -98,7 +98,7 @@ async def aos_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "Enter your search query below."
     )
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🚫 Cancel", callback_data="aos:cancel"),
+        InlineKeyboardButton("❌ Cancel", callback_data="aos:cancel"),
     ]])
 
     try:
@@ -315,7 +315,7 @@ def _render_order_detail(order: Order, session) -> str:  # noqa: C901
     # ── Header ──────────────────────────────────────────────────────────
     lines += [
         "━━━━━━━━━━━━━━",
-        "📦 <b>ORDER DETAILS</b>",
+        "📦 <b>Order Details</b>",
         "━━━━━━━━━━━━━━",
         "",
     ]
@@ -688,7 +688,7 @@ def _render_deposit_detail(txn: Transaction, session) -> str:
 
     lines: list[str] = [
         "━━━━━━━━━━━━━━",
-        "💰 <b>DEPOSIT DETAILS</b>",
+        "💰 <b>Deposit Details</b>",
         "━━━━━━━━━━━━━━",
         "",
     ]
@@ -797,7 +797,7 @@ async def aos_handle_query(
         await update.message.reply_text(
             "❓ Please send a non-empty search query.",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🚫 Cancel", callback_data="aos:cancel"),
+                InlineKeyboardButton("❌ Cancel", callback_data="aos:cancel"),
             ]]),
         )
         return AWAITING_QUERY

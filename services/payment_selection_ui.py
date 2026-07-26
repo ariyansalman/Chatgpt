@@ -74,9 +74,20 @@ def classify(key: str, label: str = "") -> str:
     return "top"
 
 
+# Canonical display emoji for the top-level checkout buttons, applied
+# regardless of whatever emoji happens to be stored on the gateway dict —
+# keeps iconography consistent across the whole Add Funds flow without
+# touching the underlying gateway data or its callback_data.
+_TOP_LEVEL_DISPLAY_EMOJI = {
+    "bybit_pay": "💳",
+    "binance_pay": "💳",
+}
+
+
 def _btn(gw: dict, label: Optional[str] = None, emoji: Optional[str] = None,
          callback_key: Optional[str] = None) -> InlineKeyboardButton:
-    text = f'{emoji or gw.get("emoji", "💳")} {label or gw["label"]}'
+    display_emoji = emoji or _TOP_LEVEL_DISPLAY_EMOJI.get(gw["key"]) or gw.get("emoji", "💳")
+    text = f'{display_emoji} {label or gw["label"]}'
     return InlineKeyboardButton(text, callback_data=f'pay_{callback_key or gw["key"]}')
 
 
@@ -105,11 +116,19 @@ def _split(gateways: Optional[Iterable[dict]]):
 def build_payment_selection_screen(
     gateways: Optional[Sequence[dict]],
     methods: Optional[Sequence] = (),
+    amount: "float | None" = None,
+    currency: str = "USD",
 ) -> Tuple[str, InlineKeyboardMarkup]:
     """Build the redesigned Add Funds screen: one row per top-level
     gateway/manual method, a Crypto Networks row (only if any crypto-network
-    gateway is available), a Mobile Money (BD) row (only if any is
-    available), and Back to Main Menu."""
+    gateway is available), a Mobile Banking row (only if any is
+    available), and Main Menu.
+
+    ``amount``/``currency`` are purely informational — when the caller
+    already knows the deposit amount (it was chosen on Step 1), this
+    module renders it back to the user for confirmation; it never decides
+    or validates the amount itself.
+    """
     top, crypto, mobile = _split(gateways)
 
     rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in top]
@@ -120,13 +139,21 @@ def build_payment_selection_screen(
         )])
 
     if crypto:
-        rows.append([InlineKeyboardButton("🔗 Crypto Networks", callback_data="topup_menu_crypto")])
+        rows.append([InlineKeyboardButton("₿ Crypto Networks", callback_data="topup_menu_crypto")])
     if mobile:
-        rows.append([InlineKeyboardButton("🇧🇩 Mobile Money (BD)", callback_data="topup_menu_mobile")])
+        rows.append([InlineKeyboardButton("🇧🇩 Mobile Banking", callback_data="topup_menu_mobile")])
 
-    rows.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")])
+    rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
-    text = "💳 <b>Add Funds</b>\n\nSelect a payment method."
+    if amount is not None:
+        text = (
+            "💳 <b>Add Funds</b>\n\n"
+            "Deposit Amount:\n"
+            f"💵 ${amount:.2f} {currency}\n\n"
+            "Select your preferred payment method."
+        )
+    else:
+        text = "💳 <b>Add Funds</b>\n\nSelect your preferred payment method."
     return text, InlineKeyboardMarkup(rows)
 
 
@@ -140,10 +167,10 @@ def build_crypto_networks_screen(gateways: Optional[Sequence[dict]]) -> Tuple[st
     crypto_sorted = sorted(crypto, key=lambda g: order.get(g["key"], len(order)))
 
     rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in crypto_sorted]
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
+    rows.append([InlineKeyboardButton("🔙 Back", callback_data="topup_menu_back")])
     rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
 
-    text = "🔗 <b>Crypto Networks</b>\n\nSelect a network."
+    text = "₿ <b>Crypto Networks</b>\n\nSelect your preferred network."
     return text, InlineKeyboardMarkup(rows)
 
 
@@ -215,8 +242,8 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
         if key not in used_keys:
             rows.append([_btn(gw)])
 
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
+    rows.append([InlineKeyboardButton("🔙 Back", callback_data="topup_menu_back")])
     rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
 
-    text = "🇧🇩 <b>Mobile Money (BD)</b>\n\nSelect a provider."
+    text = "🇧🇩 <b>Mobile Banking</b>\n\nSelect your preferred provider."
     return text, InlineKeyboardMarkup(rows)

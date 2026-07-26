@@ -149,7 +149,7 @@ async def subscription_reminders_menu(update, context):
     retry_str = _retry_label()
 
     lines = [
-        "🔔 <b>SUBSCRIPTION REMINDER SETTINGS</b>",
+        "🔔 <b>Subscription Reminder Settings</b>",
         "",
         f"<b>Feature Status:</b>  {status_str}",
         "",

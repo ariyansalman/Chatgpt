@@ -1190,7 +1190,7 @@ async def up_bal_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if amount <= 0:
             raise ValueError("Amount must be positive.")
     except (InvalidOperation, ValueError) as e:
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Cancel", callback_data=f"up:view:{uid}")]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"up:view:{uid}")]])
         try:
             await context.bot.edit_message_text(
                 f"❌ Invalid amount: <code>{_esc(raw)}</code>\n\n"

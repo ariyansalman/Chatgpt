@@ -299,7 +299,7 @@ async def _render_pending_deposits_list(query, page: int, sort: str):
             query,
             "No manual deposits are waiting for review.",
             InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅ Back", callback_data="admin_confirm_order")]
+                [InlineKeyboardButton("🔙 Back", callback_data="admin_confirm_order")]
             ]),
         )
         return
@@ -325,7 +325,7 @@ async def _render_pending_deposits_list(query, page: int, sort: str):
 
     kb += [
         [InlineKeyboardButton(f"Sort: {sort_lbl}", callback_data=f"pd:list:{page}:{next_sort}")],
-        [InlineKeyboardButton("⬅ Back", callback_data="admin_confirm_order")],
+        [InlineKeyboardButton("🔙 Back", callback_data="admin_confirm_order")],
     ]
 
     header = f"🧾 <b>Pending Deposits</b> ({total})\nDeposits waiting for manual review."
@@ -425,7 +425,7 @@ async def deposit_view_details(update: Update, context: ContextTypes.DEFAULT_TYP
             lines.append(f"🗒 <b>Admin note:</b> {html.escape(tx.admin_note)}")
         proof_file_id = tx.proof_file_id
 
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data=f"pd:det:{tx_id}")]])
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"pd:det:{tx_id}")]])
 
     if proof_file_id:
         try:
@@ -495,7 +495,7 @@ async def deposit_approve_execute(update: Update, context: ContextTypes.DEFAULT_
                 await _safe_edit(
                     query,
                     f"⚠️ Deposit #{tx_id} has already been processed.",
-                    InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data=f"pd:det:{tx_id}")]]),
+                    InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"pd:det:{tx_id}")]]),
                 )
                 return
     except Exception:
@@ -505,7 +505,7 @@ async def deposit_approve_execute(update: Update, context: ContextTypes.DEFAULT_
         )
         await _safe_edit(
             query, "❌ Approval failed — please retry. No changes made.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data=f"pd:det:{tx_id}")]]),
+            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"pd:det:{tx_id}")]]),
         )
         return
 
@@ -536,7 +536,7 @@ async def deposit_approve_execute(update: Update, context: ContextTypes.DEFAULT_
                 query,
                 f"⚠️ Deposit #{tx_id} could not be approved — it may already be "
                 "processed or in an invalid state.",
-                InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data=f"pd:det:{tx_id}")]]),
+                InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"pd:det:{tx_id}")]]),
             )
             return
 
@@ -741,7 +741,7 @@ async def deposit_reject_execute(update: Update, context: ContextTypes.DEFAULT_T
                 query,
                 f"⚠️ Deposit #{tx_id} could not be rejected — it may already "
                 "be approved or in an invalid state.",
-                InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data=f"pd:det:{tx_id}")]]),
+                InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"pd:det:{tx_id}")]]),
             )
             return
         session.commit()

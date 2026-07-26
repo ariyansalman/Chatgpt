@@ -20,7 +20,7 @@ async def resellers_menu(update, context, page: int = 0):
         tiers = s.query(ResellerTier).order_by(ResellerTier.display_order.asc(),
                                                ResellerTier.name.asc()).all()
         assigned = s.query(UserReseller).count()
-    t = ["🤝 <b>RESELLERS</b>",
+    t = ["🤝 <b>Resellers</b>",
          f"Tiers: {len(tiers)}  ·  Assigned users: {assigned}", ""]
     for tier in tiers:
         badge = "🟢" if tier.is_active else "⚪"

@@ -379,7 +379,7 @@ async def user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
          InlineKeyboardButton("⚙️ Settings",       callback_data="ua:sec")],
         [InlineKeyboardButton("📄 Terms",          callback_data="sc_page_terms"),
          InlineKeyboardButton("ℹ️ About",          callback_data="sc_page_about")],
-        [InlineKeyboardButton("⬅️ Back to Menu",   callback_data="main_menu")],
+        [InlineKeyboardButton("🏠 Main Menu",   callback_data="main_menu")],
     ])
 
     if query:

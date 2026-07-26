@@ -100,7 +100,7 @@ async def aps_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     stats = await asyncio.to_thread(get_stats)
     text = (
-        "🗓 <b>PRODUCT SCHEDULER</b>\n"
+        "🗓 <b>Product Scheduler</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"⏳ Pending:   <b>{stats['pending']}</b>\n"
         f"✅ Executed:  <b>{stats['executed']}</b>\n"

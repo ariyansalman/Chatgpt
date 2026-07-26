@@ -111,7 +111,7 @@ async def pcm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     h_emoji = s.get("emoji", "❓")
     score = s.get("score", 0)
     text = (
-        "⚡ <b>PERFORMANCE & CACHE MANAGER</b>\n"
+        "⚡ <b>Performance & Cache Manager</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Health: {h_emoji} <b>{s.get('label','—')}</b> ({score}/100)\n"
         f"🖥 CPU: {_pct_emoji(s.get('cpu_pct',0))} {s.get('cpu_pct',0)}%   "
@@ -155,7 +155,7 @@ async def pcm_live(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     disk_bar = _bar(m["disk_pct"])
 
     text = (
-        "📊 <b>LIVE PERFORMANCE STATS</b>\n"
+        "📊 <b>Live Performance Stats</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🖥 <b>CPU</b>\n"
         f"  Usage:    {m['cpu_pct']}%  {cpu_bar}\n"
@@ -211,7 +211,7 @@ async def pcm_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             db_status = "🟡 Slow"
 
     text = (
-        f"❤️ <b>SYSTEM HEALTH</b>\n"
+        f"❤️ <b>System Health</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Overall: {h['emoji']} <b>{h['label']}</b> — Score: {h['score']}/100\n\n"
         "<b>Component Status:</b>\n"
@@ -247,7 +247,7 @@ async def pcm_cache(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     namespaces = get_cache_namespaces()
     text = (
-        "🧹 <b>CACHE MANAGER</b>\n"
+        "🧹 <b>Cache Manager</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Available cache namespaces: <b>{len(namespaces)}</b>\n\n"
         "Select a cache to clear, or clear all at once:"
@@ -304,7 +304,7 @@ async def pcm_optimize(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     text = (
-        "⚡ <b>OPTIMIZATION TOOLS</b>\n"
+        "⚡ <b>Optimization Tools</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "Select an optimization to run:"
     )
@@ -560,7 +560,7 @@ async def pcm_reports(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     text = (
-        "📋 <b>PERFORMANCE REPORTS</b>\n"
+        "📋 <b>Performance Reports</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "Generate a report:"
     )

@@ -1008,7 +1008,7 @@ async def edit_category_select(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("📦 Name", callback_data="editcat_name")],
             [InlineKeyboardButton("📝 Description", callback_data="editcat_desc")],
             [InlineKeyboardButton("🗑 Delete Category", callback_data="editcat_delete")],
-            [InlineKeyboardButton("🔙 Cancel", callback_data="cancel_edit_cat")]
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_edit_cat")]
         ]
 
         try:
@@ -1264,7 +1264,7 @@ async def edit_subcategory_select(update: Update, context: ContextTypes.DEFAULT_
             [InlineKeyboardButton("📦 Name", callback_data="editsubcat_name")],
             [InlineKeyboardButton("📁 Change Parent Category", callback_data="editsubcat_category")],
             [InlineKeyboardButton("🗑 Delete Subcategory", callback_data="editsubcat_delete")],
-            [InlineKeyboardButton("🔙 Cancel", callback_data="cancel_edit_subcat")]
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_edit_subcat")]
         ]
 
         try:
@@ -1581,7 +1581,7 @@ async def edit_select_product(update: Update, context: ContextTypes.DEFAULT_TYPE
             [InlineKeyboardButton("❌ Deactivate", callback_data="edit_deactivate")],
             [InlineKeyboardButton(f"🗑 Clear Keys ({available_keys})", callback_data="edit_clear_keys")],
             [InlineKeyboardButton("🗑 Delete Product", callback_data="edit_delete")],
-            [InlineKeyboardButton("🔙 Cancel", callback_data="cancel_edit")]
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_edit")]
         ]
 
         current_status = "Active" if product.is_active else "Inactive"

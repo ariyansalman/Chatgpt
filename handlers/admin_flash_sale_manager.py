@@ -454,7 +454,7 @@ async def fsm_del_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"fsm:del_ok:{fid}")],
-        [InlineKeyboardButton("🔙 Cancel",      callback_data=f"fsm:view:{fid}")],
+        [InlineKeyboardButton("❌ Cancel",      callback_data=f"fsm:view:{fid}")],
     ])
     await _send(update, text, kb)
 
@@ -487,7 +487,7 @@ async def fsm_preview(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         template = fse.message_template or cfg.get(
             "fsm_default_message_template",
-            "⚡ <b>FLASH SALE</b>\n\n{product_name}\n\n${old_price} → {sale_price}"
+            "⚡ <b>Flash Sale</b>\n\n{product_name}\n\n${old_price} → {sale_price}"
         )
 
         # Resolve sample product

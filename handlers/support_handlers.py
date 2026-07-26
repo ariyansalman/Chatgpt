@@ -86,7 +86,7 @@ def _sla_line(tk: SupportTicket) -> str:
         return ""
     now = datetime.utcnow()
     if tk.sla_deadline <= now or tk.sla_breached:
-        return "SLA: 🚨 <b>BREACHED</b>"
+        return "SLA: 🚨 <b>Breached</b>"
     remaining = tk.sla_deadline - now
     hrs = int(remaining.total_seconds() // 3600)
     mins = int((remaining.total_seconds() % 3600) // 60)

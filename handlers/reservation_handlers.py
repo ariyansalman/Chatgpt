@@ -285,7 +285,7 @@ async def _handle_my_reservations(update, context, tg_id: int):
 
     if not user_pk:
         await _safe_edit(query, "❌ User not found.", InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
         ]))
         return
 
@@ -318,7 +318,7 @@ async def _handle_my_reservations(update, context, tg_id: int):
 
     if not items:
         text = "⏳ <b>My Reservations</b>\n\nYou have no active stock reservations."
-        kb   = [[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]]
+        kb   = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         await _safe_edit(query, text, InlineKeyboardMarkup(kb))
         return
 
@@ -336,5 +336,5 @@ async def _handle_my_reservations(update, context, tg_id: int):
             )
         ])
 
-    kb.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    kb.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(kb))

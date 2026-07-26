@@ -86,7 +86,7 @@ async def gift_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>@username</b>:{anon_note}\n\n"
         f"Send /cancel to abort."
     )
-    kb = _safe_kb([[InlineKeyboardButton("🚫 Cancel", callback_data="gp:cancel")]])
+    kb = _safe_kb([[InlineKeyboardButton("❌ Cancel", callback_data="gp:cancel")]])
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
     except BadRequest as e:
@@ -149,7 +149,7 @@ async def gift_recipient_input(update: Update, context: ContextTypes.DEFAULT_TYP
 
     kb = _safe_kb([
         [InlineKeyboardButton("⏭ Skip message", callback_data="gp:skip_msg")],
-        [InlineKeyboardButton("🚫 Cancel",       callback_data="gp:cancel")],
+        [InlineKeyboardButton("❌ Cancel",       callback_data="gp:cancel")],
     ])
     await update.message.reply_text(
         "✅ Recipient noted.\n\n"
@@ -217,7 +217,7 @@ async def _show_gift_confirmation(update: Update, context: ContextTypes.DEFAULT_
     kb_rows.append([
         InlineKeyboardButton("🛒 Proceed to Checkout", callback_data=f"product_{product_id}")
     ])
-    kb_rows.append([InlineKeyboardButton("🚫 Cancel", callback_data="gp:cancel")])
+    kb_rows.append([InlineKeyboardButton("❌ Cancel", callback_data="gp:cancel")])
 
     text = "\n".join(lines)
     if update.message:

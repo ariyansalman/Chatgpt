@@ -377,9 +377,9 @@ def build_acc_root_keyboard(maintenance_on: bool) -> IKM:
 
     # ── System controls ──────────────────────────────────────────────────────
     maint_label = (
-        "🔴  Maintenance: ON"
+        "🔴 Maintenance: ON"
         if maintenance_on
-        else "🟢  Maintenance: OFF"
+        else "🟢 Maintenance: OFF"
     )
     # (Panel Settings is now under 🎨 UI & Menu — no separate shortcut here.)
     kb.append([IKB(maint_label, callback_data="admin_maintenance_toggle")])

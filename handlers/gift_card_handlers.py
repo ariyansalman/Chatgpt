@@ -54,7 +54,7 @@ async def redeem_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚫 Cancel", callback_data="gc:cancel")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="gc:cancel")],
     ])
     try:
         await query.edit_message_text(
@@ -185,7 +185,7 @@ async def redeem_code_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("💰 My Wallet", callback_data="wallet")],
-        [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ])
     await update.message.reply_text(sanitize_message(msg), reply_markup=kb, parse_mode="HTML")
     return ConversationHandler.END

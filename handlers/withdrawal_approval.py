@@ -105,7 +105,7 @@ def _processing_time_note() -> str:
 
 def _back_to_dashboard_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🔙 My Dashboard", callback_data="rd:menu")
+        InlineKeyboardButton("🔙 My Dashboard", callback_data="refer")
     ]])
 
 
@@ -135,7 +135,7 @@ async def wda_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _safe_edit(
             query,
             "❌ <b>Withdrawals are currently disabled.</b>\n\nPlease try again later.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="rd:menu")]]),
+            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
         )
         return ConversationHandler.END
 
@@ -143,7 +143,7 @@ async def wda_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _safe_edit(
             query,
             "🔧 <b>Withdrawals are under maintenance.</b>\n\nPlease try again shortly.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="rd:menu")]]),
+            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
         )
         return ConversationHandler.END
 
@@ -161,7 +161,7 @@ async def wda_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Please wait for it to be processed before submitting a new one.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("📋 View History", callback_data="wda:history")],
-                [InlineKeyboardButton("🔙 Back", callback_data="rd:menu")],
+                [InlineKeyboardButton("🔙 Back", callback_data="refer")],
             ]),
         )
         return ConversationHandler.END
@@ -175,7 +175,7 @@ async def wda_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💸 <b>Withdrawal</b>\n\n"
             f"You need at least <b>${min_amt:.2f}</b> available commission.\n"
             f"Your current available balance: <b>${available:.2f}</b>",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="rd:menu")]]),
+            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
         )
         return ConversationHandler.END
 
@@ -188,7 +188,7 @@ async def wda_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = []
     for method_key, method_label in wda_svc.PAYMENT_METHODS.items():
         kb.append([InlineKeyboardButton(method_label, callback_data=f"wda:m:{method_key}")])
-    kb.append([InlineKeyboardButton("❌ Cancel", callback_data="rd:menu")])
+    kb.append([InlineKeyboardButton("❌ Cancel", callback_data="refer")])
 
     await _safe_edit(
         query,
@@ -236,7 +236,7 @@ async def wda_method_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _safe_edit(
         query,
         f"💸 <b>Withdrawal — {method_label}</b>\n\n{prompt}",
-        InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="rd:menu")]]),
+        InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="refer")]]),
     )
     return WDA_ADDRESS
 
@@ -263,7 +263,7 @@ async def wda_address_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"How much do you want to withdraw?",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="rd:menu")
+            InlineKeyboardButton("❌ Cancel", callback_data="refer")
         ]]),
     )
     return WDA_AMOUNT
@@ -346,7 +346,7 @@ async def wda_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📋 View History", callback_data="wda:history")],
-            [InlineKeyboardButton("🔙 My Dashboard", callback_data="rd:menu")],
+            [InlineKeyboardButton("🔙 My Dashboard", callback_data="refer")],
         ]),
     )
 
@@ -386,7 +386,7 @@ async def wda_cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _safe_edit(
             q,
             "❌ Withdrawal cancelled.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="rd:menu")]]),
+            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
         )
     return ConversationHandler.END
 
@@ -410,7 +410,7 @@ async def wda_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _safe_edit(
             query,
             "📋 <b>Withdrawal History</b>\n\nNo withdrawal requests yet.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="rd:menu")]]),
+            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
         )
         return
 
@@ -429,7 +429,7 @@ async def wda_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             callback_data=f"wda:status:{w['id']}",
         )])
 
-    kb.append([InlineKeyboardButton("🔙 Back", callback_data="rd:menu")])
+    kb.append([InlineKeyboardButton("🔙 Back", callback_data="refer")])
     await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(kb))
 
 
@@ -644,7 +644,7 @@ async def wda_adm_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         action_kb.append([
             InlineKeyboardButton("❌ Reject", callback_data=f"wda:adm:reject:{wid}"),
-            InlineKeyboardButton("🚫 Cancel", callback_data=f"wda:adm:cancel:{wid}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"wda:adm:cancel:{wid}"),
         ])
     elif status == "under_review":
         action_kb.append([
@@ -652,7 +652,7 @@ async def wda_adm_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("❌ Reject", callback_data=f"wda:adm:reject:{wid}"),
         ])
         action_kb.append([
-            InlineKeyboardButton("🚫 Cancel", callback_data=f"wda:adm:cancel:{wid}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"wda:adm:cancel:{wid}"),
         ])
     elif status == "approved":
         action_kb.append([
@@ -1210,19 +1210,19 @@ def build_wda_withdraw_conv() -> ConversationHandler:
         states={
             WDA_METHOD: [
                 CallbackQueryHandler(wda_method_select, pattern=r"^wda:m:.+$"),
-                CallbackQueryHandler(wda_cancel_conv, pattern=r"^rd:menu$"),
+                CallbackQueryHandler(wda_cancel_conv, pattern=r"^refer$"),
             ],
             WDA_ADDRESS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, wda_address_input),
-                CallbackQueryHandler(wda_cancel_conv, pattern=r"^rd:menu$"),
+                CallbackQueryHandler(wda_cancel_conv, pattern=r"^refer$"),
             ],
             WDA_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, wda_amount_input),
-                CallbackQueryHandler(wda_cancel_conv, pattern=r"^rd:menu$"),
+                CallbackQueryHandler(wda_cancel_conv, pattern=r"^refer$"),
             ],
         },
         fallbacks=[
-            CallbackQueryHandler(wda_cancel_conv, pattern=r"^rd:menu$"),
+            CallbackQueryHandler(wda_cancel_conv, pattern=r"^refer$"),
             CommandHandler("cancel", wda_cancel_conv),
         ],
         per_user=True,
@@ -1304,7 +1304,7 @@ def build_wda_admin_settings_convs() -> list:
 def register_handlers(application) -> None:
     """Register all withdrawal approval handlers on the application.
 
-    Call this from bot.py in place of the old build_rd_withdraw_conv registration.
+    Call this from bot.py to wire up the full withdrawal approval workflow.
     """
     # ── User flow ────────────────────────────────────────────────────────────
     application.add_handler(build_wda_withdraw_conv())

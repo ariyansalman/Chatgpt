@@ -343,7 +343,7 @@ async def _edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt
     try:
         await query.edit_message_text(
             prompt,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Cancel", callback_data="admin_binance_view")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_binance_view")]]),
             parse_mode="HTML",
         )
     except BadRequest as e:

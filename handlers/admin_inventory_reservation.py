@@ -74,7 +74,7 @@ async def irs_admin_menu(update, context):
     man_rel   = cfg.get_bool("irs_allow_manual_release", True)
 
     lines = [
-        "⏳ <b>INVENTORY RESERVATION SETTINGS</b>",
+        "⏳ <b>Inventory Reservation Settings</b>",
         "",
         f"<b>Feature Status:</b>  {_status_label()}",
         "",

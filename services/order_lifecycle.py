@@ -115,23 +115,65 @@ def transition(order_id: int,
         try:
             import asyncio as _asyncio
             from services.notifications import notify_admins as _notify_admins
-            from utils.notify_format import render as _render_notif, utc_now_str as _ts
+            from utils.notify_format import (
+                render_order_notification as _render_order,
+                dhaka_time_str as _dhaka_ts,
+            )
+            from utils.helpers import format_order_id as _fmt_order_id, format_price as _fmt_price
+            from database.models import OrderItem, Product, User
+
             with get_db_session() as _s:
                 _ord = _s.query(Order).filter_by(id=order_id).first()
-                _total = _ord.total_amount if _ord else 0.0
-                _ord_created = _ord.created_at if _ord else None
-            from utils.helpers import format_order_id as _fmt_order_id
+                if _ord is None:
+                    return True
+                _total = _ord.total_amount
+                _ord_created = _ord.created_at
+                _cust = _s.query(User).filter_by(id=_ord.user_id).first()
+                _cust_telegram_id = _cust.telegram_id if _cust else None
+                _cust_username = (_cust.username or None) if _cust else None
+                _items = (
+                    _s.query(OrderItem, Product.name)
+                    .join(Product, Product.id == OrderItem.product_id)
+                    .filter(OrderItem.order_id == order_id)
+                    .all()
+                )
+                if len(_items) == 1:
+                    _oi, _pname = _items[0]
+                    _product_display = _pname
+                    _qty_display = _oi.quantity
+                    _unit_price_display = _fmt_price(_oi.price)
+                elif len(_items) > 1:
+                    _product_display = ", ".join(f"{pname} ×{oi.quantity}" for oi, pname in _items)
+                    _qty_display = sum(oi.quantity for oi, pname in _items)
+                    _unit_price_display = None
+                else:
+                    _product_display = None
+                    _qty_display = None
+                    _unit_price_display = None
+
+            if _cust_telegram_id is None:
+                return True  # no customer to report — skip rather than send a blank line
+
             _order_display_id = _fmt_order_id(order_id, _ord_created)
-            _total_str = f"${_total:.2f}"
+            _display_name = f"@{_cust_username}" if _cust_username else f"User {_cust_telegram_id}"
+            _merged_notif = _render_order(
+                status="completed",
+                order_id=_order_display_id,
+                customer_name=_display_name,
+                telegram_id=_cust_telegram_id,
+                product_name=_product_display,
+                quantity=_qty_display,
+                unit_price=_unit_price_display,
+                total_paid=_fmt_price(_total),
+                delivery_status="instant",
+                order_time=_dhaka_ts(_ord_created),
+            )
             try:
                 loop = _asyncio.get_running_loop()
                 loop.create_task(_notify_admins(
                     bot,
                     "order_delivered",
-                    _render_notif("✅", "Order Completed", [
-                        ("Order ID", _order_display_id),
-                        ("Amount", _total_str),
-                    ], _ts()),
+                    _merged_notif,
                 ))
             except RuntimeError:
                 pass

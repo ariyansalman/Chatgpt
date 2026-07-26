@@ -72,7 +72,7 @@ async def sas_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_suppliers = s.query(Supplier).count()
 
     lines = [
-        "🤖 <b>SUPPLIER AUTO ASSIGNMENT</b>  (V24)",
+        "🤖 <b>Supplier Auto Assignment</b>  (V24)",
         "",
         f"<b>Feature:</b>  {'🟢 Enabled' if enabled else '🔴 Disabled'}",
         f"<b>Fallback to any supplier:</b>  {'✅ ON' if fallback else '🚫 OFF'}",
@@ -154,7 +154,7 @@ async def sas_assignment_list(update: Update, context: ContextTypes.DEFAULT_TYPE
                             sup_name, prod_name))
 
     slice_, page, pages = paginate(entries, page, per_page=8)
-    lines = [f"📋 <b>SUPPLIER ASSIGNMENTS</b>  ({len(entries)} total)", ""]
+    lines = [f"📋 <b>Supplier Assignments</b>  ({len(entries)} total)", ""]
     kb: list = []
     for sp_id, sup_id, prio, auto, active, sup_name, prod_name in slice_:
         badges = []

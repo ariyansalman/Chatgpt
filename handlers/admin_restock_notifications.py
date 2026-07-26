@@ -57,7 +57,7 @@ async def rsn_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     stats = await asyncio.to_thread(get_stats)
     text = (
-        "🔔 <b>RESTOCK NOTIFICATIONS</b>\n"
+        "🔔 <b>Restock Notifications</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📋 Total subscriptions: <b>{stats['total_subscriptions']}</b>\n"
         f"⏳ Pending notifications: <b>{stats['pending']}</b>\n"

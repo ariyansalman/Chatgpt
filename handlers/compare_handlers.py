@@ -55,7 +55,7 @@ def _back_kb(product_id: int | None = None) -> InlineKeyboardMarkup:
         )])
     rows.append([
         InlineKeyboardButton("⚖️ View Comparison", callback_data="cmp:view"),
-        InlineKeyboardButton("⬅️ Back to Menu",       callback_data="main_menu"),
+        InlineKeyboardButton("🏠 Main Menu",       callback_data="main_menu"),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -75,13 +75,13 @@ def _compare_view_kb(product_ids: list[int]) -> InlineKeyboardMarkup:
 
     # Remove buttons
     rows.append([InlineKeyboardButton("🗑 Clear All",  callback_data="cmp:clear")])
-    rows.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     return InlineKeyboardMarkup(rows)
 
 
 def _maintenance_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"),
+        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
     ]])
 
 
@@ -154,7 +154,7 @@ async def cmp_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton(
                     "🔙 Back to Product", callback_data=f"product_{product_id}"
                 )],
-                [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+                [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
             ]),
         )
         return
@@ -169,7 +169,7 @@ async def cmp_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Browse products and tap <b>⚖️ Add to Compare</b> to get started.",
                 InlineKeyboardMarkup([[
                     InlineKeyboardButton("🛍 Products", callback_data="products"),
-                    InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"),
+                    InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
                 ]]),
             )
             return
@@ -185,7 +185,7 @@ async def cmp_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     [InlineKeyboardButton(
                         "🗑 Clear List", callback_data="cmp:clear"
                     )],
-                    [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+                    [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
                 ]),
             )
             return
@@ -204,7 +204,7 @@ async def cmp_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg,
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🛍 Browse Products", callback_data="products")],
-                [InlineKeyboardButton("⬅️ Back to Menu",       callback_data="main_menu")],
+                [InlineKeyboardButton("🏠 Main Menu",       callback_data="main_menu")],
             ]),
         )
         return

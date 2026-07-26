@@ -161,7 +161,7 @@ async def gse_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     active_filters = _get_filters(context)
     sort = _get_sort(context)
     text = (
-        "🔍 <b>GLOBAL SEARCH ENGINE</b>\n"
+        "🔍 <b>Global Search Engine</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🔎 Total searches:   <b>{stats['total']}</b>\n"
         f"📅 Today:  <b>{stats['today']}</b>   "
@@ -325,7 +325,7 @@ def _build_results_kb(result: dict, qhash: str, page: int,
     action_row.append(InlineKeyboardButton("🔧 Filter", callback_data="gse:filters"))
     kb.append(action_row)
     kb.append([InlineKeyboardButton("🔎 New Search", callback_data="gse:new_search"),
-               InlineKeyboardButton("🏠 Menu", callback_data="gse:menu")])
+               InlineKeyboardButton("🏠 Search Menu", callback_data="gse:menu")])
     return InlineKeyboardMarkup(kb)
 
 
@@ -857,7 +857,7 @@ async def gse_filters(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return f" <b>[{v}]</b>" if v else ""
 
     text = (
-        "🔧 <b>SEARCH FILTERS</b>\n"
+        "🔧 <b>Search Filters</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📅 Date from:{_val('date_from')}\n"
         f"📅 Date to:  {_val('date_to')}\n"
@@ -1028,7 +1028,7 @@ async def gse_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     InlineKeyboardMarkup([[_back_btn("gse:menu")]]))
         return
 
-    text = "🕐 <b>RECENT SEARCHES</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
+    text = "🕐 <b>Recent Searches</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
     kb = []
     for h in history[:15]:
         date_str = h["created_at"].strftime("%m-%d %H:%M") if h["created_at"] else ""
@@ -1072,7 +1072,7 @@ async def gse_saved(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     InlineKeyboardMarkup([[_back_btn("gse:menu")]]))
         return
 
-    text = "⭐ <b>SAVED SEARCHES</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
+    text = "⭐ <b>Saved Searches</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
     kb = []
     for s in saved:
         date_str = s["created_at"].strftime("%m-%d") if s["created_at"] else ""
@@ -1149,7 +1149,7 @@ async def gse_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ) or "  (none yet)"
 
     text = (
-        "📊 <b>SEARCH STATISTICS</b>\n"
+        "📊 <b>Search Statistics</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🔎 Total searches:   <b>{stats['total']}</b>\n"
         f"📅 Today:            <b>{stats['today']}</b>\n"

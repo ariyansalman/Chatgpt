@@ -138,7 +138,7 @@ async def bpim_import_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = (
-        "📥 <b>IMPORT PRODUCTS</b>\n\n"
+        "📥 <b>Import Products</b>\n\n"
         "Select the import format:\n\n"
         "• <b>CSV</b> — Comma-separated values (.csv)\n"
         "• <b>Excel</b> — Microsoft Excel (.xlsx)\n"
@@ -245,7 +245,7 @@ async def bpim_import_receive_file(update: Update, context: ContextTypes.DEFAULT
             errors_text += f"\n  … and {len(report['errors']) - 10} more"
 
     text = (
-        f"📥 <b>IMPORT COMPLETE</b>\n\n"
+        f"📥 <b>Import Complete</b>\n\n"
         f"📊 Total rows: <b>{report['total_rows']}</b>\n"
         f"✅ Imported: <b>{report['imported']}</b>\n"
         f"⚠️ Duplicates skipped: <b>{report['duplicates']}</b>\n"
@@ -281,7 +281,7 @@ async def bpim_export_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _safe_edit(query, f"⛔ Manager is {_mgr_status()}.", _back_main_kb()); return
 
     text = (
-        "📤 <b>EXPORT PRODUCTS</b>\n\n"
+        "📤 <b>Export Products</b>\n\n"
         "Select what to export:\n"
         "• <b>All Products</b> — entire catalog\n"
         "• <b>By Category</b> — products from a specific category\n"
@@ -412,7 +412,7 @@ async def bpim_bulk_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_enabled():
         await _safe_edit(query, f"⛔ Manager is {_mgr_status()}.", _back_main_kb()); return
 
-    text = "⚡ <b>BULK ACTIONS</b>\n\nSelect an action to apply to products:"
+    text = "⚡ <b>Bulk Actions</b>\n\nSelect an action to apply to products:"
     kb = [
         [InlineKeyboardButton("🟢 Bulk Enable",          callback_data="bpim:bulk:enable:scope"),
          InlineKeyboardButton("🔴 Bulk Disable",         callback_data="bpim:bulk:disable:scope")],
@@ -482,7 +482,7 @@ async def bpim_bulk_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "price":
         await _safe_edit(
             query,
-            "💰 <b>BULK PRICE EDIT</b>\n\nPlease reply with the new price (e.g. <code>19.99</code>).\n\nSend /cancel to abort.",
+            "💰 <b>Bulk Price Edit</b>\n\nPlease reply with the new price (e.g. <code>19.99</code>).\n\nSend /cancel to abort.",
             InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="bpim:bulk:cancel")]]),
         )
         return BPIM_WAIT_PRICE
@@ -490,7 +490,7 @@ async def bpim_bulk_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "stock":
         await _safe_edit(
             query,
-            "📦 <b>BULK STOCK EDIT</b>\n\nPlease reply with the new stock count (e.g. <code>100</code>).\n\nSend /cancel to abort.",
+            "📦 <b>Bulk Stock Edit</b>\n\nPlease reply with the new stock count (e.g. <code>100</code>).\n\nSend /cancel to abort.",
             InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="bpim:bulk:cancel")]]),
         )
         return BPIM_WAIT_STOCK
@@ -536,7 +536,7 @@ async def bpim_bulk_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             await _safe_edit(
                 query,
-                f"⚠️ <b>CONFIRM BULK DELETE</b>\n\nYou are about to delete <b>{scope}</b> products.\n"
+                f"⚠️ <b>Confirm Bulk Delete</b>\n\nYou are about to delete <b>{scope}</b> products.\n"
                 f"This action cannot be undone. Are you sure?",
                 InlineKeyboardMarkup(kb),
             )
@@ -710,7 +710,7 @@ async def bpim_history_import(update: Update, context: ContextTypes.DEFAULT_TYPE
             for r in records
         ]
 
-    text = "📋 <b>IMPORT HISTORY</b>\n\n"
+    text = "📋 <b>Import History</b>\n\n"
     if not rows:
         text += "No import records yet."
     else:
@@ -758,7 +758,7 @@ async def bpim_history_export(update: Update, context: ContextTypes.DEFAULT_TYPE
             for r in records
         ]
 
-    text = "📋 <b>EXPORT HISTORY</b>\n\n"
+    text = "📋 <b>Export History</b>\n\n"
     if not rows:
         text += "No export records yet."
     else:
@@ -794,7 +794,7 @@ async def bpim_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action_log = cfg.get_bool("bulk_product_action_log_enabled", True)
 
     text = (
-        f"⚙️ <b>BULK PRODUCT MANAGER — SETTINGS</b>\n\n"
+        f"⚙️ <b>Bulk Product Manager — Settings</b>\n\n"
         f"Status: {_STATUS_EMOJI.get(status, '⚪')} {status.title()}\n"
         f"Max Import Rows: <b>{max_import}</b>\n"
         f"Delete Confirmation: {'✅' if del_confirm else '⚪'}\n"

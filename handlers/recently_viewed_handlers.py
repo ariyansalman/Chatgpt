@@ -115,7 +115,7 @@ def _list_keyboard(
     # Search + navigation
     rows.append([
         InlineKeyboardButton("🔍 Search", callback_data="rv:search"),
-        InlineKeyboardButton("🏠 Menu",   callback_data="main_menu"),
+        InlineKeyboardButton("🏠 Main Menu",   callback_data="main_menu"),
     ])
 
     # Clear all
@@ -196,7 +196,7 @@ async def _show_list(query, tg_id: int, page: int, search: str = ""):
         )
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🛍 Browse Products", callback_data="products")],
-            [InlineKeyboardButton("⬅️ Back to Menu",       callback_data="main_menu")],
+            [InlineKeyboardButton("🏠 Main Menu",       callback_data="main_menu")],
         ])
         await _safe_edit(query, text, kb)
         return
@@ -232,7 +232,7 @@ async def my_recently_viewed_menu(
             "⚠️ <b>Recently Viewed is currently under maintenance.</b>\n"
             "Please try again later.",
             InlineKeyboardMarkup([[
-                InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")
+                InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
             ]]),
         )
         return
@@ -274,7 +274,7 @@ async def _search_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Search cancelled.",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("🕒 Recently Viewed", callback_data="uf:rv"),
-            InlineKeyboardButton("⬅️ Back to Menu",       callback_data="main_menu"),
+            InlineKeyboardButton("🏠 Main Menu",       callback_data="main_menu"),
         ]]),
     )
     return ConversationHandler.END
@@ -325,7 +325,7 @@ async def rv_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⚠️ <b>Recently Viewed is currently under maintenance.</b>\n"
             "Please try again later.",
             InlineKeyboardMarkup([[
-                InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")
+                InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
             ]]),
         )
         return

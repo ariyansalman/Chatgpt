@@ -276,7 +276,7 @@ async def apt_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         used_sum = sum(r[0] or 0 for r in total_used)
 
     text = (
-        "📋 <b>PRODUCT TEMPLATE SYSTEM</b>\n\n"
+        "📋 <b>Product Template System</b>\n\n"
         f"📊 <b>Overview:</b>\n"
         f"  📋 Active Templates: <b>{total}</b>\n"
         f"  🗄 Archived:         <b>{archived}</b>\n"
@@ -1118,7 +1118,7 @@ async def apt_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ) or "  None yet"
 
     text = (
-        "📊 <b>TEMPLATE STATISTICS</b>\n\n"
+        "📊 <b>Template Statistics</b>\n\n"
         f"📋 Active Templates:    <b>{len(active)}</b>\n"
         f"🗄 Archived:            <b>{archived}</b>\n"
         f"⭐ Default Templates:   <b>{defaults}</b>\n"

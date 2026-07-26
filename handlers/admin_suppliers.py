@@ -23,7 +23,7 @@ async def suppliers_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, pag
         rows = s.query(Supplier).order_by(Supplier.is_active.desc(),
                                           Supplier.name.asc()).all()
     slice_, page, pages = paginate(rows, page)
-    lines = ["🏭 <b>SUPPLIERS</b>", f"Total: {len(rows)}", ""]
+    lines = ["🏭 <b>Suppliers</b>", f"Total: {len(rows)}", ""]
     kb: list = []
     for sup in slice_:
         badge = "🟢" if sup.is_active else "⚪"

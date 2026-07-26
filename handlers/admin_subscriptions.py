@@ -36,7 +36,7 @@ async def subscriptions_menu(update, context, status: str = "active", page: int 
     rows, page, pages = sub_svc.list_subscriptions(status=status, page=page,
                                                     page_size=PAGE_SIZE)
 
-    lines = ["♻️ <b>SUBSCRIPTIONS</b>", ""]
+    lines = ["♻️ <b>Subscriptions</b>", ""]
     lines.append(" · ".join(f"{label}: {counts.get(key, 0)}" for key, label in STATUSES))
     lines.append("")
     if not rows:
@@ -118,7 +118,7 @@ async def subscription_detail(update, context, sub_id: int):
                                          callback_data=f"acc:subs:cancel:{sub_id}")])
     kb.append([InlineKeyboardButton("🔔 Send Reminder",
                                      callback_data=f"acc:srm:remind:{sub_id}")])
-    kb.append([InlineKeyboardButton("🔙 Back to list",
+    kb.append([InlineKeyboardButton("🔙 Back to List",
                                      callback_data=f"acc:subs:list:{d['status']}:0")])
     kb.append([back_root()])
 
@@ -170,7 +170,7 @@ async def cancel_do(update, context, sub_id: int):
     await send(
         update, f"✅ Subscription #{sub_id} force-cancelled.",
         InlineKeyboardMarkup([[InlineKeyboardButton(
-            "🔙 Back to list", callback_data="acc:subs:list:cancelled:0")], [back_root()]]),
+            "🔙 Back to List", callback_data="acc:subs:list:cancelled:0")], [back_root()]]),
     )
 
 

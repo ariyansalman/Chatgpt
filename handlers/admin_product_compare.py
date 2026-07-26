@@ -86,7 +86,7 @@ async def product_compare_menu(update, context):
         most_cmp_lines = "—"
 
     lines = [
-        "⚖️ <b>PRODUCT COMPARE SETTINGS</b>",
+        "⚖️ <b>Product Compare Settings</b>",
         "",
         f"<b>Feature Status:</b>  {_status_label()}",
         "",

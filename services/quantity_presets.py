@@ -58,6 +58,8 @@ def build_keyboard(product: Product,
 
     Each preset fires a callback ``qty_preset_<product_id>_<qty>`` so the
     purchase handler can pick it up without requiring manual text input.
+    A ``✏️ Custom Quantity`` button (``qty_custom_<product_id>``) is always
+    included so the user can type an exact quantity instead of a preset.
     A Cancel button is always appended as the last row.
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup  # lazy import
@@ -74,6 +76,7 @@ def build_keyboard(product: Product,
             row = []
     if row:
         kb.append(row)
+    kb.append([InlineKeyboardButton("✏️ Custom Quantity", callback_data=f"qty_custom_{pid}")])
     kb.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase")])
     return InlineKeyboardMarkup(kb)
 

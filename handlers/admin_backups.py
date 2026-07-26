@@ -105,7 +105,7 @@ async def backups_menu(update: Update, context: ContextTypes.DEFAULT_TYPE,
     restore_confirm = cfg.get_bool("backup_restore_confirm", True)
 
     lines = [
-        f"💾 <b>BACKUP MANAGER</b>",
+        f"💾 <b>Backup Manager</b>",
         f"Status: {status_emoji} {mgr_status.title()}",
         "",
         "<b>📦 DB Dump (pg_dump):</b>",
@@ -123,7 +123,7 @@ async def backups_menu(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     kb = [
         [
-            InlineKeyboardButton("⚙️ Settings Backups", callback_data="acc:bak:sbak"),
+            InlineKeyboardButton("⬅️ Settings Backups", callback_data="acc:bak:sbak"),
             InlineKeyboardButton("📦 DB Dump History", callback_data="acc:bak:pglist:0"),
         ],
         [
@@ -150,7 +150,7 @@ async def backups_menu(update: Update, context: ContextTypes.DEFAULT_TYPE,
 async def _pg_confirm(update: Update):
     kb = [
         [InlineKeyboardButton("✅ Run DB Dump Now", callback_data="acc:bak:run"),
-         InlineKeyboardButton("Cancel", callback_data="acc:sec:backups")],
+         InlineKeyboardButton("❌ Cancel", callback_data="acc:sec:backups")],
     ]
     await send(update,
                "⚠️ <b>Trigger a manual pg_dump backup?</b>\n\n"
@@ -275,7 +275,7 @@ async def _sbak_confirm(update: Update):
     """Confirm before running settings backup."""
     kb = [
         [InlineKeyboardButton("✅ Create Settings Backup", callback_data="acc:bak:srun"),
-         InlineKeyboardButton("Cancel", callback_data="acc:bak:sbak")],
+         InlineKeyboardButton("❌ Cancel", callback_data="acc:bak:sbak")],
     ]
     await send(update,
                "⚙️ <b>Create a Settings Backup?</b>\n\n"
@@ -436,7 +436,7 @@ async def _sbak_restore_confirm(update: Update, backup_id: int):
             InlineKeyboardButton("🔄 Full Restore (+ Products/Categories)",
                                  callback_data=f"acc:bak:srfull:{backup_id}"),
         ],
-        [InlineKeyboardButton("Cancel", callback_data=f"acc:bak:sdetail:{backup_id}")],
+        [InlineKeyboardButton("❌ Cancel", callback_data=f"acc:bak:sdetail:{backup_id}")],
     ]
     await send(update,
                f"⚠️ <b>Restore Backup #{backup_id}?</b>\n\n"
@@ -484,7 +484,7 @@ async def _sbak_do_restore(update: Update, backup_id: int,
 async def _sbak_delete_confirm(update: Update, backup_id: int):
     kb = [
         [InlineKeyboardButton("🗑 Yes, Delete", callback_data=f"acc:bak:sdel:{backup_id}"),
-         InlineKeyboardButton("Cancel", callback_data=f"acc:bak:sdetail:{backup_id}")],
+         InlineKeyboardButton("❌ Cancel", callback_data=f"acc:bak:sdetail:{backup_id}")],
     ]
     await send(update,
                f"⚠️ <b>Delete Settings Backup #{backup_id}?</b>\n\nThis is permanent.",
@@ -513,7 +513,7 @@ async def _sbak_do_delete(update: Update, backup_id: int):
 async def _import_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show import instructions and enter conversation state."""
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Cancel", callback_data="acc:bak:sbak")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="acc:bak:sbak")],
     ])
     await send(update,
                "📥 <b>Import Settings Backup</b>\n\n"
@@ -569,7 +569,7 @@ async def _import_receive_file(update: Update, context: ContextTypes.DEFAULT_TYP
         msg = f"❌ Import error: {str(e)[:100]}"
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚙️ Settings Backups", callback_data="acc:bak:sbak")],
+        [InlineKeyboardButton("⬅️ Settings Backups", callback_data="acc:bak:sbak")],
     ])
     await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
     return ConversationHandler.END
@@ -780,7 +780,7 @@ async def route(action: str, rest: list, update: Update,
         kb = [
             [InlineKeyboardButton("✅ Confirm Full Restore",
                                   callback_data=f"acc:bak:srfull_confirm:{bid}"),
-             InlineKeyboardButton("Cancel", callback_data=f"acc:bak:sdetail:{bid}")],
+             InlineKeyboardButton("❌ Cancel", callback_data=f"acc:bak:sdetail:{bid}")],
         ]
         await send(update,
                    f"⚠️ <b>Full Restore Backup #{bid}?</b>\n\n"

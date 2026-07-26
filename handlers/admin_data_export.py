@@ -159,7 +159,7 @@ async def dec_pick_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     kb.append([_back_btn("dec:menu")])
 
     await _edit(update,
-                "📤 <b>SELECT EXPORT TYPE</b>\n\nChoose the data set to export:",
+                "📤 <b>Select Export Type</b>\n\nChoose the data set to export:",
                 InlineKeyboardMarkup(kb))
 
 
@@ -574,7 +574,7 @@ async def dec_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     s = get_stats()
     recent_at = s["recent_at"].strftime("%Y-%m-%d %H:%M") if s["recent_at"] else "—"
     text = (
-        "📊 <b>EXPORT STATISTICS</b>\n"
+        "📊 <b>Export Statistics</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📅 Today's exports:   <b>{s['today']}</b>\n"
         f"📆 Weekly exports:   <b>{s['weekly']}</b>\n"

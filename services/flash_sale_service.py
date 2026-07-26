@@ -285,7 +285,7 @@ def create(
 
         template = message_template or cfg.get(
             "fsm_default_message_template",
-            "⚡ <b>FLASH SALE</b>\n\n{product_name}\n\n"
+            "⚡ <b>Flash Sale</b>\n\n{product_name}\n\n"
             "${old_price} → <b>{sale_price}</b>\n"
             "🎁 Save {discount_percent}%\n\n⏰ Ends in: {countdown}"
         )
@@ -587,7 +587,7 @@ async def _send_broadcast(event_id: int, bc_type: str, bot) -> None:
 
             # Build message using the template
             template = fse.message_template or _cfg.get(
-                "fsm_default_message_template", "⚡ <b>FLASH SALE</b>\n\n{product_name}"
+                "fsm_default_message_template", "⚡ <b>Flash Sale</b>\n\n{product_name}"
             )
 
             # Resolve representative product name and pricing for the message

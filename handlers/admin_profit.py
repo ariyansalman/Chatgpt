@@ -54,7 +54,7 @@ async def profit_menu(update, context: ContextTypes.DEFAULT_TYPE):
     d7 = _range_metrics(7)
     d30 = _range_metrics(30)
     t = [
-        "📈 <b>PROFIT ANALYTICS</b>",
+        "📈 <b>Profit Analytics</b>",
         "Only DELIVERED/COMPLETED orders. Wallet top-ups excluded.",
         "",
         "<b>Today</b>",

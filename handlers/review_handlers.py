@@ -340,7 +340,7 @@ async def review_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton(f"{'⭐' * i}", callback_data=f"review_edit_rate_{i}")
         for i in (1, 2, 3, 4, 5)
-    ], [InlineKeyboardButton("🚫 Cancel", callback_data="review_edit_cancel")]])
+    ], [InlineKeyboardButton("❌ Cancel", callback_data="review_edit_cancel")]])
     try:
         await query.edit_message_text(
             "✏️ <b>Edit Review</b>\n\nSelect your new rating:",
@@ -363,7 +363,7 @@ async def review_edit_rating_pick(update: Update, context: ContextTypes.DEFAULT_
     context.user_data["edit_review_rating"] = rating
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("⏭ Keep existing comment", callback_data="review_edit_skip_comment")],
-        [InlineKeyboardButton("🚫 Cancel", callback_data="review_edit_cancel")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="review_edit_cancel")],
     ])
     try:
         await query.edit_message_text(
@@ -458,7 +458,7 @@ async def review_delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Yes, delete it", callback_data=f"review_del_confirm_{review_id}")],
-        [InlineKeyboardButton("🚫 Cancel",         callback_data="my_reviews")],
+        [InlineKeyboardButton("❌ Cancel",         callback_data="my_reviews")],
     ])
     try:
         await query.edit_message_text(

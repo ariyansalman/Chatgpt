@@ -43,7 +43,7 @@ async def vip_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     vip_status = cfg.get_str("vip_status", "enabled")
     if vip_status == "disabled":
         msg = "🏆 VIP Program is currently unavailable."
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]])
         try:
             if q:
                 await q.edit_message_text(msg, reply_markup=kb)
@@ -54,7 +54,7 @@ async def vip_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     if vip_status == "maintenance":
         msg = "🏆 VIP Program is under maintenance. Please check back soon."
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]])
         try:
             if q:
                 await q.edit_message_text(msg, reply_markup=kb)
@@ -192,7 +192,7 @@ async def vip_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     kb_rows.append([
         InlineKeyboardButton("📋 Points History", callback_data="vip_pts_history"),
-        InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"),
+        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
     ])
     kb = InlineKeyboardMarkup(kb_rows)
     try:

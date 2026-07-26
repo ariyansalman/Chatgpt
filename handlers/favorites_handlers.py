@@ -90,7 +90,7 @@ def _list_keyboard(items: list[dict], sort: str, page: int,
     # Search
     rows.append([
         InlineKeyboardButton("🔍 Search",  callback_data="fav:search"),
-        InlineKeyboardButton("🏠 Menu",    callback_data="main_menu"),
+        InlineKeyboardButton("🏠 Main Menu",    callback_data="main_menu"),
     ])
 
     # Clear all
@@ -120,7 +120,7 @@ def _build_list_text(items: list[dict], sort: str, page: int, total: int,
                 "No favorites matched your search."
             )
         return (
-            "❤️ <b>MY FAVORITES</b>\n\n"
+            "❤️ <b>My Favorites</b>\n\n"
             "Your favorites list is empty.\n"
             "Browse products and tap <b>❤️ Add to Favorites</b> to save them here."
         )
@@ -128,7 +128,7 @@ def _build_list_text(items: list[dict], sort: str, page: int, total: int,
     sort_label = {"new": "Newest", "old": "Oldest",
                   "price": "Price ↑", "alpha": "A–Z"}.get(sort, sort)
     header = (
-        f"❤️ <b>MY FAVORITES</b> — {total} saved  |  Sort: {sort_label}"
+        f"❤️ <b>My Favorites</b> — {total} saved  |  Sort: {sort_label}"
         + (f"\n🔍 Search: \"<i>{search}</i>\"" if search else "")
     )
     lines = [header, ""]
@@ -190,7 +190,7 @@ async def fav_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query,
             "⚠️ <b>Favorites is currently under maintenance.</b>\n"
             "Please try again later.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]]),
+            InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
         )
         return
 
@@ -292,7 +292,7 @@ async def fav_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"This action cannot be undone.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Yes, clear all", callback_data="fav:clr_ok")],
-                [InlineKeyboardButton("🚫 Cancel",          callback_data="fav:list:new:0")],
+                [InlineKeyboardButton("❌ Cancel",          callback_data="fav:list:new:0")],
             ]),
         )
         return
@@ -306,7 +306,7 @@ async def fav_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🗑 <b>All {n} favorite(s) cleared.</b>",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🛍 Browse Products", callback_data="products")],
-                [InlineKeyboardButton("⬅️ Back to Menu",       callback_data="main_menu")],
+                [InlineKeyboardButton("🏠 Main Menu",       callback_data="main_menu")],
             ]),
         )
         return
@@ -338,7 +338,7 @@ async def _search_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     block = _check_status(tg_id)
     if block:
         await _safe_edit(query, "⚠️ Favorites is currently unavailable.",
-                         InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="main_menu")]]))
+                         InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
         return ConversationHandler.END
 
     await _safe_edit(
@@ -346,7 +346,7 @@ async def _search_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔍 <b>Search Favorites</b>\n\n"
         "Type a product name (or part of it) to filter your saved items.\n"
         "Send /cancel to go back.",
-        InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Cancel", callback_data="fav:list:new:0")]]),
+        InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="fav:list:new:0")]]),
     )
     return FAV_SEARCH
 
@@ -434,7 +434,7 @@ async def my_favorites_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query,
             "⚠️ <b>Favorites is currently under maintenance.</b>\n"
             "Please try again later.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]]),
+            InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
         )
         return
 

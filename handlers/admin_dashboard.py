@@ -26,108 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Main dashboard keyboard
+# Dashboard stats
 # ─────────────────────────────────────────────────────────────────────
-
-def build_admin_dashboard_keyboard(
-    maintenance_on: bool,
-    stats: dict | None = None,
-) -> InlineKeyboardMarkup:
-    """Two-column dashboard keyboard used by the main /admin menu.
-
-    ``stats`` is the dict returned by ``_collect_dashboard_stats()``.  When
-    provided, dynamic counters are shown on Orders, Payments, Low Stock, and
-    Tickets buttons so attention-worthy items are visible at a glance.
-    """
-    s = stats or {}
-
-    # ── Dynamic counter helpers ──────────────────────────────────────────────
-    def _counter(n: int) -> str:
-        """Return ' (N)' when N > 0, else empty string."""
-        return f" ({n:,})" if n > 0 else ""
-
-    pending_orders   = s.get("pending_orders", 0)
-    pending_payments = s.get("pending_payments", 0)
-    low_stock        = s.get("low_stock", 0)
-    open_tickets     = s.get("open_tickets", 0)
-
-    # ── Maintenance toggle label ─────────────────────────────────────────────
-    # Two-line format: emoji + name on line 1, state on line 2.
-    # 🔴 = maintenance active (caution); 🟢 = maintenance off (bot healthy).
-    maint_label = (
-        "🔴 Maintenance: ON"
-        if maintenance_on
-        else "🟢 Maintenance: OFF"
-    )
-
-    # ── Keyboard — consistent 2-column grid, logically paired rows ───────────
-    kb = [
-        # Core operations
-        [
-            InlineKeyboardButton("📦 Products",               callback_data="admin_products"),
-            InlineKeyboardButton(f"🛒 Orders{_counter(pending_orders)}",
-                                                              callback_data="admin_orders"),
-        ],
-        [
-            InlineKeyboardButton(f"💳 Payments{_counter(pending_payments)}",
-                                                              callback_data="admin_confirm_order"),
-            InlineKeyboardButton("👥 Users",                  callback_data="admin_users"),
-        ],
-        # Marketing & engagement
-        [
-            InlineKeyboardButton("📢 Broadcast",              callback_data="admin_broadcast"),
-            InlineKeyboardButton("🎟️ Coupons",               callback_data="admin_coupons"),
-        ],
-        [
-            InlineKeyboardButton("🎁 Loyalty",                callback_data="admin_loyalty"),
-            InlineKeyboardButton("👑 Referrals",              callback_data="admin_referral_reward"),
-        ],
-        # Management tools
-        [
-            InlineKeyboardButton("🏆 VIP Manager",            callback_data="vip:menu"),
-            InlineKeyboardButton("🔑 API Keys",               callback_data="aim:menu"),
-        ],
-        [
-            InlineKeyboardButton("⚙️ Settings",               callback_data="admin_settings"),
-            InlineKeyboardButton("📊 Analytics",              callback_data="admin_analytics"),
-        ],
-        # Insights & search — paired in one row
-        [
-            InlineKeyboardButton("📈 Growth & LTV",           callback_data="admin_analytics_cohort"),
-            InlineKeyboardButton("🔍 Order Search",           callback_data="aos:menu"),
-        ],
-        # Monitoring — both carry live counters
-        [
-            InlineKeyboardButton(f"⚠️ Low Stock{_counter(low_stock)}",
-                                                              callback_data="admin_low_stock"),
-            InlineKeyboardButton(f"🎫 Tickets{_counter(open_tickets)}",
-                                                              callback_data="admin_tickets"),
-        ],
-        # Tooling
-        [
-            InlineKeyboardButton("🧾 Audit Log",              callback_data="admin_audit_log_0"),
-            InlineKeyboardButton("👁️ Store Preview",          callback_data="admin_preview"),
-        ],
-        # ── System Tools ─────────────────────────────────────────────────────
-        [
-            InlineKeyboardButton("📈 System Health",          callback_data="acc:sys:health"),
-            InlineKeyboardButton("📝 Activity Logs",          callback_data="acc:sys:logs"),
-        ],
-        [
-            InlineKeyboardButton("🗄️ Database Status",        callback_data="acc:sys:db"),
-            InlineKeyboardButton("🧹 Cache Manager",          callback_data="acc:sys:cache"),
-        ],
-        [
-            InlineKeyboardButton("📤 Backup",                 callback_data="acc:sys:backup"),
-            InlineKeyboardButton("📥 Restore",                callback_data="acc:sys:restore"),
-        ],
-        [InlineKeyboardButton("🔄 Background Jobs",           callback_data="acc:sys:jobs")],
-        # Full-width controls
-        [InlineKeyboardButton(maint_label,                    callback_data="admin_maintenance_toggle")],
-        [InlineKeyboardButton("⬅️ Exit Admin Panel",          callback_data="main_menu")],
-    ]
-    return InlineKeyboardMarkup(kb)
-
 
 def _collect_dashboard_stats() -> dict:
     """Live counts + revenue for the dashboard header."""
@@ -223,41 +123,44 @@ def _render_dashboard_text(stats: dict) -> str:
     """Build the dashboard header shown above the admin menu.
 
     Layout, top to bottom:
-      1. 🛡️ Admin Control Center
-      2. ⚠️ Needs Attention
-      3. 📊 Store Overview
-      4. 💰 Revenue
-      5. 📈 Performance
+      1. ⚡ Admin Control Center (title)
+      2. Action Required / All Clear
+      3. Live stats (Users, Products, Orders, Sales)
+
+    Every line uses the same "<emoji> Label: value" format so the header
+    reads consistently whether it's rendered on desktop or a narrow mobile
+    screen.
     """
     failed_orders = stats.get("failed_orders", 0)
     system_alerts = stats.get("system_alerts", 0)
 
     # Action Required — only genuinely actionable items; each line is
-    # hidden automatically whenever its count is zero.
+    # hidden automatically whenever its count is zero. Consistent
+    # "<emoji> Label: value" format, one space after the emoji.
     alerts = []
     if stats["pending_payments"]:
-        alerts.append(f"  🔴  <b>{stats['pending_payments']:,}</b> Pending Payments")
+        alerts.append(f"🔴 Pending Payments: <b>{stats['pending_payments']:,}</b>")
     if stats["low_stock"]:
-        alerts.append(f"  📦  <b>{stats['low_stock']:,}</b> Low Stock Products")
+        alerts.append(f"📦 Low Stock Products: <b>{stats['low_stock']:,}</b>")
     if failed_orders:
-        alerts.append(f"  ⚠️  <b>{failed_orders:,}</b> Failed Orders")
+        alerts.append(f"⚠️ Failed Orders: <b>{failed_orders:,}</b>")
     if system_alerts:
-        alerts.append(f"  🚨  <b>{system_alerts:,}</b> System Alerts")
+        alerts.append(f"🚨 System Alerts: <b>{system_alerts:,}</b>")
 
     if alerts:
         attention_block = "🔴 <b>Action Required</b>\n" + "\n".join(alerts)
     else:
-        attention_block = "🟢 <b>All Clear</b>  —  No pending actions"
+        attention_block = "🟢 <b>All Clear</b> — No pending actions"
 
     return (
         "⚡ <b>Admin Control Center</b>\n"
         "──────────────────────────\n\n"
         f"{attention_block}\n\n"
         "──────────────────────────\n"
-        f"👥  Total Users <b>{stats['users']:,}</b>\n"
-        f"📦  Total Products <b>{stats['products']:,}</b>\n"
-        f"🛒  Total Orders <b>{stats['orders']:,}</b>\n"
-        f"💰  Total Sales <b>{format_price(stats['total_sales'])}</b>"
+        f"👥 Total Users: <b>{stats['users']:,}</b>\n"
+        f"📦 Total Products: <b>{stats['products']:,}</b>\n"
+        f"🛒 Total Orders: <b>{stats['orders']:,}</b>\n"
+        f"💰 Total Sales: <b>{format_price(stats['total_sales'])}</b>"
     )
 
 
@@ -265,26 +168,6 @@ async def render_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """V9: /admin routes into the Premium Admin Control Center."""
     from handlers.admin_control_center import render_control_center
     await render_control_center(update, context)
-
-
-async def render_legacy_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Legacy compact dashboard (kept for the "📊 Dashboard" tile inside ACC)."""
-    stats = _collect_dashboard_stats()
-    text = _render_dashboard_text(stats)
-    kb = build_admin_dashboard_keyboard(cfg.get_bool("maintenance_mode", False), stats=stats)
-
-    query = getattr(update, "callback_query", None)
-    if query is not None:
-        try:
-            try:
-                await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
-            except BadRequest as e:
-                if "Message is not modified" not in str(e):
-                    raise
-        except Exception:
-            await query.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
-    else:
-        await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
 
 
 # ─────────────────────────────────────────────────────────────────────

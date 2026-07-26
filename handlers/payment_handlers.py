@@ -264,10 +264,10 @@ def _build_topup_method_screen(amount: float = None):
 
     Returns ``(text, keyboard, is_empty)`` — ``is_empty`` is True when no
     gateway or manual payment method is configured at all, in which case
-    the caller should end any in-progress conversation. ``amount`` is
-    accepted for backward compatibility with existing call sites but no
-    longer changes the rendered text — the redesigned screen always shows
-    the same minimal "Select a payment method" message.
+    the caller should end any in-progress conversation. When ``amount`` is
+    given (the user already picked one on Step 1), it's echoed back on the
+    screen as "Deposit Amount" — purely a display detail passed through to
+    ``services/payment_selection_ui.py``.
     """
     gateways, method_objs = _collect_topup_gateways()
 
@@ -278,18 +278,18 @@ def _build_topup_method_screen(amount: float = None):
         )
         return text, create_cancel_keyboard(), True
 
-    text, keyboard = psel.build_payment_selection_screen(gateways, method_objs)
+    text, keyboard = psel.build_payment_selection_screen(gateways, method_objs, amount=amount)
     return text, keyboard, False
 
 
 def _build_crypto_networks_screen():
-    """Build the "🔗 Crypto Networks" submenu (text + keyboard)."""
+    """Build the "₿ Crypto Networks" submenu (text + keyboard)."""
     gateways, _ = _collect_topup_gateways()
     return psel.build_crypto_networks_screen(gateways)
 
 
 def _build_mobile_money_screen():
-    """Build the "🇧🇩 Mobile Money (BD)" submenu (text + keyboard)."""
+    """Build the "🇧🇩 Mobile Banking" submenu (text + keyboard)."""
     gateways, _ = _collect_topup_gateways()
     return psel.build_mobile_money_screen(gateways)
 
@@ -319,7 +319,14 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise
         return ConversationHandler.END
 
-    amt_text, amt_keyboard = amtsel.build_amount_selection_screen()
+    try:
+        from utils.bot_config import cfg
+        _min_enabled = cfg.get_bool("minimum_deposit_enabled", False)
+        gmin = cfg.get_float("topup_min_amount", 1.0) if _min_enabled else 0.01
+    except Exception:
+        gmin = 0.01
+
+    amt_text, amt_keyboard = amtsel.build_amount_selection_screen(min_deposit=gmin)
     try:
         await query.edit_message_text(amt_text, reply_markup=amt_keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -345,7 +352,7 @@ async def topup_amount_selected(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data['topup_amount'] = amount
     context.user_data.pop('topup_method', None)
 
-    text, keyboard, is_empty = _build_topup_method_screen()
+    text, keyboard, is_empty = _build_topup_method_screen(amount=amount)
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -364,10 +371,32 @@ async def topup_amount_custom_prompt(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await safe_answer(query)
     context.user_data.pop('topup_method', None)
+
+    # Purely informational — reads the existing admin-configured min/max,
+    # never enforces them here; topup_amount() still does the real
+    # validation exactly as before.
+    try:
+        from utils.bot_config import cfg
+        _min_enabled = cfg.get_bool("minimum_deposit_enabled", False)
+        gmin = cfg.get_float("topup_min_amount", 1.0) if _min_enabled else 0.01
+        gmax = cfg.get_float("topup_max_amount", 0.0)
+    except Exception:
+        gmin, gmax = 0.01, 0.0
+
+    lines = [
+        "✍️ <b>Custom Deposit</b>\n",
+        "Enter the amount in USD.\n",
+        f"• Minimum: ${gmin:.2f}",
+    ]
+    lines.append(f"• Maximum: ${gmax:.2f}" if gmax else "• Maximum: No limit")
+    lines.append("\nExample:\n25")
+    text = "\n".join(lines)
+
     try:
         await query.edit_message_text(
-            "💬 How much would you like to add to your wallet, in USD?\nExample: 10",
+            text,
             reply_markup=create_cancel_keyboard(),
+            parse_mode="HTML",
         )
     except BadRequest as e:
         if "Message is not modified" not in str(e):
@@ -414,7 +443,7 @@ async def topup_back_to_methods(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await safe_answer(query)
 
-    text, keyboard, is_empty = _build_topup_method_screen()
+    text, keyboard, is_empty = _build_topup_method_screen(amount=context.user_data.get('topup_amount'))
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -670,7 +699,7 @@ async def heleket_asset_selected(update: Update, context: ContextTypes.DEFAULT_T
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🪙 Choose another coin", callback_data="topup")],
-        [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ])
     qr_buf = await asyncio.to_thread(generate_deposit_qr_bytes, address)
     try:
@@ -851,7 +880,7 @@ async def topup_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         method_objs = [_M(*d) for d in methods_data]
 
-        message, keyboard = psel.build_payment_selection_screen(gateways, method_objs)
+        message, keyboard = psel.build_payment_selection_screen(gateways, method_objs, amount=amount)
         await update.message.reply_text(
             message,
             reply_markup=keyboard,
@@ -3478,7 +3507,7 @@ def _bybit_network_keyboard(tx_id: int, svc: "BybitPayService") -> InlineKeyboar
         [InlineKeyboardButton(net, callback_data=f"bybit_network:{tx_id}:{net}")]
         for net in svc.networks_with_wallets()
     ]
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data=f"bybit_back_type:{tx_id}")])
+    rows.append([InlineKeyboardButton("🔙 Back", callback_data=f"bybit_back_type:{tx_id}")])
     rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
     return InlineKeyboardMarkup(rows)
 
@@ -5744,6 +5773,40 @@ async def buy_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return PURCHASE_QUANTITY
 
 
+async def qty_custom_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the ✏️ Custom Quantity button tap.
+
+    Callback data format: ``qty_custom_<product_id>``
+
+    Prompts the user to type a quantity. The typed value is picked up by
+    the existing ``purchase_quantity_input`` handler (same PURCHASE_QUANTITY
+    conversation state used by the preset keyboard) — no purchase/validation
+    logic is duplicated here.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        product_id = int(query.data.split("_")[2])
+    except (IndexError, ValueError):
+        product_id = context.user_data.get('purchase_product_id', 0)
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("❌ Cancel", callback_data=f"product_{product_id}")
+    ]])
+
+    try:
+        await query.edit_message_text(
+            "Enter the quantity you want to purchase.",
+            reply_markup=keyboard,
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+
+    return PURCHASE_QUANTITY
+
+
 async def purchase_quantity_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle quantity input for direct purchase."""
     quantity_str = update.message.text.strip()
@@ -5753,7 +5816,7 @@ async def purchase_quantity_input(update: Update, context: ContextTypes.DEFAULT_
         quantity = int(quantity_str)
     except ValueError:
         await update.message.reply_text(
-            "❌ Please enter a valid number.",
+            "❌ Please enter a valid whole number.",
             reply_markup=create_quantity_keyboard(context.user_data.get('purchase_product_id', 0))
         )
         return PURCHASE_QUANTITY
@@ -5763,14 +5826,14 @@ async def purchase_quantity_input(update: Update, context: ContextTypes.DEFAULT_
 
     if quantity < 1:
         await update.message.reply_text(
-            "❌ Quantity must be at least 1.",
+            "❌ Please enter a valid whole number.",
             reply_markup=create_quantity_keyboard(context.user_data.get('purchase_product_id', 0))
         )
         return PURCHASE_QUANTITY
 
     if quantity > product_stock:
         await update.message.reply_text(
-            f"❌ Not enough stock. Maximum available: {product_stock}",
+            f"❌ Only {product_stock} items are currently available.",
             reply_markup=create_quantity_keyboard(context.user_data.get('purchase_product_id', 0))
         )
         return PURCHASE_QUANTITY
@@ -5858,14 +5921,14 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
         else:
             keyboard.append([InlineKeyboardButton("🗑 Remove Coupon", callback_data="remove_coupon")])
         keyboard.append([
-            InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}"),
+            InlineKeyboardButton("🔙 Back", callback_data=f"buy_{product_id}"),
             InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
         ])
     else:
         keyboard = [
             [InlineKeyboardButton("💰 Top Up Wallet", callback_data="topup")],
             [
-                InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}"),
+                InlineKeyboardButton("🔙 Back", callback_data=f"buy_{product_id}"),
                 InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
             ],
         ]
@@ -5972,11 +6035,14 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         subtotal = product.price * quantity
+        _notif_unit_price = format_price(product.price)
         coupon_id = context.user_data.get('purchase_coupon_id')
         user_db_id = user.id  # snapshot for post-commit redemption logging
 
         # Fix: Coupon revalidation from DB — never trust user_data cache
         coupon_discount = 0.0
+        _notif_coupon_code = None
+        _notif_coupon_label = None
         if coupon_id:
             _c = session.query(Coupon).filter_by(id=coupon_id).first()
             _cerr = None
@@ -6005,9 +6071,12 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 if _c.discount_type == DiscountType.PERCENT:
                     coupon_discount = float(subtotal) * (_c.discount_value / 100.0)
+                    _notif_coupon_label = f"-{_c.discount_value:.0f}%"
                 else:
                     coupon_discount = float(_c.discount_value)
+                    _notif_coupon_label = f"-{format_price(coupon_discount)}"
                 coupon_discount = round(min(coupon_discount, float(subtotal)), 2)
+                _notif_coupon_code = _c.code
         coupon_discount = min(coupon_discount, float(subtotal))
         total = max(0.0, float(subtotal) - coupon_discount)
 
@@ -6347,17 +6416,41 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Please try again in a moment, or contact support "
                     "if the issue continues.",
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")
+                        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
                     ]])
                 )
             except BadRequest as e:
                 if "Message is not modified" not in str(e):
                     raise
-            await notify_admin(
-                context,
-                f"❗️ Delivery failed for user {telegram_id} on product #{product_id} "
-                f"(qty {quantity}). Wallet auto-refunded. Reason: {delivery_err}"
-            )
+            try:
+                from utils.notify_format import (
+                    render_order_notification as _render_order_failed,
+                    dhaka_time_str as _dhaka_ts_failed,
+                )
+                from utils.helpers import format_order_id as _fmt_order_id_failed
+                _fail_cname = getattr(update.effective_user, 'full_name', '') or str(telegram_id)
+                _fail_cuname = getattr(update.effective_user, 'username', '') or None
+                _failed_notif = _render_order_failed(
+                    status="failed",
+                    order_id=_fmt_order_id_failed(order.id, getattr(order, 'created_at', None)),
+                    customer_name=_fail_cname,
+                    customer_username=_fail_cuname,
+                    telegram_id=telegram_id,
+                    product_name=product_name,
+                    quantity=quantity,
+                    total_paid=format_price(total),
+                    payment_method="Wallet",
+                    delivery_status="failed",
+                    reason=f"{str(delivery_err)[:200]} — wallet auto-refunded",
+                    order_time=_dhaka_ts_failed(getattr(order, 'created_at', None)),
+                )
+                await notify_admin(context, _failed_notif, parse_mode='HTML')
+            except Exception:
+                await notify_admin(
+                    context,
+                    f"❗️ Delivery failed for order #{order.id} (qty {quantity}). "
+                    f"Wallet auto-refunded. Reason: {delivery_err}"
+                )
             return
 
 
@@ -6406,7 +6499,7 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Thank you for your purchase!"
             )
             reply_markup = InlineKeyboardMarkup([[
-                InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"),
+                InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
                 InlineKeyboardButton("📦 My Orders", callback_data="order_history"),
             ]])
 
@@ -6509,25 +6602,35 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             import asyncio as _asyncio
             from services.notifications import notify_admins as _notify_admins
-            from utils.notify_format import render as _render_notif, utc_now_str as _ts
+            from utils.notify_format import (
+                render_order_notification as _render_order,
+                dhaka_time_str as _dhaka_ts,
+            )
             _af_cname = getattr(update.effective_user, 'full_name', '') or str(telegram_id)
             _af_cuname = getattr(update.effective_user, 'username', '')
-            _delivery_type_str = (
-                "File"
+            _delivery_status_key = (
+                "file"
                 if (bulk_keys or _v11_oversized_content) else
-                "Instant"
+                "instant"
             )
             from utils.helpers import format_order_id as _fmt_order_id
             _order_display_id = _fmt_order_id(order.id, getattr(order, 'created_at', None))
-            _merged_notif = _render_notif("✅", "Order Completed", [
-                ("Order ID", _order_display_id),
-                ("Customer", f"{_af_cname} (@{_af_cuname})" if _af_cuname else _af_cname),
-                ("Telegram ID", f"<code>{telegram_id}</code>"),
-                ("Product", product_name),
-                ("Quantity", quantity),
-                ("Amount", format_price(total)),
-                ("Delivery", _delivery_type_str),
-            ], _ts())
+            _merged_notif = _render_order(
+                status="completed",
+                order_id=_order_display_id,
+                customer_name=_af_cname,
+                customer_username=(_af_cuname or None),
+                telegram_id=telegram_id,
+                product_name=product_name,
+                quantity=quantity,
+                unit_price=_notif_unit_price,
+                total_paid=format_price(total),
+                payment_method="Wallet",
+                delivery_status=_delivery_status_key,
+                coupon_code=_notif_coupon_code,
+                coupon_discount_label=_notif_coupon_label,
+                order_time=_dhaka_ts(getattr(order, 'created_at', None)),
+            )
             _asyncio.create_task(_notify_admins(
                 context.bot,
                 "order_delivered",
@@ -6730,7 +6833,7 @@ async def broadcast_availability_to_all_users(context: ContextTypes.DEFAULT_TYPE
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = [
         [InlineKeyboardButton("🛒 Browse Products", callback_data="products")],
-        [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 

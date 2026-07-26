@@ -381,7 +381,7 @@ async def anc_del_all_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
             ))
         rows.append(row)
     rows.insert(0, [InlineKeyboardButton("🗑 Delete ALL Categories", callback_data="anc:del_all:go:all")])
-    rows.append([InlineKeyboardButton("🔙 Cancel", callback_data="anc:menu")])
+    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="anc:menu")])
     await _send(update, text, InlineKeyboardMarkup(rows))
 
 

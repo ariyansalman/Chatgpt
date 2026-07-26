@@ -89,7 +89,7 @@ async def admin_stars_edit_rate_start(update: Update, context: ContextTypes.DEFA
             "you don't under- or over-credit users relative to what you can "
             "actually withdraw.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 Cancel", callback_data="admin_stars_view")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="admin_stars_view")]]
             ),
         )
     except BadRequest as e:
@@ -125,7 +125,7 @@ async def admin_stars_edit_min_start(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text(
             "💬 Send the minimum number of ⭐ Stars allowed per top-up (whole number).",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 Cancel", callback_data="admin_stars_view")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="admin_stars_view")]]
             ),
         )
     except BadRequest as e:
@@ -162,7 +162,7 @@ async def admin_stars_edit_max_start(update: Update, context: ContextTypes.DEFAU
             "💬 Send the maximum number of ⭐ Stars allowed per top-up (whole number).\n"
             "Telegram also enforces its own server-side ceiling regardless of this value.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 Cancel", callback_data="admin_stars_view")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="admin_stars_view")]]
             ),
         )
     except BadRequest as e:

@@ -227,7 +227,7 @@ async def acpn_delete_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑 Confirm Delete", callback_data=f"acpn:del_ok:{cid}"),
-         InlineKeyboardButton("🔙 Cancel", callback_data=f"acpn:view:{cid}")],
+         InlineKeyboardButton("❌ Cancel", callback_data=f"acpn:view:{cid}")],
     ])
     await _safe_edit(query, f"⚠️ Delete coupon #{cid}? Redemption history will be lost.", kb)
 

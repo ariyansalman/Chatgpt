@@ -134,7 +134,7 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Add Funds",       callback_data="topup"),
          InlineKeyboardButton("📜 Payment History", callback_data="wallet_history")],
-        [InlineKeyboardButton("⬅️ Back to Menu",   callback_data="main_menu")],
+        [InlineKeyboardButton("🏠 Main Menu",   callback_data="main_menu")],
     ])
     if q:
         try:

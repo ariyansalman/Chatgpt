@@ -60,8 +60,8 @@ async def asf_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     g_str = f"{g_pct:+.1f}%" if g_pct is not None else "N/A"
     conf  = fc.get("confidence_pct", 0)
 
-    warn_line  = "\n⚠️ <b>LOW SALES WARNING</b> — Revenue trending below average." if fc.get("low_sales_warning") else ""
-    trend_line = "\n🚀 <b>HIGH GROWTH TREND</b> — Revenue growing strongly!" if fc.get("high_sales_trend") else ""
+    warn_line  = "\n⚠️ <b>Low Sales Warning</b> — Revenue trending below average." if fc.get("low_sales_warning") else ""
+    trend_line = "\n🚀 <b>High Growth Trend</b> — Revenue growing strongly!" if fc.get("high_sales_trend") else ""
 
     lines = [
         f"📈 <b>Sales Forecast</b>   {icon}\n",

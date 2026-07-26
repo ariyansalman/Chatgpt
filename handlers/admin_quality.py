@@ -40,7 +40,7 @@ async def quality_menu(update, context, page: int = 0):
                    s.query(Supplier).filter(Supplier.id.in_(sup_ids)).all()} if sup_ids else {}
 
     t = [
-        "🧪 <b>INVENTORY QUALITY</b>",
+        "🧪 <b>Inventory Quality</b>",
         f"Total keys: {total_keys}  ·  Reported issues: {total_issues}",
         f"Overall failure rate: <b>{fail_rate:.2f}%</b>",
         "",
@@ -130,7 +130,7 @@ async def sla_report(update, context, page: int = 0):
     dp_total, dp_late, dp_rate = _compliance(resolved_disputes)
 
     t = [
-        "⏱ <b>SLA COMPLIANCE REPORT</b>",
+        "⏱ <b>Sla Compliance Report</b>",
         "",
         "<b>🎫 Support Tickets</b>",
         f"  Open (SLA-tracked): {open_tickets_with_sla}  ·  Currently breached: {breached_open_tickets}",

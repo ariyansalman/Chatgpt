@@ -122,7 +122,7 @@ async def admin_nowpayments_edit_api_key_start(update: Update, context: ContextT
             "(NOWPayments dashboard → Store Settings → API Keys).\n\n"
             "🔒 This value is sensitive — it won't be echoed back after saving.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 Cancel", callback_data="admin_nowpayments_view")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="admin_nowpayments_view")]]
             ),
             parse_mode='HTML',
         )
@@ -161,7 +161,7 @@ async def admin_nowpayments_edit_ipn_secret_start(update: Update, context: Conte
             "🔒 This value is sensitive — it won't be echoed back after saving. "
             "Send <code>-</code> to clear it.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 Cancel", callback_data="admin_nowpayments_view")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="admin_nowpayments_view")]]
             ),
             parse_mode='HTML',
         )

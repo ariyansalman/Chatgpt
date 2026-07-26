@@ -44,7 +44,7 @@ def _sla_line(d: Dispute) -> str:
         return ""
     now = datetime.utcnow()
     if d.sla_deadline <= now or d.sla_breached:
-        return "SLA: 🚨 <b>BREACHED</b>"
+        return "SLA: 🚨 <b>Breached</b>"
     remaining = d.sla_deadline - now
     hrs = int(remaining.total_seconds() // 3600)
     mins = int((remaining.total_seconds() % 3600) // 60)
@@ -423,7 +423,7 @@ async def admin_resolve_dispute_callback(update: Update, context: ContextTypes.D
 
     # Notify user about dispute resolution
     try:
-        user_keyboard = [[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]]
+        user_keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         user_reply_markup = InlineKeyboardMarkup(user_keyboard)
 
         await context.bot.send_message(

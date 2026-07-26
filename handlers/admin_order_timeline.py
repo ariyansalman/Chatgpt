@@ -99,7 +99,7 @@ async def ots_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_label = next((lbl for key, lbl in _STATUS_OPTS if key == status), "?")
 
     lines = [
-        "📋 <b>ORDER TIMELINE SETTINGS</b>  (V25)",
+        "📋 <b>Order Timeline Settings</b>  (V25)",
         "",
         f"<b>Feature Status:</b>  {status_label}",
         "",

@@ -533,7 +533,7 @@ async def awm_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "This action cannot be undone.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🗑 Yes, clear", callback_data="awm:clear:confirm"),
-                 InlineKeyboardButton("🔙 Cancel",     callback_data="awm:menu")],
+                 InlineKeyboardButton("❌ Cancel",     callback_data="awm:menu")],
             ]))
         return
     # Confirmed

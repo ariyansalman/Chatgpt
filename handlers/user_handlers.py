@@ -636,7 +636,7 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
             keyboard.append(nav_row)
 
     # Bottom utility row — Refresh removed; single, clean way back to the menu.
-    keyboard.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
     return keyboard
 
@@ -658,7 +658,7 @@ async def render_all_products_catalog(query, context, telegram_id,
     status = cfg.get("product_pagination_status", "enabled")
     if status == "disabled":
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"),
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
         ]])
         await _safe_edit_catalog(
             query,
@@ -669,7 +669,7 @@ async def render_all_products_catalog(query, context, telegram_id,
     if status == "maintenance":
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Try Again", callback_data="products_refresh"),
-             InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+             InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ])
         await _safe_edit_catalog(
             query,
@@ -710,7 +710,7 @@ async def render_all_products_catalog(query, context, telegram_id,
             "Please check back later."
         )
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ])
         await _safe_edit_catalog(query, text, kb)
         return
@@ -1002,7 +1002,7 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
                 keyboard.append(pagination_row)
 
         # Refresh button removed -- Back to Menu is the only utility action.
-        keyboard.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+        keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
         total_count = len(products)
 
@@ -1248,7 +1248,7 @@ async def flash_sales_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             buttons.append([InlineKeyboardButton(
                 f"🔥 {p.name} — ${sp:.2f}", callback_data=f"product_{p.id}"
             )])
-        buttons.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+        buttons.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
         try:
             try:
@@ -1723,7 +1723,7 @@ async def order_history_callback(update: Update, context: ContextTypes.DEFAULT_T
     status = cfg.get("order_history_status", "enabled")
     if status == "disabled":
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"),
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
         ]])
         try:
             await query.edit_message_text(
@@ -1739,7 +1739,7 @@ async def order_history_callback(update: Update, context: ContextTypes.DEFAULT_T
     if status == "maintenance":
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("🔄 Try Again", callback_data="order_history"),
-            InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"),
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
         ]])
         try:
             await query.edit_message_text(
@@ -1778,7 +1778,7 @@ async def order_history_callback(update: Update, context: ContextTypes.DEFAULT_T
 
         if total == 0:
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"),
+                InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
             ]])
             try:
                 await query.edit_message_text(
@@ -1871,7 +1871,7 @@ async def user_order_detail_callback(update: Update, context: ContextTypes.DEFAU
     status = cfg.get("order_history_status", "enabled")
     if status == "disabled":
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("⬅ Back to Orders", callback_data="order_history"),
+            InlineKeyboardButton("🔙 Back to Orders", callback_data="order_history"),
         ]])
         try:
             await query.edit_message_text(
@@ -1884,7 +1884,7 @@ async def user_order_detail_callback(update: Update, context: ContextTypes.DEFAU
         return
     if status == "maintenance":
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("⬅ Back to Orders", callback_data="order_history"),
+            InlineKeyboardButton("🔙 Back to Orders", callback_data="order_history"),
         ]])
         try:
             await query.edit_message_text(

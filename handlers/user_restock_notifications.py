@@ -122,7 +122,7 @@ async def urns_my_alerts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     subs = await asyncio.to_thread(get_user_subscriptions, user_id)
     if not subs:
         text = "🔔 <b>My Restock Alerts</b>\n\nYou have no active restock notifications."
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="acc:account")]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="acc:account")]])
     else:
         lines = ["🔔 <b>My Restock Alerts</b>\n"]
         kb_rows = []
@@ -134,7 +134,7 @@ async def urns_my_alerts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 f"🔕 Remove: {s['product_name'][:20]}",
                 callback_data=f"urns:unsub:{s['product_id']}")])
         text = "\n".join(lines)
-        kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data="acc:account")])
+        kb_rows.append([InlineKeyboardButton("🔙 Back", callback_data="acc:account")])
         kb = InlineKeyboardMarkup(kb_rows)
 
     try:

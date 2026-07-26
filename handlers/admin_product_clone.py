@@ -968,7 +968,7 @@ async def pct_tpl_del_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⚠️ Delete template #{tid}? This cannot be undone.",
         InlineKeyboardMarkup([
             [InlineKeyboardButton("🗑 Yes, delete", callback_data=f"pct:tpl:del_ok:{tid}"),
-             InlineKeyboardButton("🔙 Cancel",      callback_data=f"pct:tpl:view:{tid}")],
+             InlineKeyboardButton("❌ Cancel",      callback_data=f"pct:tpl:view:{tid}")],
         ]))
 
 

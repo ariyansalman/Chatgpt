@@ -1147,7 +1147,7 @@ def payment_failed_keyboard(retry_cb: str = "topup") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Try Again", callback_data=retry_cb)],
         [InlineKeyboardButton("📞 Contact Support", callback_data="support")],
-        [InlineKeyboardButton("🏠 Back to Menu", callback_data="main_menu")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ])
 
 
@@ -1164,7 +1164,7 @@ def still_pending_keyboard(resubmit_cb: Optional[str] = None) -> InlineKeyboardM
         rows.append([InlineKeyboardButton("🔄 Submit TXID Again", callback_data=resubmit_cb)])
     rows.append([InlineKeyboardButton("👛 My Wallet", callback_data="wallet"),
                  InlineKeyboardButton("📞 Support", callback_data="support")])
-    rows.append([InlineKeyboardButton("🏠 Back to Menu", callback_data="main_menu")])
+    rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -1177,7 +1177,7 @@ def payment_expired_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔄 Generate New Payment", callback_data="topup")],
         [InlineKeyboardButton("📜 Deposit History", callback_data="wallet_history"),
          InlineKeyboardButton("👛 My Wallet", callback_data="wallet")],
-        [InlineKeyboardButton("🏠 Back to Menu", callback_data="main_menu")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ])
 
 

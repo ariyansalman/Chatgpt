@@ -791,10 +791,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
      "📦 Bundles: Show Included Products",
      "List the products included in a bundle on the bundle detail page."),
 
-    # ── V20: Advanced Referral Dashboard ────────────────────────────────────────
-    ("feature_referral_dashboard_enabled", "bool", True, "referral_advanced",
-     "👥 Advanced Referral Dashboard: Enabled",
-     "Show users a rich referral dashboard with stats, commissions, and withdrawal."),
+    # ── V20: Referral commission settings ───────────────────────────────────────
     ("referral_commission_pct", "float", 5.0, "referral_advanced",
      "👥 Referral Commission % on Purchase",
      "Percentage of each referred user's purchase credited as commission (0 = disabled)."),

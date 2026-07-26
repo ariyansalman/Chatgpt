@@ -16,7 +16,7 @@ async def integrity_menu(update, context):
     with get_db_session() as s:
         latest = (s.query(IntegrityScan)
                    .order_by(IntegrityScan.started_at.desc()).first())
-    lines = ["🩺 <b>INTEGRITY CENTER</b>",
+    lines = ["🩺 <b>Integrity Center</b>",
              "Read-only scans. Repairs are separate, admin-confirmed actions.", ""]
     if latest:
         lines += [

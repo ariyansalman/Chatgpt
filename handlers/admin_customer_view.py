@@ -157,7 +157,7 @@ def _build_profile(session, user: User) -> str:
     )
 
     # ── Assemble ─────────────────────────────────────────────────────────
-    ban_line = "🚫 <b>BANNED</b>" if user.is_banned else "✅ Active"
+    ban_line = "🚫 <b>Banned</b>" if user.is_banned else "✅ Active"
     name = _name_esc(user)
     reg = _fmt_dt(user.created_at)
     referrer_line = _name_esc(referrer) if referrer else "— (organic signup)"

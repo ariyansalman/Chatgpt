@@ -336,23 +336,6 @@ _FEATURES = [
         "stat_keys": [],
         "stat_labels": [],
     },
-    # ── V20: Advanced Feature Group 1 — Referral Dashboard ───────────────────
-    {
-        "id": "referral_dashboard",
-        "emoji": "👥",
-        "name": "Advanced Referral Dashboard",
-        "enable_key": "feature_referral_dashboard_enabled",
-        "options": [
-            {"key": "referral_commission_pct",         "label": "Commission % on referred purchases", "type": "float"},
-            {"key": "referral_min_withdrawal",         "label": "Minimum withdrawal amount ($)",       "type": "float"},
-            {"key": "referral_max_withdrawal",         "label": "Maximum withdrawal ($, 0=unlimited)", "type": "float"},
-            {"key": "referral_bonus",                  "label": "Signup bonus credited to referrals",  "type": "float"},
-            {"key": "referral_first_purchase_bonus",   "label": "First-purchase bonus to referrer",    "type": "float"},
-            {"key": "referral_lifetime_enabled",       "label": "Lifetime referral tracking",          "type": "bool"},
-        ],
-        "stat_keys": ["referral_clicks_total", "referral_withdrawals_pending"],
-        "stat_labels": ["Total link clicks", "Pending withdrawals"],
-    },
     # ── V20: Advanced Feature Group 2 — Enhanced Support Tickets ─────────────
     {
         "id": "support_enhanced",

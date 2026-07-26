@@ -771,7 +771,7 @@ async def abt_test_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         rendered = substitute_variables(tmpl, None, ov)
-        header   = f"🧪 <b>TEST MESSAGE</b>\n\n"
+        header   = f"🧪 <b>Test Message</b>\n\n"
         await context.bot.send_message(admin_id, header + rendered, parse_mode="HTML")
         await query.answer("🧪 Test message sent to you!", show_alert=True)
         log_admin_action(update.effective_user.id, "abt.test_self",

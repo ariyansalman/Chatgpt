@@ -97,7 +97,7 @@ async def price_history_admin_menu(update, context):
     ) or "—"
 
     lines = [
-        "📈 <b>PRICE HISTORY SETTINGS</b>",
+        "📈 <b>Price History Settings</b>",
         "",
         f"<b>Feature Status:</b>  {_status_label()}",
         "",

@@ -94,7 +94,7 @@ async def favorites_menu(update, context):
     ) or "—"
 
     lines = [
-        "❤️ <b>FAVORITES SETTINGS</b>",
+        "❤️ <b>Favorites Settings</b>",
         "",
         f"<b>Feature Status:</b>  {_status_label()}",
         "",

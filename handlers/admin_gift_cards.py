@@ -324,7 +324,7 @@ async def create_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💵 Fixed Amount (USD)", callback_data="agc:ctype:fixed")],
         [InlineKeyboardButton("🏷 Percentage Discount", callback_data="agc:ctype:percent")],
         [InlineKeyboardButton("🎨 Custom Value (USD)",  callback_data="agc:ctype:custom")],
-        [InlineKeyboardButton("🚫 Cancel", callback_data="agc:cancel_create")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="agc:cancel_create")],
     ])
     try:
         await query.edit_message_text(
@@ -382,7 +382,7 @@ async def create_value_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data["agc_value"] = value
     await update.message.reply_text(
         f"✅ Value set to <b>{value}</b>.\n\n"
-        f"Enter expiry date as <b>YYYY-MM-DD</b> (e.g., 2027-01-01), "
+        f"Enter expiry date as <b>Yyyy-Mm-Dd</b> (e.g., 2027-01-01), "
         f"or type <b>none</b> for no expiry.\n"
         f"Send /cancel to abort.",
         parse_mode="HTML",

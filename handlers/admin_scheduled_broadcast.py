@@ -1288,7 +1288,7 @@ async def asb_delete_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑 Yes, delete", callback_data=f"asb:del_ok:{bid}"),
-         InlineKeyboardButton("🔙 Cancel", callback_data=f"asb:view:{bid}")],
+         InlineKeyboardButton("❌ Cancel", callback_data=f"asb:view:{bid}")],
     ])
     await _safe_edit(query, f"⚠️ Delete broadcast #{bid}? This cannot be undone.", kb)
 
@@ -1948,7 +1948,7 @@ async def asb_drafts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb.append([InlineKeyboardButton("➕ New Broadcast", callback_data="asb:new")])
     kb.append([
         InlineKeyboardButton("🔙 All Broadcasts", callback_data="asb:menu"),
-        InlineKeyboardButton("🏠 Back",           callback_data="acc:sec:broadcast"),
+        InlineKeyboardButton("🔙 Back",           callback_data="acc:sec:broadcast"),
     ])
     await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(kb))
 
@@ -1991,7 +1991,7 @@ async def asb_scheduled_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
     kb.append([InlineKeyboardButton("➕ New Broadcast", callback_data="asb:new")])
     kb.append([
         InlineKeyboardButton("🔙 All Broadcasts", callback_data="asb:menu"),
-        InlineKeyboardButton("🏠 Back",           callback_data="acc:sec:broadcast"),
+        InlineKeyboardButton("🔙 Back",           callback_data="acc:sec:broadcast"),
     ])
     await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(kb))
 

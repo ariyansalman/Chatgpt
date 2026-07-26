@@ -346,7 +346,7 @@ def build_success_keyboard(
 
     # Home + My Orders
     rows.append([
-        InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"),
+        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
         InlineKeyboardButton("📦 My Orders", callback_data=f"user_order_detail_{order_id}"),
     ])
 

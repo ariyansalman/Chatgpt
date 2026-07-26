@@ -107,7 +107,7 @@ async def pfaq_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mx_label = "Unlimited" if mx == 0 else str(mx)
 
     lines = [
-        "❓ <b>PRODUCT FAQ SETTINGS</b>  (V25)",
+        "❓ <b>Product FAQ Settings</b>  (V25)",
         "",
         f"<b>Feature Status:</b>  {status_label}",
         f"<b>Max FAQs per Product:</b>  {mx_label}",
@@ -155,7 +155,7 @@ async def pfaq_list(update: Update, context: ContextTypes.DEFAULT_TYPE, page: in
         prod_data = [(p.id, p.name) for p in products]
 
     items, pages, _ = paginate(prod_data, page, _PAGE)
-    lines = ["❓ <b>PRODUCT FAQ MANAGER</b>", "", "Select a product to manage its FAQs:"]
+    lines = ["❓ <b>Product FAQ Manager</b>", "", "Select a product to manage its FAQs:"]
     kb: List[List] = []
     for pid, pname in items:
         cnt = svc.faq_count(pid)

@@ -1286,6 +1286,7 @@ def main():
         entry_points=[CallbackQueryHandler(payment_handlers.buy_product_start, pattern="^(buy_|product_)")],
         states={
             payment_handlers.PURCHASE_QUANTITY: [
+                CallbackQueryHandler(payment_handlers.qty_custom_prompt, pattern=r"^qty_custom_\d+$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, payment_handlers.purchase_quantity_input),
                 CallbackQueryHandler(payment_handlers.cancel_purchase, pattern="^cancel_purchase$")
             ],
@@ -2728,23 +2729,22 @@ def main():
     from handlers.gift_purchase_handlers import process_completed_gifts
     job_queue.run_repeating(process_completed_gifts, interval=60, first=30)
 
-    # ── V20: Advanced Referral Dashboard handlers ────────────────────────────
+    # ── V20: Referral Commission History + Admin Referral Settings ──────────
+    # (The old Advanced Referral Dashboard user-facing screen and its
+    # Leaderboard have been removed; Commission History is now reached from
+    # the essential referral screen — see handlers/referral_handlers.py.)
     from handlers.referral_dashboard import (
-        rd_menu, rd_commissions, rd_top_referrers,
-        rd_admin_menu, rd_admin_toggle_dashboard, rd_admin_toggle_lifetime,
+        rd_commissions,
+        rd_admin_menu, rd_admin_toggle_lifetime,
         rd_admin_withdrawals_list, rd_admin_approve_withdrawal, rd_admin_reject_withdrawal,
         build_rd_admin_convs,
     )
-    application.add_handler(CallbackQueryHandler(rd_menu,                     pattern=r"^rd:menu$"))
     application.add_handler(CallbackQueryHandler(rd_commissions,              pattern=r"^rd:comm$"))
-    application.add_handler(CallbackQueryHandler(rd_top_referrers,            pattern=r"^rd:top$"))
     application.add_handler(CallbackQueryHandler(rd_admin_menu,               pattern=r"^rd:admin$"))
-    application.add_handler(CallbackQueryHandler(rd_admin_toggle_dashboard,   pattern=r"^rd:adm:toggle_dashboard$"))
     application.add_handler(CallbackQueryHandler(rd_admin_toggle_lifetime,    pattern=r"^rd:adm:toggle_lifetime$"))
     application.add_handler(CallbackQueryHandler(rd_admin_withdrawals_list,   pattern=r"^rd:adm:withdrawals$"))
     application.add_handler(CallbackQueryHandler(rd_admin_approve_withdrawal, pattern=r"^rd:adm:approve:\d+$"))
     application.add_handler(CallbackQueryHandler(rd_admin_reject_withdrawal,  pattern=r"^rd:adm:reject:\d+$"))
-    # NOTE: build_rd_withdraw_conv() is replaced by the V29 withdrawal approval system below
     for _rd_conv in build_rd_admin_convs():
         application.add_handler(_rd_conv)
 

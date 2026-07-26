@@ -273,7 +273,7 @@ def create_refer_keyboard(lang: str):
     """Refer & Earn keyboard — clean, minimal marketplace layout."""
     keyboard = [
         [InlineKeyboardButton("📜 Referral History", callback_data="rd:comm")],
-        [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -290,7 +290,7 @@ def create_support_center_keyboard(lang: str, support_username: str = ""):
             "📞 Chat with Support",
             url=f"https://t.me/{support_username}",
         )])
-    keyboard.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -507,7 +507,7 @@ def create_quantity_keyboard(product_id):
     """Create keyboard for the quantity input step."""
     keyboard = [
         [
-            InlineKeyboardButton("⬅ Back", callback_data=f"product_{product_id}"),
+            InlineKeyboardButton("🔙 Back", callback_data=f"product_{product_id}"),
             InlineKeyboardButton("❌ Close", callback_data="cancel_purchase"),
         ]
     ]
@@ -516,7 +516,7 @@ def create_quantity_keyboard(product_id):
 
 def create_cancel_keyboard():
     """Create a simple cancel button keyboard."""
-    keyboard = [[InlineKeyboardButton("☎️ Cancel", callback_data="cancel")]]
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -600,7 +600,7 @@ def create_payment_method_keyboard(methods=None, gateways=None):
         # Unified pattern (pay_pm_<id>); legacy pay_manual_<id> still routed in bot.py for BC.
         keyboard.append([InlineKeyboardButton(label, callback_data=f"pay_pm_{m.id}")])
 
-    keyboard.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
+    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 

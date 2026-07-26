@@ -64,7 +64,7 @@ async def urec_trending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             lines.append(_fmt_product(p, i))
         text = "\n".join(lines)
     kb_rows = [[_product_btn(p)] for p in items[:5]]
-    kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data="main_menu")])
+    kb_rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     try:
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb_rows),
                                   parse_mode="HTML")
@@ -86,7 +86,7 @@ async def urec_bestsellers(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             lines.append(_fmt_product(p, i))
         text = "\n".join(lines)
     kb_rows = [[_product_btn(p)] for p in items[:5]]
-    kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data="main_menu")])
+    kb_rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     try:
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb_rows),
                                   parse_mode="HTML")
@@ -113,7 +113,7 @@ async def urec_for_you(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             lines.append(_fmt_product(p, i))
         text = "\n".join(lines)
     kb_rows = [[_product_btn(p)] for p in items[:5]]
-    kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data="main_menu")])
+    kb_rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     try:
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb_rows),
                                   parse_mode="HTML")
@@ -140,7 +140,7 @@ async def urec_recently_viewed(update: Update, context: ContextTypes.DEFAULT_TYP
             lines.append(_fmt_product(p, i))
         text = "\n".join(lines)
     kb_rows = [[_product_btn(p)] for p in items[:5]]
-    kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data="main_menu")])
+    kb_rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     try:
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb_rows),
                                   parse_mode="HTML")
@@ -167,7 +167,7 @@ async def urec_related(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lines.append(_fmt_product(p, i))
     text = "\n".join(lines)
     kb_rows = [[_product_btn(p)] for p in items[:5]]
-    kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data=f"product:{product_id}")])
+    kb_rows.append([InlineKeyboardButton("🔙 Back", callback_data=f"product:{product_id}")])
     try:
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb_rows),
                                   parse_mode="HTML")
@@ -194,7 +194,7 @@ async def urec_fbt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append(_fmt_product(p, i))
     text = "\n".join(lines)
     kb_rows = [[_product_btn(p)] for p in items[:4]]
-    kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data=f"product:{product_id}")])
+    kb_rows.append([InlineKeyboardButton("🔙 Back", callback_data=f"product:{product_id}")])
     try:
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb_rows),
                                   parse_mode="HTML")
@@ -221,7 +221,7 @@ async def urec_also_bought(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         lines.append(_fmt_product(p, i))
     text = "\n".join(lines)
     kb_rows = [[_product_btn(p)] for p in items[:5]]
-    kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data=f"product:{product_id}")])
+    kb_rows.append([InlineKeyboardButton("🔙 Back", callback_data=f"product:{product_id}")])
     try:
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb_rows),
                                   parse_mode="HTML")
