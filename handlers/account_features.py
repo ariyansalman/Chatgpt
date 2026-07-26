@@ -368,17 +368,18 @@ async def user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     ]
     text = "\n".join(lines)
 
-    lang = get_user_language(user_id)
+    # Compact Profile Menu -- Wallet / Orders / Referral / Language already
+    # have their own Main Menu entry points, so this screen only surfaces
+    # what's unique to Account: Wallet & Orders shortcuts, Purchased Keys,
+    # and Settings. No duplicate buttons, no duplicate navigation paths.
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("👤 My Profile", callback_data="ua:noop"),
-         InlineKeyboardButton("💳 Wallet",      callback_data="wallet")],
-        [InlineKeyboardButton("📦 My Orders",    callback_data="order_history"),
-         InlineKeyboardButton("🔑 Purchased Keys", callback_data="ua:dl")],
-        [InlineKeyboardButton("❤️ Wishlist",     callback_data="uf:wl"),
-         InlineKeyboardButton("👥 Referral",     callback_data="refer")],
-        [InlineKeyboardButton(t("language.menu_button", lang), callback_data="language_menu"),
-         InlineKeyboardButton("⚙️ Settings",     callback_data="ua:sec")],
-        [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
+        [InlineKeyboardButton("👛 Wallet",         callback_data="wallet"),
+         InlineKeyboardButton("📦 My Orders",      callback_data="order_history")],
+        [InlineKeyboardButton("🔑 Purchased Keys", callback_data="ua:dl"),
+         InlineKeyboardButton("⚙️ Settings",       callback_data="ua:sec")],
+        [InlineKeyboardButton("📄 Terms",          callback_data="sc_page_terms"),
+         InlineKeyboardButton("ℹ️ About",          callback_data="sc_page_about")],
+        [InlineKeyboardButton("⬅️ Back to Menu",   callback_data="main_menu")],
     ])
 
     if query:

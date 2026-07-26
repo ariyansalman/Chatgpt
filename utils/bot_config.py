@@ -149,10 +149,11 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
      "home_dashboard", "Home: Wallet Label",
      "Label shown above the user's wallet balance (rendered in monospace). "
      "Leave empty to use the built-in localized default."),
-    ("home_footer", "str", "👇 Select an option below.",
+    ("home_footer", "str", "",
      "home_dashboard", "Home: Footer",
-     "Short call-to-action shown at the bottom of the dashboard card, above the menu buttons. "
-     "Leave empty to use the built-in localized default."),
+     "Optional short line shown at the bottom of the dashboard card, above the menu buttons. "
+     "Left blank by default -- the menu below is self-explanatory and doesn't need a "
+     "\"choose an option\" prompt. Set this only if your store needs a specific call-to-action."),
 
     # ── Operations ──────────────────────────────────────────────────────────
     ("webhook_base_url", "str", "", "ops",
@@ -357,8 +358,9 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
      "Show ⬅ Previous / ➡ Next navigation when total products exceed one page. "
      "When OFF, all products are shown on a single (potentially long) screen."),
     ("product_list_refresh_button", "bool", True, "catalog",
-     "🛍 Show Refresh Button",
-     "Show the 🔄 Refresh button at the bottom of the product list."),
+     "🛍 Show Refresh Button (deprecated)",
+     "Deprecated: the Products page Refresh button was removed in the "
+     "premium UI redesign. This setting has no effect anymore."),
     ("product_list_show_stock", "bool", True, "catalog",
      "🛍 Show Stock Count",
      "Append remaining stock to each product button, e.g. '(15 left)'."),

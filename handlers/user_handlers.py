@@ -18,7 +18,7 @@ from utils import (
 )
 from utils.currency import SUPPORTED_DISPLAY_CURRENCIES
 from utils.perf import perf_track
-from i18n import t, get_user_language, set_user_language, resolve_initial_language, LANGUAGE_NAMES
+from i18n import t, get_user_language, set_user_language, resolve_initial_language, LANGUAGE_NAMES, LANGUAGE_FLAGS
 from utils.bot_config import cfg
 from telegram.error import BadRequest
 from services import payment_ui as pui
@@ -110,12 +110,13 @@ def _build_home_message(lang: str, balance_str: str, total_orders: int = 0) -> s
       💳 Wallet Balance: $X.XX
       📦 Total Orders: N
 
-      👇 Select an option below.
-
-    Title / description / footer remain configurable from the Admin Panel via:
-      home_title / home_subtitle / home_footer
-    Falls back to the defaults above when no custom value is set. Wallet
-    balance and total orders are always live values, loaded by the caller.
+    No "Choose an option below" filler line -- the menu buttons underneath
+    are self-explanatory. Title / description / footer remain configurable
+    from the Admin Panel via: home_title / home_subtitle / home_footer
+    (footer is blank by default; set one only if a store genuinely needs
+    it). Falls back to the defaults above when no custom value is set.
+    Wallet balance and total orders are always live values, loaded by the
+    caller.
     """
     title    = cfg.get_str("home_title",    "").strip() or t("start.dashboard_title", lang)
     subtitle = cfg.get_str("home_subtitle", "").strip() or t("start.dashboard_subtitle", lang) or "✨ Premium AI subscriptions, software licenses, and digital products."
@@ -129,7 +130,10 @@ def _build_home_message(lang: str, balance_str: str, total_orders: int = 0) -> s
         f"{wallet_label}: {balance_str}\n{orders_label}: {total_orders}",
         footer,
     ]
-    return "\n\n".join(parts)
+    # Footer is blank by default now (no "Choose an option below." filler --
+    # a clean dashboard is self-explanatory). Drop any empty part instead of
+    # joining it in, so admins who clear a field never get a stray blank line.
+    return "\n\n".join(p for p in parts if p and p.strip())
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -439,8 +443,12 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /language command — same picker as the 🌐 Language button."""
     user_id = update.effective_user.id
     lang = get_user_language(user_id)
+    cur_flag = LANGUAGE_FLAGS.get(lang, "")
+    cur_name = LANGUAGE_NAMES.get(lang, lang)
     await update.message.reply_text(
-        f"{t('language.title', lang)}\n\n{t('language.prompt', lang)}",
+        f"{t('language.title', lang)}\n\n"
+        f"{t('language.current_label', lang)}\n✅ {cur_flag} {cur_name}\n\n"
+        f"{t('language.select_other', lang)}",
         reply_markup=create_language_keyboard(lang=lang),
         parse_mode="HTML",
     )
@@ -452,9 +460,13 @@ async def language_menu_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     user_id = update.effective_user.id
     lang = get_user_language(user_id)
+    cur_flag = LANGUAGE_FLAGS.get(lang, "")
+    cur_name = LANGUAGE_NAMES.get(lang, lang)
     try:
         await query.edit_message_text(
-            f"{t('language.title', lang)}\n\n{t('language.prompt', lang)}",
+            f"{t('language.title', lang)}\n\n"
+            f"{t('language.current_label', lang)}\n✅ {cur_flag} {cur_name}\n\n"
+            f"{t('language.select_other', lang)}",
             reply_markup=create_language_keyboard(lang=lang),
             parse_mode="HTML",
         )
@@ -567,39 +579,40 @@ def _shorten_product_name(name: str, budget: int = 28) -> str:
 
 
 def build_all_products_keyboard(rows, page=0, total_pages=1,
-                                  show_refresh=True, allow_pagination=True,
-                                  show_stock=True):
+                                  allow_pagination=True, show_stock=True):
     """Build the flat catalog inline keyboard with optional pagination controls.
 
-    ``rows`` — list of dicts: id / name / emoji / price_display / stock.
+    ``rows`` — list of dicts: id / name / price_display / stock.
     ``page`` — 0-based current page index.
     ``total_pages`` — total number of pages.
-    ``show_refresh`` — whether to include the 🔄 Refresh button.
     ``allow_pagination`` — whether to include ⬅ Previous / ➡ Next buttons.
-    ``show_stock`` — whether to append the stock count to each button label.
+    ``show_stock`` — whether to append "• N left" / "• Out of Stock" to each label.
+
+    Every row follows one standardized format so the catalog reads like a
+    clean, consistent marketplace list:
+        📦 Product Name • $Price • N left
+        ❌ Product Name • $Price • Out of Stock
+    The leading emoji reflects availability only (📦 in stock, ❌ sold out) --
+    no per-product custom emoji, so every row is visually consistent.
     """
     keyboard = []
     for r in rows:
-        stock    = r.get("stock", 0)
-        # Product emoji stays as-is (📦 fallback); ❌ only in stock indicator
-        emoji    = (r.get("emoji") or "").strip() or "📦"
-        price    = r["price_display"]
-        raw_name = (r["name"] or "").strip()
+        stock      = r.get("stock", 0)
+        available  = stock > 0
+        price      = r["price_display"]
+        raw_name   = (r["name"] or "").strip()
 
         # Compact display name — strip duration/generic words for readability
         # Full name still shown on Product Details page (no DB change)
         display_name = _shorten_product_name(raw_name, budget=26)
 
         if show_stock:
-            if stock <= 0:
-                stock_indicator = "❌ Out of Stock"
-            else:
-                stock_indicator = f"📦 {stock} In Stock"
-            suffix = f" • {price} • {stock_indicator}"
+            stock_part = f"{stock} left" if available else "Out of Stock"
+            suffix = f" • {price} • {stock_part}"
         else:
             suffix = f" • {price}"
 
-        prefix = f"{emoji} "
+        prefix = "📦 " if available else "❌ "
         # Safety: trim display_name further if combined label exceeds 64 chars
         hard_budget = 64 - len(prefix) - len(suffix)
         if hard_budget < 4:
@@ -622,13 +635,8 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
         if nav_row:
             keyboard.append(nav_row)
 
-    # Bottom utility row
-    bottom_row = []
-    if show_refresh:
-        bottom_row.append(InlineKeyboardButton("🔄 Refresh",
-                                               callback_data=f"products_page_{page}"))
-    bottom_row.append(InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu"))
-    keyboard.append(bottom_row)
+    # Bottom utility row — Refresh removed; single, clean way back to the menu.
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
 
     return keyboard
 
@@ -674,7 +682,6 @@ async def render_all_products_catalog(query, context, telegram_id,
     # ── Read admin-configurable settings ─────────────────────────────────────
     per_page       = max(1, min(50, cfg.get_int("products_per_page", 20)))
     allow_pag      = cfg.get_bool("product_list_allow_pagination", True)
-    show_refresh   = cfg.get_bool("product_list_refresh_button", True)
     show_stock     = cfg.get_bool("product_list_show_stock", True)
     show_counter   = cfg.get_bool("product_list_show_counter", True)
 
@@ -703,7 +710,6 @@ async def render_all_products_catalog(query, context, telegram_id,
             "Please check back later."
         )
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Refresh", callback_data="products_refresh")],
             [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
         ])
         await _safe_edit_catalog(query, text, kb)
@@ -722,7 +728,6 @@ async def render_all_products_catalog(query, context, telegram_id,
     ))
 
     total_count     = len(rows)
-    available_count = sum(1 for r in rows if r["stock"] > 0)
 
     # ── Pagination arithmetic ─────────────────────────────────────────────────
     if allow_pag:
@@ -735,21 +740,15 @@ async def render_all_products_catalog(query, context, telegram_id,
     start     = page * per_page
     page_rows = rows[start: start + per_page]
 
-    # ── Build header text (premium marketplace style) ─────────────────────────
-    out_of_stock_count = total_count - available_count
-    page_line = ""
+    # ── Build header text (clean marketplace style: total count only,
+    #     no In Stock/Out of Stock breakdown, no "Select a product" filler --
+    #     the standardized buttons below are self-explanatory) ───────────────
+    header_lines = ["🛍️ <b>Products</b>", "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈"]
+    if show_counter:
+        header_lines.append(f"📦 Total Products: <b>{total_count}</b>")
     if allow_pag and total_pages > 1:
-        page_line = f"\n📄 Page: {page + 1} / {total_pages}"
-
-    text = (
-        "🛍️ <b>Products</b>\n"
-        "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n"
-        f"📦 Total Products: <b>{total_count}</b>\n"
-        f"🟢 In Stock: <b>{available_count}</b>\n"
-        f"🔴 Out of Stock: <b>{out_of_stock_count}</b>"
-        f"{page_line}\n\n"
-        "Select a product below."
-    )
+        header_lines.append(f"📄 Page: {page + 1} / {total_pages}")
+    text = "\n".join(header_lines)
 
     if notice:
         text += f"\n\n{notice}"
@@ -759,7 +758,6 @@ async def render_all_products_catalog(query, context, telegram_id,
         page_rows,
         page=page,
         total_pages=total_pages,
-        show_refresh=show_refresh,
         allow_pagination=allow_pag,
         show_stock=show_stock,
     ))
@@ -965,41 +963,26 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
                 return False
             return prod.created_at >= _badge_ctx.new_cutoff
 
-        # Create product buttons — legacy helper kept for backward compat; active
-        # path now uses _row_label (see below) which follows the premium format.
-        def _button_label(prod):
-            new_badge  = "🆕 " if _is_new(prod) else ""
-            prod_emoji = (prod.product_emoji or "").strip() or "📦"
-            short_name = _shorten_product_name(prod.name or "", budget=24)
-            try:
-                from services.pricing import get_flash_sale_for_display
-                fs = get_flash_sale_for_display(prod.id)
-            except Exception:
-                fs = None
-            if fs:
-                s_ind = "❌ Out of Stock" if prod.stock_count <= 0 else f"📦 {prod.stock_count} In Stock"
-                return (f"{prod_emoji} {new_badge}🔥 {short_name} • ${fs['sale_price']:.2f}"
-                        f" (was {fs['original_price']:.2f}) • {s_ind}")
-            s_ind = "❌ Out of Stock" if prod.stock_count <= 0 else f"📦 {prod.stock_count} In Stock"
-            return f"{prod_emoji} {new_badge}{short_name} • {_product_price_for_user(prod, telegram_id)} • {s_ind}"
-
-        # Row label format (premium): "{emoji} {short_name} • {price} • 📦 N In Stock"
+        # Row label (standardized): "📦 Name • $Price • N left" / "❌ Name • $Price • Out of Stock"
+        # The leading emoji reflects availability only, matching the main
+        # flat-catalog renderer (build_all_products_keyboard) so every
+        # products screen in the bot reads the same way.
         def _row_label(prod):
-            new_badge = "🆕 " if _is_new(prod) else ""
-            prod_emoji = (prod.product_emoji or "").strip() or "📦"
+            new_badge  = "🆕 " if _is_new(prod) else ""
+            available  = prod.stock_count > 0
+            status_emoji = "📦" if available else "❌"
             short_name = _shorten_product_name(prod.name or "", budget=24)
             try:
                 from services.pricing import get_flash_sale_for_display
                 fs = get_flash_sale_for_display(prod.id)
             except Exception:
                 fs = None
+            stock_part = f"{prod.stock_count} left" if available else "Out of Stock"
             if fs:
-                price_part = f"{fs['sale_price']:.2f}"
-                stock_indicator = "❌ Out of Stock" if prod.stock_count <= 0 else f"📦 {prod.stock_count} In Stock"
-                return f"{prod_emoji} {new_badge}🔥 {short_name} • ${price_part} (was {fs['original_price']:.2f}) • {stock_indicator}"
+                price_part = f"${fs['sale_price']:.2f}"
+                return f"{status_emoji} {new_badge}🔥 {short_name} • {price_part} (was {fs['original_price']:.2f}) • {stock_part}"
             price_display = _product_price_for_user(prod, telegram_id)
-            stock_indicator = "❌ Out of Stock" if prod.stock_count <= 0 else f"📦 {prod.stock_count} In Stock"
-            return f"{prod_emoji} {new_badge}{short_name} • {price_display} • {stock_indicator}"
+            return f"{status_emoji} {new_badge}{short_name} • {price_display} • {stock_part}"
 
         product_buttons = [
             [InlineKeyboardButton(_row_label(prod), callback_data=f"product_{prod.id}")]
@@ -1018,27 +1001,18 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
             if pagination_row:
                 keyboard.append(pagination_row)
 
-        keyboard.append([
-            InlineKeyboardButton("🔄 Refresh", callback_data=f"products_page_{page}"),
-        ])
+        # Refresh button removed -- Back to Menu is the only utility action.
         keyboard.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")])
 
         total_count = len(products)
-        available_count = sum(1 for p in products if p.stock_count > 0)
 
-        out_of_stock_c = total_count - available_count
-        page_line_s = ""
+        # Clean header: total count only, no In Stock/Out of Stock breakdown,
+        # no "Select a product below." filler -- the buttons speak for themselves.
+        header_lines = ["🛍️ <b>Products</b>", "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈",
+                         f"📦 Total Products: <b>{total_count}</b>"]
         if page_info['total_pages'] > 1:
-            page_line_s = f"\n📄 Page: {page_info['page'] + 1} / {page_info['total_pages']}"
-        text = (
-            "🛍️ <b>Products</b>\n"
-            "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n"
-            f"📦 Total Products: <b>{total_count}</b>\n"
-            f"🟢 In Stock: <b>{available_count}</b>\n"
-            f"🔴 Out of Stock: <b>{out_of_stock_c}</b>"
-            f"{page_line_s}\n\n"
-            "Select a product below."
-        )
+            header_lines.append(f"📄 Page: {page_info['page'] + 1} / {page_info['total_pages']}")
+        text = "\n".join(header_lines)
 
         try:
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -1466,9 +1440,7 @@ async def _do_render_order_detail(query, context, order_id: int, telegram_id: in
     revealed: set = context.user_data.get(f"order_revealed_{order_id}", set())
 
     enable_timeline  = cfg.get_bool("order_history_enable_timeline",         True)
-    enable_receipt   = cfg.get_bool("order_history_enable_receipt",           True)
     enable_buy_again = cfg.get_bool("order_history_enable_buy_again",         True)
-    enable_copy      = cfg.get_bool("order_history_enable_copy_buttons",      True)
     enable_masking   = cfg.get_bool("order_history_enable_security_masking",  True)
     enable_review    = cfg.get_bool("order_history_enable_review",           False)
     enable_dispute   = cfg.get_bool("order_history_enable_dispute",          False)
@@ -1527,17 +1499,6 @@ async def _do_render_order_detail(query, context, order_id: int, telegram_id: in
                     "status":          dr.status,
                     "delivered_at":    dr.delivered_at,
                 }
-        except Exception:
-            pass
-
-        # Download Center records for this order — surfaced here so Downloads
-        # stay reachable from Order Details instead of a separate hub page.
-        download_ids: list = []
-        try:
-            from database.models import UserDownload as _UD
-            download_ids = [
-                d.id for d in session.query(_UD).filter_by(order_id=order_id).all()
-            ]
         except Exception:
             pass
 
@@ -1668,38 +1629,21 @@ async def _do_render_order_detail(query, context, order_id: int, telegram_id: in
             message = _safe_truncate_html(message)
 
     # ── Build keyboard ────────────────────────────────────────────────────────
-    # Simplified, premium-marketplace button set. Only the core five actions
-    # (Copy Product, Receipt, Buy Again, Support, Back) show by default; the
-    # legacy per-field copy buttons, timeline, review and dispute buttons are
-    # collapsed into a single "Copy Product" action and stay hidden unless
-    # explicitly turned on from the Admin Panel.
+    # Minimal, professional action set: Buy Again, Support, Back. The
+    # delivered product itself is shown directly in the message text above
+    # (see the "Delivered Product" section), so no separate copy/receipt/
+    # download buttons are needed to access it.
     keyboard: list = []
 
-    # Copy Product + Show/Hide password (same row when both apply)
+    # Show/Hide password toggle — only shown when the delivered content
+    # actually contains a masked password field.
     row: list = []
-    if enable_copy and all_content:
-        row.append(InlineKeyboardButton(
-            "📋 Copy Product", callback_data=f"oh_copy_{order_id}_product"))
     if "password" in all_content and enable_masking:
         toggle_label = ("🙈 Hide" if "password" in revealed else "👁 Show Password")
         row.append(InlineKeyboardButton(
             toggle_label, callback_data=f"oh_toggle_{order_id}_password"))
     if row:
         keyboard.append(row)
-
-    # Receipt
-    if o_status == OrderStatus.COMPLETED and enable_receipt:
-        keyboard.append([InlineKeyboardButton(
-            "🧾 Receipt", callback_data=f"receipt_{order_id}")])
-
-    # Downloads — only shown when this order actually has download-center
-    # records (e.g. file-based products) and the feature is enabled; links
-    # straight to the item when there's exactly one, otherwise to the
-    # filtered list.
-    if download_ids and cfg.get_bool("feature_download_center_enabled", True):
-        dl_cb = f"ua:dl:v:{download_ids[0]}" if len(download_ids) == 1 else "ua:dl"
-        keyboard.append([InlineKeyboardButton(
-            "📁 Downloads", callback_data=dl_cb)])
 
     # Timeline — only for in-flight orders, and only if the admin has it on
     if enable_timeline and o_status == OrderStatus.PROCESSING:
@@ -1986,137 +1930,6 @@ async def oh_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await _do_render_order_detail(
         query, context, order_id, update.effective_user.id)
-
-
-async def oh_copy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show a delivered field's value in a Telegram popup for easy copying.
-
-    Callback format: ``oh_copy_{order_id}_{field}``
-    Short values (≤195 chars) appear in a dismissible alert; longer values
-    are sent as a private message so nothing is truncated.
-    """
-    query = update.callback_query
-
-    if check_user_banned(update.effective_user.id):
-        await query.answer()
-        return
-
-    parts = (query.data or "").split("_", 3)
-    if len(parts) < 4:
-        await query.answer("⚠️ Invalid request.", show_alert=True)
-        return
-    try:
-        order_id = int(parts[2])
-    except ValueError:
-        await query.answer("⚠️ Invalid order.", show_alert=True)
-        return
-    field = parts[3]
-
-    with get_db_session() as session:
-        user = session.query(User).filter_by(
-            telegram_id=update.effective_user.id).first()
-        if not user:
-            await query.answer("❌ User not found.", show_alert=True)
-            return
-        order = session.query(Order).options(
-            selectinload(Order.order_items)
-        ).filter_by(id=order_id, user_id=user.id).first()
-        if not order:
-            await query.answer("❌ Order not found.", show_alert=True)
-            return
-        order_created_at = order.created_at
-        assets = [it.delivered_asset for it in order.order_items
-                  if it.delivered_asset]
-
-        # Receipt number copy — fetched inside the session block
-        _receipt_num_for_copy: str | None = None
-        if field == "receipt":
-            try:
-                from database.models import OrderReceipt as _ORec2
-                _or2 = session.query(_ORec2).filter_by(order_id=order_id).first()
-                if _or2:
-                    _receipt_num_for_copy = _or2.receipt_number
-            except Exception:
-                pass
-
-    # Receipt field — handled separately (not in delivered_asset)
-    if field == "receipt":
-        if _receipt_num_for_copy:
-            await query.answer(_receipt_num_for_copy, show_alert=True)
-        else:
-            await query.answer("⚠️ Receipt not found.", show_alert=True)
-        return
-
-    # Consolidated "Copy Product" — combines every delivered field into one
-    # value instead of requiring a separate button per field.
-    if field == "product":
-        enable_masking = cfg.get_bool("order_history_enable_security_masking", True)
-        revealed: set = context.user_data.get(f"order_revealed_{order_id}", set())
-        all_content: dict = {}
-        for raw in assets:
-            parsed = _parse_delivery_content(raw)
-            for k, v in parsed.items():
-                if k == "custom":
-                    all_content.setdefault("custom", []).extend(
-                        v if isinstance(v, list) else [v])
-                else:
-                    all_content[k] = v
-
-        if not all_content:
-            await query.answer("⚠️ This field is not available.", show_alert=True)
-            return
-
-        combo_lines: list = []
-        for f, _icon, label in _OH_FIELD_META:
-            if f not in all_content:
-                continue
-            v = all_content[f]
-            if f == "password" and enable_masking and f not in revealed:
-                v = "•" * min(len(v), 12)
-            combo_lines.append(f"{label}: {v}")
-        if "custom" in all_content:
-            customs = all_content["custom"]
-            combo_lines.extend(customs if isinstance(customs, list) else [customs])
-        value = "\n".join(combo_lines)
-
-        if len(value) <= 195:
-            await query.answer(value, show_alert=True)
-        else:
-            await query.answer("✅ Content sent to your chat.", show_alert=False)
-            try:
-                await context.bot.send_message(
-                    chat_id=update.effective_user.id,
-                    text=f"📋 *Order {_fmt_oid(order_id, order_created_at)}*\n\n`{value}`",
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                pass
-        return
-
-    value: str | None = None
-    for raw in assets:
-        parsed = _parse_delivery_content(raw)
-        if field in parsed:
-            v = parsed[field]
-            value = "\n".join(v) if isinstance(v, list) else str(v)
-            break
-
-    if not value:
-        await query.answer("⚠️ This field is not available.", show_alert=True)
-        return
-
-    if len(value) <= 195:
-        await query.answer(value, show_alert=True)
-    else:
-        await query.answer("✅ Content sent to your chat.", show_alert=False)
-        try:
-            await context.bot.send_message(
-                chat_id=update.effective_user.id,
-                text=f"📋 *Order {_fmt_oid(order_id, order_created_at)}*\n\n`{value}`",
-                parse_mode="Markdown",
-            )
-        except Exception:
-            pass
 
 
 async def download_receipt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

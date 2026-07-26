@@ -52,7 +52,6 @@ from database.models import (
     TransactionStatus,
     PaymentMethod,
     WalletLedger,
-    PendingManualVerification,
 )
 from utils.audit import log_admin_action
 from utils.permissions import has_permission
@@ -130,28 +129,35 @@ def _status_key(tx) -> str:
     }.get(tx.status, "pending_review")
 
 
-_VERIFICATION_RESULT_LABEL = {
-    # Generic ManualPaymentMethod / bKash / Nagad manual-mode deposits have
-    # no gateway API to auto-verify — the whole point of this queue is that
-    # a human checks the submitted TXID/screenshot. Shown so the admin
-    # review card never has to silently omit the field one gateway's
-    # PendingManualVerification-based card shows (⚠ Verification Result).
-    True:  "⚠️ Not auto-verifiable — human review required",
-    False: "⚠️ Not auto-verifiable — human review required",
-}
+# Generic ManualPaymentMethod / bKash / Nagad manual-mode deposits have no
+# gateway API to auto-verify — the whole point of this queue is that a
+# human checks the submitted TXID/screenshot. Rendered via the standard
+# "⚠️ Auto Verification — Status: Not Applicable" block (see
+# services/payment_ui.admin_review_card) instead of a raw free-text label.
+_VERIFICATION_STATUS = "not_applicable"
 
 
 def _network_for(tx) -> str | None:
-    """Best-effort network/currency hint for the admin card's 🌐 Network
-    field. Manual/bKash/Nagad deposits don't always have one; returns None
-    (row is simply omitted by build_card) when there's nothing to show.
+    """Best-effort blockchain-network hint for the admin card's 🌐 Network
+    field — shown ONLY for genuine on-chain methods (e.g. USDT TRC20/BEP20,
+    BTC, ETH). Returns None (row is simply omitted) for anything that
+    settles off-chain, such as bKash, Nagad, Bybit Pay, or Binance Pay —
+    those are never a "network" and must never render a placeholder like
+    "bKash (BDT)" in a field meant for blockchain networks.
 
     Sourced from the Payment Gateway Registry rather than hardcoded
-    per-gateway comparisons — a future gateway's ``network`` metadata is
-    picked up automatically.
+    per-gateway comparisons — a future crypto gateway's ``network``
+    metadata is picked up automatically.
     """
     from services.payment_workflow import network_hint
-    return network_hint(tx.payment_method, fallback_network=getattr(tx, "crypto_network", None))
+    from services.payment_gateway_registry import registry
+
+    fallback = getattr(tx, "crypto_network", None)
+    gid = tx.payment_method.value if tx.payment_method else None
+    gateway = registry.get(gid)
+    if gateway and gateway.payment_type != "crypto" and not fallback:
+        return None
+    return network_hint(tx.payment_method, fallback_network=fallback)
 
 
 def _deposit_detail_msg(tx, user) -> str:
@@ -173,7 +179,7 @@ def _deposit_detail_msg(tx, user) -> str:
         username=user.username if user else None,
         user_id=user.telegram_id if user else None,
         network=_network_for(tx),
-        verification_result=_VERIFICATION_RESULT_LABEL[True],
+        verification_status=_VERIFICATION_STATUS,
         status_key=_status_key(tx),
     )
 
@@ -183,21 +189,33 @@ def _deposit_kb(tx, user=None) -> InlineKeyboardMarkup:
     pui.admin_review_keyboard so button emoji/order/labels are identical to
     every other manual-review surface: 🔄 Verify Again (n/a here — manual
     submissions have no API to re-query, so omitted), ✅ Approve,
-    ❌ Reject, 👤 View User, ⬅ Back.
+    ❌ Reject, 👤 View User, 📜 Deposit History, ⬅ Back.
+
+    "📜 Deposit History" reuses the existing admin wallet-ledger screen
+    (``up:wal:{uid}:{page}`` — handlers/admin_user_profile.py) keyed off
+    the deposit's own internal user id, rather than introducing a new
+    callback/handler.
     """
     tg_id = user.telegram_id if user else None
+    history_cb = f"up:wal:{tx.user_id}:0" if tx.user_id is not None else None
     if tx.status in _PENDING_STATUSES:
         kb = pui.admin_review_keyboard(
             approve_cb=f"pd:appr_ask:{tx.id}",
             reject_cb=f"pd:rej_ask:{tx.id}",
             view_user_cb=(f"admin_view_user_pmv_{tg_id}" if tg_id else None),
+            history_cb=history_cb,
             back_cb=_BACK_TO_LIST_CB,
         )
     else:
         already = "🟢 Already Approved" if tx.status == TransactionStatus.COMPLETED else "🔴 Already Rejected"
         rows = [[InlineKeyboardButton(already, callback_data="noop")]]
+        user_row = []
         if tg_id:
-            rows.append([InlineKeyboardButton("👤 View User", callback_data=f"admin_view_user_pmv_{tg_id}")])
+            user_row.append(InlineKeyboardButton("👤 View User", callback_data=f"admin_view_user_pmv_{tg_id}"))
+        if history_cb:
+            user_row.append(InlineKeyboardButton("📜 Deposit History", callback_data=history_cb))
+        if user_row:
+            rows.append(user_row)
         rows.append([InlineKeyboardButton("⬅ Back", callback_data=_BACK_TO_LIST_CB)])
         kb = InlineKeyboardMarkup(rows)
     # 📜 View Details stays a separate row — it opens the extended raw-info
@@ -265,62 +283,21 @@ async def _render_pending_deposits_list(query, page: int, sort: str):
             rows.append((tx.id, username, amt_str))
 
     # ── Rendering rule: pending_count == 0 -> empty state, else -> list ─────
+    #
+    # This page shows ONE thing: manual deposits (generic ManualPaymentMethod
+    # + bKash/Nagad Manual mode) waiting for a human to check a submitted
+    # TXID/screenshot. It never reports on, or references, auto-confirmed
+    # gateways (Binance Pay, Bybit Pay, Cryptomus, ZiniPay, NOWPayments,
+    # Heleket, Telegram Stars), their webhook state, or their own
+    # verification queues — those are separate concerns with their own admin
+    # pages (see handlers/admin_binance.py, handlers/admin_bybit.py,
+    # handlers/admin_webhook_monitor.py) and are intentionally out of scope
+    # here so this screen can never show two messages that disagree with
+    # each other.
     if total == 0:
-        # DIAGNOSTIC (rendering-only — does not affect what can be
-        # approved/rejected/queried by any other flow): this queue only
-        # ever lists Manual / bKash / Nagad deposits (the only methods that
-        # need a *human* to check a TXID/screenshot — see module
-        # docstring). If an admin sees "no deposits" here while they know a
-        # deposit exists, the most common cause is that the deposit was
-        # made through an auto-confirmed gateway instead (Crypto Wallet,
-        # Binance Pay, Bybit Pay, Cryptomus, ZiniPay, NOWPayments, Heleket,
-        # Stars) — those settle via their own API/webhook and were never
-        # meant to appear in this queue. Surfacing that count here (instead
-        # of a bare "No deposits...") turns a silent scope mismatch into a
-        # visible, actionable message, with zero change to any filter used
-        # for approval/rejection.
-        from sqlalchemy import func as _f
-        with get_db_session() as _diag_session:
-            other_pending = (
-                _diag_session.query(Transaction.payment_method, _f.count(Transaction.id))
-                .filter(
-                    Transaction.status.in_(_PENDING_STATUSES),
-                    ~Transaction.payment_method.in_(_REVIEWABLE_METHODS),
-                )
-                .group_by(Transaction.payment_method)
-                .all()
-            )
-            gateway_verifications = (
-                _diag_session.query(_f.count(PendingManualVerification.id))
-                .filter(PendingManualVerification.status == "pending")
-                .scalar() or 0
-            )
-
-        if other_pending or gateway_verifications:
-            lines = [
-                "No deposits are currently waiting for review under "
-                "Manual / bKash / Nagad.",
-                "",
-                "ℹ️ <b>Found pending activity outside this queue's scope:</b>",
-            ]
-            for pm, cnt in other_pending:
-                label, _ = pui.gateway_meta(pm.value if pm else None)
-                lines.append(f"• {label}: {cnt} awaiting its own auto-confirmation")
-            if gateway_verifications:
-                lines.append(
-                    f"• Gateway verifications: {gateway_verifications} — see "
-                    "Binance/Bybit settings, or Webhook Monitor"
-                )
-            text = "\n".join(lines)
-        else:
-            text = "No deposits are currently waiting for review."
-
-        # Replace the review screen with only the empty state.  In
-        # particular, do not leave list controls or a section heading beside
-        # the empty message.
         await _safe_edit(
             query,
-            text,
+            "No manual deposits are waiting for review.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬅ Back", callback_data="admin_confirm_order")]
             ]),
@@ -438,7 +415,7 @@ async def deposit_view_details(update: Update, context: ContextTypes.DEFAULT_TYP
             f"🔗 <b>Transaction ID:</b> {html.escape(str(tx.txid or '—'))}",
             f"👤 <b>Customer:</b> {html.escape(_customer_name(u))}",
             f"🕒 <b>Created Time:</b> {tx.created_at.strftime('%Y-%m-%d %H:%M UTC') if tx.created_at else '—'}",
-            f"📶 <b>Status:</b> {tx.status.value if tx.status else '—'}",
+            f"📶 <b>Status:</b> {pui.status_badge(_status_key(tx))}",
         ]
         if tx.completed_at:
             lines.append(f"✅ <b>Completed:</b> {tx.completed_at.strftime('%Y-%m-%d %H:%M UTC')}")

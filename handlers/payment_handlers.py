@@ -52,6 +52,7 @@ from services.nowpayments_payment import NowPaymentsService
 from services.zinipay_payment import ZiniPayService
 from services.binance_pay import BinancePayService, VerificationOutcome, is_rate_limited, get_order_lock, is_valid_txid_format
 from services import ltc_rate as _ltc_rate_svc
+from services.inventory_reservation_ui import format_time_remaining as _time_remaining
 from services.bybit_pay import (
     BybitPayService, PaymentType as BybitPaymentType, VerificationOutcome as BybitVerificationOutcome,
     is_rate_limited as bybit_is_rate_limited, get_order_lock as bybit_get_order_lock,
@@ -1811,19 +1812,20 @@ async def payment_method_crypto(update: Update, context: ContextTypes.DEFAULT_TY
                 pay_url = existing_pending.crypto_address if existing_pending.crypto_address else "#"
 
             expires_str = (
-                existing_pending.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')
-                if existing_pending.expires_at else 'N/A'
+                _time_remaining(existing_pending.expires_at)
+                if existing_pending.expires_at else None
             )
             _pending_amount = _plain_usd(existing_pending.amount)
             message = pui.invoice_card(
                 method_label="CryptoBot", method_emoji="🤖",
                 amount=_pending_amount, deposit_id=existing_pending.id,
                 created_at=existing_pending.created_at, expires_at=expires_str,
-                instruction="⚠️ You already have a pending payment — tap below to finish it.",
+                instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
             )
             reply_markup = pui.invoice_keyboard(
                 amount_value=_pending_amount,
                 pay_url=pay_url, pay_url_label="💳 Pay with Any Crypto",
+                back_cb="topup_menu_back",
             )
 
             try:
@@ -1835,7 +1837,7 @@ async def payment_method_crypto(update: Update, context: ContextTypes.DEFAULT_TY
             except BadRequest as e:
                 if "Message is not modified" not in str(e):
                     raise
-            return ConversationHandler.END
+            return METHOD
 
         # Create transaction record
         transaction = Transaction(
@@ -2040,15 +2042,15 @@ async def _finish_gateway_automated_payment(
                     return ConversationHandler.END
 
             expires_str = (
-                existing_pending.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')
-                if existing_pending.expires_at else 'N/A'
+                _time_remaining(existing_pending.expires_at)
+                if existing_pending.expires_at else None
             )
             _pending_amount = _plain_usd(existing_pending.amount)
             message = pui.invoice_card(
                 method_label=gateway_label, method_emoji="💳",
                 amount=_pending_amount, deposit_id=existing_pending.id,
                 expires_at=expires_str,
-                instruction="⚠️ You already have a pending payment — tap below to finish it.",
+                instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
             )
             if not pay_url:
                 message += "\n\n⚠️ Payment link missing — contact support with your Deposit ID above."
@@ -2059,11 +2061,12 @@ async def _finish_gateway_automated_payment(
             keyboard = pui.invoice_keyboard(
                 amount_value=_pending_amount,
                 pay_url=pay_url, pay_url_label=pay_button_label,
+                back_cb="topup_menu_back",
             )
             await update.message.reply_text(
                 message, reply_markup=keyboard, parse_mode='HTML',
             )
-            return ConversationHandler.END
+            return METHOD
 
         # ---- Create a new PENDING transaction row first, then call the gateway. ----
         # The two-step commit (PENDING → then update crypto_address) means that if
@@ -2351,14 +2354,14 @@ async def _finish_zinipay_payment(
                     provider_label=pending_provider.title(), provider_emoji=pending_emoji,
                     amount=_pending_amount, send_to=pending_send_to,
                     deposit_id=existing_pending.id,
-                    instruction="⚠️ You already have a pending order. Finish or cancel it "
-                                "before starting a new one.",
+                    instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
                 )
                 keyboard = pui.invoice_keyboard(
                     destination_value=pending_send_to, destination_copy_label="Copy Number",
                     amount_value=_pending_amount,
                     submit_cb=f"zinipay_submit:{existing_pending.id}",
                     submit_label="🧾 Submit Transaction ID",
+                    back_cb="topup_menu_back",
                 )
             else:
                 # No number configured for the resolved provider at all
@@ -2370,17 +2373,17 @@ async def _finish_zinipay_payment(
                     method_emoji=pending_emoji,
                     amount=_pending_amount,
                     deposit_id=existing_pending.id,
-                    instruction="⚠️ You already have a pending order. Finish or cancel it "
-                                "before starting a new one.",
+                    instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
                 )
                 keyboard = pui.invoice_keyboard(
                     amount_value=_pending_amount,
                     submit_cb=f"zinipay_submit:{existing_pending.id}",
                     submit_label="🧾 Submit Transaction ID",
+                    back_cb="topup_menu_back",
                 )
 
             await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
-            return ConversationHandler.END
+            return METHOD
 
         transaction = Transaction(
             user_id=user.id,
@@ -2646,7 +2649,7 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                                     user_id=telegram_id,
                                     time_str=order_time,
                                     status_key="pending_review",
-                                    note=f"⚠️ <b>Auto-verify failed:</b> {error_detail}",
+                                    verification_status="failed",
                                 ),
                                 reply_markup=pui.admin_review_keyboard(
                                     verify_cb=f"admin_zinipay_verify_{tx_id}_{pmv_id}",
@@ -2899,12 +2902,19 @@ async def _finish_binance_payment(update: Update, context: ContextTypes.DEFAULT_
                 ).first()
                 if existing_pending:
                     await update.message.reply_text(
-                        "⚠️ You already have a pending Binance Pay deposit "
-                        f"({pui.format_deposit_id(existing_pending.id, existing_pending.created_at)}). "
-                        f"Please complete or cancel it before starting a new one.",
-                        reply_markup=create_cancel_keyboard(),
+                        pui.pending_deposit_card(
+                            method_label="Binance Pay", method_emoji="🟡",
+                            amount=_plain_usd(existing_pending.amount),
+                            deposit_id=existing_pending.id, created_at=existing_pending.created_at,
+                            expires_at=_time_remaining(existing_pending.expires_at)
+                            if existing_pending.expires_at else None,
+                        ),
+                        reply_markup=pui.pending_deposit_keyboard(
+                            continue_cb=f"pending_continue:{existing_pending.id}",
+                        ),
+                        parse_mode='HTML',
                     )
-                    return ConversationHandler.END
+                    return METHOD
                 transaction = Transaction(
                     user_id=user.id, amount=usd_amount, payment_method=PaymentMethod.BINANCE_PAY,
                     status=TransactionStatus.PENDING,
@@ -2935,12 +2945,19 @@ async def _finish_binance_payment(update: Update, context: ContextTypes.DEFAULT_
         ).first()
         if existing_pending:
             await update.message.reply_text(
-                "⚠️ You already have a pending Binance Pay deposit "
-                f"({pui.format_deposit_id(existing_pending.id, existing_pending.created_at)}). "
-                f"Please complete or cancel it before starting a new one.",
-                reply_markup=create_cancel_keyboard(),
+                pui.pending_deposit_card(
+                    method_label="Binance Pay", method_emoji="🟡",
+                    amount=_plain_usd(existing_pending.amount),
+                    deposit_id=existing_pending.id, created_at=existing_pending.created_at,
+                    expires_at=_time_remaining(existing_pending.expires_at)
+                    if existing_pending.expires_at else None,
+                ),
+                reply_markup=pui.pending_deposit_keyboard(
+                    continue_cb=f"pending_continue:{existing_pending.id}",
+                ),
+                parse_mode='HTML',
             )
-            return ConversationHandler.END
+            return METHOD
 
         transaction = Transaction(
             user_id=user.id,
@@ -3253,7 +3270,8 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                                     username=update.effective_user.username,
                                     user_id=telegram_id,
                                     status_key="pending_review",
-                                    note=f"⚠️ <b>Auto-verify failed:</b> {reason}",
+                                    verification_status="failed",
+                                    verification_reason=reason,
                                 ),
                                 reply_markup=pui.admin_review_keyboard(
                                     verify_cb=f"admin_binance_verify_{tx_id}_{pmv_id}",
@@ -3493,12 +3511,19 @@ async def _finish_bybit_payment(update: Update, context: ContextTypes.DEFAULT_TY
         ).first()
         if existing_pending:
             await update.message.reply_text(
-                "⚠️ You already have a pending Bybit Pay deposit "
-                f"({pui.format_deposit_id(existing_pending.id, existing_pending.created_at)}). "
-                f"Please complete or cancel it before starting a new one.",
-                reply_markup=create_cancel_keyboard(),
+                pui.pending_deposit_card(
+                    method_label="Bybit Pay", method_emoji="🔷",
+                    amount=_plain_usd(existing_pending.amount),
+                    deposit_id=existing_pending.id, created_at=existing_pending.created_at,
+                    expires_at=_time_remaining(existing_pending.expires_at)
+                    if existing_pending.expires_at else None,
+                ),
+                reply_markup=pui.pending_deposit_keyboard(
+                    continue_cb=f"pending_continue:{existing_pending.id}",
+                ),
+                parse_mode='HTML',
             )
-            return ConversationHandler.END
+            return METHOD
 
         transaction = Transaction(
             user_id=user.id,
@@ -3576,12 +3601,19 @@ async def _finish_bybit_onchain_direct(update: Update, context: ContextTypes.DEF
         ).first()
         if existing_pending:
             await update.message.reply_text(
-                "⚠️ You already have a pending deposit "
-                f"({pui.format_deposit_id(existing_pending.id, existing_pending.created_at)}). "
-                f"Please complete or cancel it before starting a new one.",
-                reply_markup=create_cancel_keyboard(),
+                pui.pending_deposit_card(
+                    method_label="Bybit Pay", method_emoji="🔷",
+                    amount=_plain_usd(existing_pending.amount),
+                    deposit_id=existing_pending.id, created_at=existing_pending.created_at,
+                    expires_at=_time_remaining(existing_pending.expires_at)
+                    if existing_pending.expires_at else None,
+                ),
+                reply_markup=pui.pending_deposit_keyboard(
+                    continue_cb=f"pending_continue:{existing_pending.id}",
+                ),
+                parse_mode='HTML',
             )
-            return ConversationHandler.END
+            return METHOD
 
         transaction = Transaction(
             user_id=user.id,
@@ -3813,6 +3845,76 @@ async def _send_bybit_onchain_screen(update, context, tx_id: int, usd_amount: fl
         except BadRequest as e:
             if "Message is not modified" not in str(e):
                 raise
+
+
+@guarded_callback(fallback_state=ConversationHandler.END)
+async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"▶️ Continue Deposit" tapped on the Pending Deposit notice.
+
+    Purely re-renders the existing PENDING order's payment-instructions
+    screen (Binance Pay / Bybit Pay) — it never creates a new deposit and
+    never touches deposit/verification logic, only reads the already
+    existing Transaction row and hands its values to the same screen
+    renderers used at order-creation time."""
+    query = update.callback_query
+    await safe_answer(query)
+    try:
+        tx_id = int(query.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await safe_answer(query, "Invalid deposit", show_alert=True)
+        return ConversationHandler.END
+
+    with get_db_session() as session:
+        tx = session.query(Transaction).filter_by(id=tx_id).first()
+        if not tx or tx.user.telegram_id != update.effective_user.id:
+            await safe_answer(query, "⛔ Not your deposit.", show_alert=True)
+            return ConversationHandler.END
+        if tx.status != TransactionStatus.PENDING:
+            try:
+                await query.edit_message_text("This deposit is no longer pending.")
+            except BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    raise
+            return ConversationHandler.END
+        method = tx.payment_method
+        usd_amount = tx.amount
+        crypto_address = tx.crypto_address
+        locked_rate = tx.locked_crypto_rate
+        locked_crypto_amount = tx.locked_crypto_amount
+
+    if method == PaymentMethod.BINANCE_PAY:
+        svc = BinancePayService()
+        if not crypto_address:
+            # Currency was never chosen for this order yet — reopen the
+            # currency picker instead of an invoice that doesn't exist yet.
+            try:
+                await query.edit_message_text(
+                    f"🟡 Binance Pay selected.\n\n💬 Which currency will you send for ${usd_amount:.2f}?",
+                    reply_markup=_binance_currency_keyboard(tx_id),
+                )
+            except BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    raise
+            return METHOD
+        await _send_binance_payment_screen(
+            update, context, tx_id, usd_amount, crypto_address, svc, is_new_message=False,
+        )
+        return ConversationHandler.END
+
+    if method == PaymentMethod.BYBIT_PAY:
+        svc = BybitPayService()
+        payment_type, network = _parse_bybit_meta(crypto_address)
+        if payment_type == "onchain" and network:
+            await _send_bybit_onchain_screen(
+                update, context, tx_id, usd_amount, network, svc, is_new_message=False,
+                locked_rate=locked_rate, locked_crypto_amount=locked_crypto_amount,
+            )
+        else:
+            await _send_bybit_uid_screen(update, context, tx_id, usd_amount, svc, is_new_message=False)
+        return ConversationHandler.END
+
+    await safe_answer(query, "Unable to reopen this deposit.", show_alert=True)
+    return ConversationHandler.END
 
 
 async def bybit_submit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4117,7 +4219,8 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                                     user_id=telegram_id,
                                     status_key="pending_review",
                                     extra=[("🌐", "Network", f"{payment_type}/{network}")] if payment_type else (),
-                                    note=f"⚠️ <b>Auto-verify failed:</b> {reason}",
+                                    verification_status="failed",
+                                    verification_reason=reason,
                                 ),
                                 reply_markup=pui.admin_review_keyboard(
                                     verify_cb=f"admin_bybit_verify_{tx_id}_{pmv_id}",
@@ -5615,30 +5718,17 @@ async def buy_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🛒 {product_name}\n"
         f"\n"
         f"💰 Price: {format_price(product_price)}\n"
-        f"🟢 {available} In Stock\n"
+        f"📦 Available Stock: {available}\n"
         f"\n"
-        f"Select a quantity below or enter a custom amount (1–{available})."
+        f"Select quantity:"
     )
 
     # Build dynamic preset keyboard from quantity_presets service (already
     # built inside the DB thread above, since it needs the ORM product row)
 
-    # V18 — inject Wishlist / Price-Alert toggle buttons above the Cancel row
-    try:
-        from handlers.feature_handlers import build_product_feature_buttons
-        from telegram import InlineKeyboardMarkup as _IKM
-        _feat_rows = build_product_feature_buttons(update.effective_user.id, product_id)
-        if _feat_rows:
-            _old_kb = list(qty_markup.inline_keyboard)
-            # Put feature rows between last qty preset row and the cancel row
-            _cancel_rows = [r for r in _old_kb if any(
-                getattr(b, 'callback_data', '') in ('cancel_purchase', 'cancel')
-                for b in r
-            )]
-            _main_rows = [r for r in _old_kb if r not in _cancel_rows]
-            qty_markup = _IKM(_main_rows + _feat_rows + _cancel_rows)
-    except Exception:
-        pass
+    # Product screen keeps only quantity presets + ❌ Cancel (no Wishlist /
+    # Price-Drop-Alert clutter) — qty_markup from quantity_presets.build_keyboard
+    # already provides exactly that.
 
     # If coming from a photo message, delete it and create new text message
     if query.message.photo:
@@ -5729,7 +5819,7 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
     if has_sufficient_balance:
         balance_section = (
             f"👛 Wallet Balance: {format_price(wallet_balance)}\n"
-            f"💵 Remaining Balance: {format_price(remaining_after)}"
+            f"💳 Balance After Payment: {format_price(remaining_after)}"
         )
     else:
         shortfall = total - wallet_balance
@@ -5753,7 +5843,7 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
         f"🔢 Quantity: {quantity}\n"
         f"💰 Unit Price: {format_price(product_price)}\n"
         f"{discount_line}"
-        f"🧾 Total: {format_price(total)}\n"
+        f"💵 Total: {format_price(total)}\n"
         f"\n"
         f"{balance_section}"
     )
@@ -5764,19 +5854,19 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
                                   callback_data=f"confirm_purchase_{product_id}_{quantity}")],
         ]
         if not coupon_code:
-            keyboard.append([InlineKeyboardButton("🎟 Have a Coupon?", callback_data="apply_coupon")])
+            keyboard.append([InlineKeyboardButton("🎟 Apply Coupon", callback_data="apply_coupon")])
         else:
             keyboard.append([InlineKeyboardButton("🗑 Remove Coupon", callback_data="remove_coupon")])
         keyboard.append([
-            InlineKeyboardButton("⬅ Back", callback_data=f"buy_{product_id}"),
-            InlineKeyboardButton("❌ Close", callback_data="cancel_purchase"),
+            InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
         ])
     else:
         keyboard = [
             [InlineKeyboardButton("💰 Top Up Wallet", callback_data="topup")],
             [
-                InlineKeyboardButton("⬅ Back", callback_data=f"buy_{product_id}"),
-                InlineKeyboardButton("❌ Close", callback_data="cancel_purchase"),
+                InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}"),
+                InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
             ],
         ]
 
@@ -6329,7 +6419,7 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # For bulk orders, send keys as a .txt file — with auto-refund on failure
         if bulk_keys:
             safe_name = "".join(c for c in bulk_product_name if c.isalnum() or c in ("-", "_"))[:40] or "product"
-            filename = f"order_{order.id}_{safe_name}_keys.txt"
+            filename = f"{safe_name}_{_receipt_number}.txt"
             tmp_path = os.path.join(tempfile.gettempdir(), filename)
             delivery_ok = False
             try:
@@ -6404,6 +6494,7 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     _v11_oversized_content,
                     caption=f"📎 {quantity} item(s) for order #{order.id}",
                     admin_chat_id=app_settings.ADMIN_TELEGRAM_ID,
+                    receipt_number=_receipt_number,
                 )
             except Exception:
                 logger.exception(

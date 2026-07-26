@@ -2,7 +2,11 @@
 
 Callback namespace: mcw:*
 
-Accessible via the existing wallet menu → 🌍 Multi-Currency button.
+NOTE: the "🌍 Multi-Currency" entry point was removed from the user-facing
+Wallet menu as part of a UI simplification (see handlers/wallet_handlers.py)
+to keep that screen minimal. This module and its mcw:* callbacks are left
+fully intact and registered — nothing here was deleted — it's just no
+longer linked from anywhere in the user-facing UI.
 
 Users can:
   • View all currency balances + portfolio total

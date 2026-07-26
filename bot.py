@@ -763,6 +763,11 @@ def main():
     application.add_handler(CommandHandler("admin", admin_handlers.admin_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CommandHandler("language", user_handlers.language_command))
+    # Profile/Account is no longer a Main Menu button (menu simplification --
+    # see utils/menu_registry.py); /profile is its single entry point.
+    # Reuses the existing account_menu/user_profile screen and "ua:profile"
+    # callback data unchanged, just adds a lightweight command shortcut.
+    application.add_handler(CommandHandler("profile", account_features.account_menu))
 
     # ── Multi-admin RBAC + OTP 2FA (see utils/permissions.py, handlers/admin_auth.py) ──
     application.add_handler(admin_auth.build_admin_login_conversation())
@@ -797,6 +802,10 @@ def main():
                 CallbackQueryHandler(payment_handlers.topup_show_crypto_networks, pattern="^topup_menu_crypto$"),
                 CallbackQueryHandler(payment_handlers.topup_show_mobile_money, pattern="^topup_menu_mobile$"),
                 CallbackQueryHandler(payment_handlers.topup_back_to_methods, pattern="^topup_menu_back$"),
+                # "▶️ Continue Deposit" on the Pending Deposit notice (Binance
+                # Pay / Bybit Pay) — reopens the existing pending order's
+                # payment screen; never creates a new deposit.
+                CallbackQueryHandler(payment_handlers.pending_deposit_continue, pattern="^pending_continue:\\d+$"),
                 CallbackQueryHandler(payment_handlers.topup_amount_path, pattern="^topup_amount_path$"),
                 CallbackQueryHandler(payment_handlers.payment_method_heleket, pattern="^pay_heleket$"),
                 CallbackQueryHandler(payment_handlers.heleket_asset_selected, pattern="^heleket_asset:"),
@@ -869,6 +878,7 @@ def main():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(payment_handlers.pending_deposit_continue, pattern="^pending_continue:\\d+$"),
             CallbackQueryHandler(payment_handlers.cancel_topup, pattern="^cancel$"),
             CallbackQueryHandler(payment_handlers.cancel_topup)
         ],
@@ -1315,9 +1325,8 @@ def main():
     application.add_handler(CallbackQueryHandler(support_handlers.support_center_callback, pattern="^support$"))
     application.add_handler(CallbackQueryHandler(user_handlers.order_history_callback, pattern="^order_history"))
     application.add_handler(CallbackQueryHandler(user_handlers.user_order_detail_callback, pattern="^user_order_detail_"))
-    # Order Detail — show/hide sensitive fields and one-tap copy
+    # Order Detail — show/hide sensitive fields
     application.add_handler(CallbackQueryHandler(user_handlers.oh_toggle_callback, pattern=r"^oh_toggle_"))
-    application.add_handler(CallbackQueryHandler(user_handlers.oh_copy_callback, pattern=r"^oh_copy_"))
     # V25 — Order Timeline user callback
     from handlers.user_order_timeline import user_timeline_callback
     application.add_handler(CallbackQueryHandler(user_timeline_callback, pattern=r"^user_timeline_\d+$"))

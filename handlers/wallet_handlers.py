@@ -1,16 +1,13 @@
 """Section 12 — user-facing Wallet menu.
 
-Shows the real current balance and Total Deposited (sum of COMPLETED
-Transaction rows only — never counts failed/rejected/pending/refund/purchase).
-Buttons: Add Funds (routes into existing topup flow), Payment History,
-Download Statement (CSV), Back.
+Shows the real current balance, Total Deposited, and Total Spent (sums of
+COMPLETED Transaction/Order rows only — never counts failed/rejected/
+pending/refund transactions). Buttons: Add Funds (routes into the existing
+topup flow), Payment History, Back to Menu.
 """
 from __future__ import annotations
 
-import csv
-import io
-
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from database import get_db_session
@@ -21,17 +18,15 @@ from i18n import t, get_user_language
 from telegram.error import BadRequest
 
 
-# Display-only label overrides for payment methods whose internal/API key
-# should not be shown to end users verbatim (e.g. gateway codenames).
-# This does NOT change the stored value or any verification/API logic —
-# it only affects what text the user sees in their transaction history.
+# Display-only friendly labels for payment methods — never changes the
+# stored value or any verification/API logic, only what text the user sees.
 # NOTE: "zinipay" itself is never shown — the SPECIFIC provider the user
 # paid with (bKash / Nagad / Rocket) is resolved from the transaction's
-# crypto_address in _payment_method_display() below; this generic label is
-# only a last-resort fallback for legacy rows with no provider recorded.
-_PAYMENT_METHOD_DISPLAY_OVERRIDES = {
-    "zinipay": "Mobile Banking",
-}
+# crypto_address in _payment_method_display() below via
+# services.payment_ui.zinipay_provider_meta(); every other method falls
+# back to services.payment_ui.gateway_meta(), the same shared label source
+# used by the admin Pending Deposits screen, so a method's display name is
+# always consistent everywhere it's shown.
 
 
 _STATUS_EMOJI = {
@@ -39,9 +34,20 @@ _STATUS_EMOJI = {
     "pending": "⏳",
     "awaiting_confirmation": "🕓",
     "expired": "⌛",
-    "cancelled": "🚫",
+    "cancelled": "❌",
     "failed": "❌",
     "rejected": "🚫",
+}
+
+# Friendly, properly-capitalized status text — never the raw enum/db value.
+_STATUS_LABEL = {
+    "completed": "Completed",
+    "pending": "Pending",
+    "awaiting_confirmation": "Awaiting Confirmation",
+    "expired": "Expired",
+    "cancelled": "Cancelled",
+    "failed": "Failed",
+    "rejected": "Rejected",
 }
 
 
@@ -49,13 +55,20 @@ def _status_emoji(status: str) -> str:
     return _STATUS_EMOJI.get((status or "").lower(), "🔹")
 
 
+def _status_label(status: str) -> str:
+    key = (status or "").lower()
+    return _STATUS_LABEL.get(key, key.replace("_", " ").title() or "Unknown")
+
+
 def _payment_method_display(payment_method, crypto_address: str | None = None) -> str:
-    raw = payment_method.value if payment_method else "?"
+    raw = payment_method.value if payment_method else None
     if raw == "zinipay":
         from services.payment_ui import zinipay_provider_meta
-        label, emoji = zinipay_provider_meta(crypto_address=crypto_address)
-        return f"{emoji} {label}"
-    return _PAYMENT_METHOD_DISPLAY_OVERRIDES.get(raw, raw)
+        label, _emoji = zinipay_provider_meta(crypto_address=crypto_address)
+        return label
+    from services.payment_ui import gateway_meta
+    label, _emoji = gateway_meta(raw)
+    return label
 
 
 def _totals(tg_id: int) -> tuple[float, float, float, list[Transaction]]:
@@ -97,58 +110,6 @@ def _totals(tg_id: int) -> tuple[float, float, float, list[Transaction]]:
     return bal, total_dep, total_spent, hist
 
 
-def _full_history(tg_id: int, limit: int = 5000) -> list[tuple]:
-    """All of this user's transactions, most recent first, for statement
-    export. Capped at `limit` rows as a safety bound — a single user's own
-    history is never expected to approach this in practice."""
-    with get_db_session() as s:
-        u = s.query(User).filter(User.telegram_id == tg_id).first()
-        if not u:
-            return []
-        rows = (
-            s.query(Transaction)
-            .filter(Transaction.user_id == u.id)
-            .order_by(Transaction.created_at.desc())
-            .limit(limit)
-            .all()
-        )
-        from services.payment_ui import format_deposit_id as _fmt_dep_id
-        return [
-            (_fmt_dep_id(r.id, r.created_at), r.amount, r.status.value if r.status else "?",
-             _payment_method_display(r.payment_method, r.crypto_address), r.created_at)
-            for r in rows
-        ]
-
-
-@perf_track("wallet_handler")
-async def wallet_export_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send the user their full wallet transaction history as a CSV file."""
-    q = update.callback_query
-    await q.answer()
-    tg_id = update.effective_user.id
-    lang = get_user_language(tg_id)
-    rows = _full_history(tg_id)
-    if not rows:
-        await q.answer(t("common.no_transactions", lang), show_alert=True)
-        return
-
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(["Deposit ID", "Amount", "Status", "Method", "Date (UTC)"])
-    for deposit_id, amt, st, pm, ts in rows:
-        writer.writerow([
-            deposit_id, f"{float(amt or 0):.2f}", st, pm,
-            ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "",
-        ])
-    data = buf.getvalue().encode("utf-8")
-
-    file_obj = InputFile(io.BytesIO(data), filename=f"wallet_statement_{tg_id}.csv")
-    await q.message.reply_document(
-        document=file_obj,
-        caption=t("wallet.export_caption", lang, count=len(rows)),
-    )
-
-
 @perf_track("wallet_handler")
 async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -173,8 +134,6 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Add Funds",       callback_data="topup"),
          InlineKeyboardButton("📜 Payment History", callback_data="wallet_history")],
-        [InlineKeyboardButton("📄 Download Statement", callback_data="wallet_export"),
-         InlineKeyboardButton("🌍 Multi-Currency",    callback_data="mcw:overview")],
         [InlineKeyboardButton("⬅️ Back to Menu",   callback_data="main_menu")],
     ])
     if q:
@@ -205,7 +164,8 @@ async def wallet_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(t(
                 "wallet.history_row", lang,
                 emoji=_status_emoji(st),
-                id=tid, amount=format_price_for_user(amt, tg_id), method=pm, status=st, when=when,
+                id=tid, amount=format_price_for_user(amt, tg_id), method=pm,
+                status=_status_label(st), when=when,
             ))
         body = "\n\n".join(lines)
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Wallet", callback_data="wallet")]])
@@ -231,5 +191,4 @@ async def wallet_currency_toggle(update: Update, context: ContextTypes.DEFAULT_T
 def register_handlers(app):
     app.add_handler(CallbackQueryHandler(wallet_menu, pattern=r"^wallet$"))
     app.add_handler(CallbackQueryHandler(wallet_history, pattern=r"^wallet_history$"))
-    app.add_handler(CallbackQueryHandler(wallet_export_csv, pattern=r"^wallet_export$"))
     app.add_handler(CallbackQueryHandler(wallet_currency_toggle, pattern=r"^wallet_currency_toggle$"))

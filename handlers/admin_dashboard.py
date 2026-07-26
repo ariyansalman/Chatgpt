@@ -20,7 +20,6 @@ from database import (
 )
 from utils import is_admin, format_price
 from utils.bot_config import cfg
-from services.customer_analytics import compute_churn_rate, compute_ltv
 from telegram.error import BadRequest
 
 logger = logging.getLogger(__name__)
@@ -56,9 +55,9 @@ def build_admin_dashboard_keyboard(
     # Two-line format: emoji + name on line 1, state on line 2.
     # 🔴 = maintenance active (caution); 🟢 = maintenance off (bot healthy).
     maint_label = (
-        "🔴 Maintenance\nON"
+        "🔴 Maintenance: ON"
         if maintenance_on
-        else "🟢 Maintenance\nOFF"
+        else "🟢 Maintenance: OFF"
     )
 
     # ── Keyboard — consistent 2-column grid, logically paired rows ───────────
@@ -125,7 +124,7 @@ def build_admin_dashboard_keyboard(
         [InlineKeyboardButton("🔄 Background Jobs",           callback_data="acc:sys:jobs")],
         # Full-width controls
         [InlineKeyboardButton(maint_label,                    callback_data="admin_maintenance_toggle")],
-        [InlineKeyboardButton("🚪 Exit Admin",                callback_data="main_menu")],
+        [InlineKeyboardButton("⬅️ Exit Admin Panel",          callback_data="main_menu")],
     ]
     return InlineKeyboardMarkup(kb)
 
@@ -136,7 +135,7 @@ def _collect_dashboard_stats() -> dict:
         "users": 0, "products": 0, "orders": 0,
         "pending_orders": 0, "pending_payments": 0,
         "total_sales": 0.0, "low_stock": 0,
-        "churn_rate_pct": 0.0, "avg_ltv": 0.0,
+        "failed_orders": 0, "system_alerts": 0,
     }
     # V18 — feature stats (non-blocking; failures return 0)
     try:
@@ -155,20 +154,21 @@ def _collect_dashboard_stats() -> dict:
             stats["pending_orders"] = s.query(func.count(Order.id)).filter(
                 Order.status == OrderStatus.PROCESSING
             ).scalar() or 0
-            # SYNCHRONIZATION FIX: this used to count every Transaction in
-            # PENDING/AWAITING_CONFIRMATION regardless of payment method —
-            # including gateways (Binance Pay, Bybit Pay, ZiniPay, Cryptomus,
-            # NOWPayments, Heleket, Telegram Stars) that are still just
-            # waiting on their own webhook/API confirmation and need no
-            # admin action at all. That inflated number never matched the
-            # "Pending Deposits" count shown one tap later in the Payments
-            # menu. Now both read the exact same shared definition (see
-            # services/payment_ui.count_pending_deposits), which also folds
-            # in PendingManualVerification rows (failed auto-verifications
-            # genuinely waiting on a human) so this badge is never lower
-            # than the real number of items needing review.
+            # This badge links straight to the Payments menu -> Pending
+            # Deposits queue, so it must count exactly what that queue
+            # counts: manual deposits (generic ManualPaymentMethod +
+            # bKash/Nagad Manual mode) waiting for a human to check a
+            # submitted TXID/screenshot. It deliberately excludes gateways
+            # (Binance Pay, Bybit Pay, ZiniPay, Cryptomus, NOWPayments,
+            # Heleket, Telegram Stars) still waiting on their own webhook/API
+            # confirmation, and PendingManualVerification rows (failed
+            # auto-verifications) — those are a separate concern with their
+            # own admin pages (see handlers/admin_binance.py,
+            # handlers/admin_bybit.py, handlers/admin_webhook_monitor.py) and
+            # must never be folded into this number, or this badge would
+            # show a count the Pending Deposits page itself can't match.
             from services.payment_ui import count_pending_deposits as _cpd
-            stats["pending_payments"] = _cpd(s)["total"]
+            stats["pending_payments"] = _cpd(s)["deposits"]
             stats["total_sales"] = float(s.query(func.coalesce(
                 func.sum(Order.total_amount), 0.0
             )).filter(Order.status == OrderStatus.COMPLETED).scalar() or 0.0)
@@ -177,12 +177,22 @@ def _collect_dashboard_stats() -> dict:
                 Product.is_active == True,  # noqa: E712
                 Product.stock_count <= low_th,
             ).scalar() or 0
-            churn = compute_churn_rate(s)
-            ltv = compute_ltv(s)
-            stats["churn_rate_pct"] = churn.churn_rate_pct
-            stats["avg_ltv"] = ltv.overall_avg_ltv
+            stats["failed_orders"] = s.query(func.count(Order.id)).filter(
+                Order.status == OrderStatus.FAILED
+            ).scalar() or 0
     except Exception:
         logger.exception("dashboard stats query failed")
+
+    # System alerts — any integration currently offline/warning per the
+    # existing health-monitor service (unchanged; just counted here).
+    try:
+        from services.health_monitor import get_latest_statuses
+        stats["system_alerts"] = sum(
+            1 for row in get_latest_statuses()
+            if row.get("status") in ("offline", "warning")
+        )
+    except Exception:
+        stats.setdefault("system_alerts", 0)
 
     # V20: Open ticket count
     try:
@@ -219,17 +229,20 @@ def _render_dashboard_text(stats: dict) -> str:
       4. 💰 Revenue
       5. 📈 Performance
     """
-    open_tickets = stats.get("open_tickets", 0)
+    failed_orders = stats.get("failed_orders", 0)
+    system_alerts = stats.get("system_alerts", 0)
 
+    # Action Required — only genuinely actionable items; each line is
+    # hidden automatically whenever its count is zero.
     alerts = []
-    if stats["pending_orders"]:
-        alerts.append(f"  ⏳  <b>{stats['pending_orders']:,}</b> pending orders")
     if stats["pending_payments"]:
-        alerts.append(f"  💳  <b>{stats['pending_payments']:,}</b> pending payments")
+        alerts.append(f"  🔴  <b>{stats['pending_payments']:,}</b> Pending Payments")
     if stats["low_stock"]:
-        alerts.append(f"  📉  <b>{stats['low_stock']:,}</b> low-stock products")
-    if open_tickets:
-        alerts.append(f"  🎫  <b>{open_tickets:,}</b> open support tickets")
+        alerts.append(f"  📦  <b>{stats['low_stock']:,}</b> Low Stock Products")
+    if failed_orders:
+        alerts.append(f"  ⚠️  <b>{failed_orders:,}</b> Failed Orders")
+    if system_alerts:
+        alerts.append(f"  🚨  <b>{system_alerts:,}</b> System Alerts")
 
     if alerts:
         attention_block = "🔴 <b>Action Required</b>\n" + "\n".join(alerts)
@@ -241,12 +254,10 @@ def _render_dashboard_text(stats: dict) -> str:
         "──────────────────────────\n\n"
         f"{attention_block}\n\n"
         "──────────────────────────\n"
-        f"👥  <b>{stats['users']:,}</b> users   "
-        f"📦  <b>{stats['products']:,}</b> products   "
-        f"🛒  <b>{stats['orders']:,}</b> orders\n"
-        f"💰  Sales <b>{format_price(stats['total_sales'])}</b>   "
-        f"📈  LTV <b>{format_price(stats['avg_ltv'])}</b>   "
-        f"📉  Churn <b>{stats['churn_rate_pct']}%</b>"
+        f"👥  Total Users <b>{stats['users']:,}</b>\n"
+        f"📦  Total Products <b>{stats['products']:,}</b>\n"
+        f"🛒  Total Orders <b>{stats['orders']:,}</b>\n"
+        f"💰  Total Sales <b>{format_price(stats['total_sales'])}</b>"
     )
 
 

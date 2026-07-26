@@ -107,9 +107,8 @@ async def support_center_callback(update: Update, context: ContextTypes.DEFAULT_
         support_username = (s.support_username or "").lstrip("@") if s else ""
 
     text = (
-        "🔔 <b>Support Center</b>\n\n"
-        "Need assistance? Create a support ticket and our team will reply directly in this bot. "
-        "You'll receive a notification as soon as we respond."
+        "🎧 <b>Support Center</b>\n\n"
+        "Open a ticket and our team will reply here in the bot."
     )
     await safe_edit_message_text(query, 
         text,
@@ -142,7 +141,9 @@ async def show_info_page_callback(update: Update, context: ContextTypes.DEFAULT_
         body = "This page hasn't been set up yet. Please check back later."
 
     text = f"{emoji} <b>{title}</b>\n\n{body}"
-    keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="support_center")]]
+    # FAQ lives on the Support page; Terms/About now live under Account.
+    back_cb = "support_center" if page_key == "faq" else "ua:menu"
+    keyboard = [[InlineKeyboardButton("🔙 Back", callback_data=back_cb)]]
     await safe_edit_message_text(
         query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML",
     )

@@ -1,7 +1,6 @@
 """Refer & Earn handlers (English-only system UI)."""
 
 import logging
-from urllib.parse import quote
 from telegram import Update
 from telegram.ext import ContextTypes
 from database import get_db_session, User, Settings
@@ -60,29 +59,25 @@ async def refer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     bot_username = (await context.bot.get_me()).username
     link = f"https://t.me/{bot_username}?start=ref_{telegram_id}"
-    share_url = f"https://t.me/share/url?url={quote(link)}&text={quote(t('referral.share_text', lang))}"
 
     pct_str = _fmt_pct(_commission_pct())
     text = (
         "👥 <b>Referral Program</b>\n\n"
-        f"Invite new customers and earn a <b>{pct_str} commission</b> on every successful purchase they make.\n\n"
-        "<b>How It Works</b>\n\n"
-        "1️⃣ Share your personal referral link.\n"
-        "2️⃣ A new customer joins using your link.\n"
-        "3️⃣ They complete a successful purchase.\n"
-        f"4️⃣ You automatically receive a {pct_str} commission.\n\n"
-        "📊 <b>Referral Statistics</b>\n\n"
+        f"Earn <b>{pct_str} commission</b> on every successful purchase made through your referral link.\n\n"
+        "━━━━━━━━━━━━━━\n\n"
+        "📊 <b>Statistics</b>\n\n"
         f"👥 Total Referrals: <b>{count}</b>\n"
-        f"💰 Total Commission Earned: <b>${earned:.2f}</b>\n\n"
-        "🔗 <b>Your Referral Link</b>\n\n"
+        f"💰 Total Earnings: <b>${earned:.2f}</b>\n\n"
+        "🔗 <b>Your Referral Link</b>\n"
         f"<code>{link}</code>\n\n"
-        "Your commission is credited automatically after every eligible completed order."
+        "━━━━━━━━━━━━━━\n\n"
+        "Commission is credited automatically after every completed eligible order."
     )
 
     try:
         await query.edit_message_text(
             text,
-            reply_markup=create_refer_keyboard(lang, share_url),
+            reply_markup=create_refer_keyboard(lang),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )

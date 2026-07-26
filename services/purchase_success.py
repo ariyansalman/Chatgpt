@@ -162,11 +162,22 @@ def _format_delivery_block(
     product_type: Optional[str] = None,
     product_id: Optional[int] = None,
 ) -> str:
-    """Build the delivery section: label + content only."""
+    """Build the delivery section: label + content only.
+
+    When the order's products were delivered separately as a .txt file
+    (multiple licenses/links — see ``is_delivery_oversized`` /
+    ``send_delivery_as_file`` callers), *delivered_asset* is a short
+    "sent as a file" placeholder rather than the real content. In that
+    case the message simply confirms delivery instead of echoing the
+    placeholder under a content label.
+    """
     if not delivered_asset or not delivered_asset.strip():
         return ""
+    content = delivered_asset.strip()
+    if content.startswith("📎"):
+        return "\n🔑 Your products have been delivered."
     label = _delivery_label(delivered_asset, product_type)
-    return f"\n🔑 Delivery\n\n{label}\n{delivered_asset.strip()}"
+    return f"\n🔑 Delivery\n\n{label}\n{content}"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -201,6 +212,7 @@ async def send_delivery_as_file(
     content: str,
     caption: Optional[str] = None,
     admin_chat_id: Optional[int] = None,
+    receipt_number: Optional[str] = None,
 ) -> bool:
     """Write ``content`` to a temp .txt file and send it as a Telegram
     document — the same fallback legacy bulk KEY delivery already uses,
@@ -215,7 +227,11 @@ async def send_delivery_as_file(
     safe_name = "".join(
         c for c in (product_name or "product") if c.isalnum() or c in ("-", "_")
     )[:40] or "product"
-    filename = f"order_{order_id}_{safe_name}.txt"
+    filename = (
+        f"{safe_name}_{receipt_number}.txt"
+        if receipt_number else
+        f"order_{order_id}_{safe_name}.txt"
+    )
     tmp_path = os.path.join(tempfile.gettempdir(), filename)
     delivered_ok = False
     try:
@@ -267,18 +283,18 @@ def build_success_text(
     purchase_date: Optional[datetime] = None,
 ) -> str:
     """Return the single unified purchase-success message text."""
-    qty_suffix = f" ×{quantity}" if quantity > 1 else ""
     date_str = (purchase_date or datetime.utcnow()).strftime("%d %b %Y • %H:%M UTC")
 
     lines: List[str] = [
         "✅ Payment Successful",
         "",
-        f"🧾 Order ID\n{receipt_number}",
-        f"📅 {date_str}",
+        f"🆔 Order ID\n{receipt_number}",
         "",
-        f"📦 Product\n{product_name}{qty_suffix}",
+        f"📦 Product\n{product_name}",
+        f"🔢 Quantity\n{quantity}",
         "",
         f"💰 Amount Paid\n{format_price(total)}",
+        f"🕒 Purchase Time\n{date_str}",
     ]
 
     delivery_block = _format_delivery_block(delivered_asset, product_type, product_id)
@@ -302,14 +318,13 @@ def build_success_keyboard(
     URL-count rules:
       • 0 URLs        → no link buttons
       • Exactly 1 URL → 🌐 Open Link  +  📋 Copy Link  (native clipboard, no new message)
-      • 2+ URLs       → 📥 Download Links  (sends a TXT file — no Message_too_long risk)
+      • 2+ URLs       → 📥 Download Products  (sends a TXT file — no Message_too_long risk)
                         Open Link is hidden when there are multiple links.
 
     Other buttons (always present):
-      • 🏠 Home | 📦 My Orders
-      • 🛒 Buy Again   (only when product_id is known)
-      • ⭐ Leave Review (only when product_id is known)
-      • 🆘 Support
+      • ⬅️ Back to Menu | 📦 My Orders
+      • 🔄 Buy Again   (only when product_id is known)
+      • 🎧 Support
     """
     urls = extract_urls(delivered_asset or "")
     url_count = len(urls)
@@ -325,7 +340,7 @@ def build_success_keyboard(
         # Multiple URLs: Download as TXT file — never put links in a callback alert
         # (answerCallbackQuery text limit is ~200 chars; long URLs cause Message_too_long)
         rows.append([
-            InlineKeyboardButton("📥 Download Links", callback_data=f"download_links_txt_{order_id}"),
+            InlineKeyboardButton("📥 Download Products", callback_data=f"download_links_txt_{order_id}"),
         ])
     # url_count == 0 → no link buttons
 
@@ -338,18 +353,11 @@ def build_success_keyboard(
     # Buy Again
     if product_id:
         rows.append([InlineKeyboardButton(
-            "🛒 Buy Again", callback_data=f"product_{product_id}",
-        )])
-
-    # Review
-    if product_id:
-        rows.append([InlineKeyboardButton(
-            "⭐ Leave Review",
-            callback_data=f"review_start_{order_id}_{product_id}",
+            "🔄 Buy Again", callback_data=f"product_{product_id}",
         )])
 
     # Support
-    rows.append([InlineKeyboardButton("🆘 Support", callback_data="support_center")])
+    rows.append([InlineKeyboardButton("🎧 Support", callback_data="support_center")])
 
     return InlineKeyboardMarkup(rows)
 

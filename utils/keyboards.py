@@ -252,13 +252,15 @@ def _get_display_languages() -> tuple:
 def create_language_keyboard(lang: str = "en"):
     """Language picker keyboard — one button per admin-enabled language.
 
-    Falls back to all SUPPORTED_LANGUAGES when no LanguageConfig rows exist
-    (e.g. fresh install) so the picker always shows something.
+    The caller's current language gets a ✅ prefix so the active choice is
+    visible at a glance. Falls back to all SUPPORTED_LANGUAGES when no
+    LanguageConfig rows exist (e.g. fresh install) so the picker always
+    shows something.
     """
     display_langs = _get_display_languages()
     keyboard = [
         [InlineKeyboardButton(
-            f"{LANGUAGE_FLAGS.get(code, '')} {LANGUAGE_NAMES.get(code, code)}",
+            f"{'✅ ' if code == lang else ''}{LANGUAGE_FLAGS.get(code, '')} {LANGUAGE_NAMES.get(code, code)}",
             callback_data=f"set_lang_{code}",
         )]
         for code in display_langs
@@ -267,10 +269,9 @@ def create_language_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup(keyboard)
 
 
-def create_refer_keyboard(lang: str, share_url: str):
-    """Refer & Earn keyboard — premium marketplace layout."""
+def create_refer_keyboard(lang: str):
+    """Refer & Earn keyboard — clean, minimal marketplace layout."""
     keyboard = [
-        [InlineKeyboardButton("📤 Share Referral Link", url=share_url)],
         [InlineKeyboardButton("📜 Referral History", callback_data="rd:comm")],
         [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")],
     ]
@@ -278,13 +279,11 @@ def create_refer_keyboard(lang: str, share_url: str):
 
 
 def create_support_center_keyboard(lang: str, support_username: str = ""):
-    """Support Center main keyboard (English-only)."""
+    """Support Center main keyboard — compact, ticket-focused (English-only)."""
     keyboard = [
-        [InlineKeyboardButton("🎫 Open New Ticket", callback_data="sc_new")],
-        [InlineKeyboardButton("📋 My Tickets", callback_data="sc_list")],
-        [InlineKeyboardButton("📄 Terms", callback_data="sc_page_terms"),
-         InlineKeyboardButton("❓ FAQ", callback_data="sc_page_faq"),
-         InlineKeyboardButton("ℹ️ About", callback_data="sc_page_about")],
+        [InlineKeyboardButton("🎫 Open Ticket", callback_data="sc_new")],
+        [InlineKeyboardButton("📂 My Tickets", callback_data="sc_list")],
+        [InlineKeyboardButton("❓ FAQ", callback_data="sc_page_faq")],
     ]
     if support_username:
         keyboard.append([InlineKeyboardButton(

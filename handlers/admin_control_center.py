@@ -336,52 +336,54 @@ def _tog_icon(key: str, default: bool) -> str:
     return "🟢" if _cfg_bool(key, default) else "🔴"
 
 
+
+# Root panel groups — Primary (daily operations), Management (marketing &
+# presentation), System (infrastructure & configuration). Purely a visual
+# grouping of the existing 12 categories; callback_data is untouched.
+_ROOT_GROUPS: list[tuple[str, list[str]]] = [
+    ("Primary",    ["dashboard", "products", "orders", "payments", "customers"]),
+    ("Management", ["marketing", "notifications", "ui_menu"]),
+    ("System",     ["store_settings", "security", "system", "tools"]),
+]
+
+
 def build_acc_root_keyboard(maintenance_on: bool) -> IKM:
-    """Categorized root panel keyboard."""
+    """Categorized root panel keyboard, grouped into Primary / Management / System."""
     from utils.bot_config import cfg
     use_icons   = cfg.get_bool("admin_panel_icons",     True)
     show_search = cfg.get_bool("admin_panel_search",    True)
-    show_favs   = cfg.get_bool("admin_panel_favorites", True)
-    show_recent = cfg.get_bool("admin_panel_recent",    True)
 
     def lbl(icon: str, text: str) -> str:
         return f"{icon}  {text}" if use_icons else text
 
-    # ── Category grid (2 per row) ────────────────────────────────────────────
     kb: list[list[IKB]] = []
-    row: list[IKB] = []
-    for cat, (icon, name) in _CAT_META.items():
-        row.append(IKB(lbl(icon, name), callback_data=f"acc:cat:{cat}"))
-        if len(row) == 2:
+
+    # ── Category grid, grouped under a divider label per section ────────────
+    for group_name, cats in _ROOT_GROUPS:
+        kb.append([IKB(f"── {group_name} ──", callback_data="acc:root")])
+        row: list[IKB] = []
+        for cat in cats:
+            icon, name = _CAT_META[cat]
+            row.append(IKB(lbl(icon, name), callback_data=f"acc:cat:{cat}"))
+            if len(row) == 2:
+                kb.append(row)
+                row = []
+        if row:
             kb.append(row)
-            row = []
-    if row:
-        kb.append(row)
 
     # ── Quick tools: search ───────────────────────────────────────────────────
-    # (Notifications is now its own top-level category in the grid above —
-    # no separate shortcut needed here, so there's only one path to it.)
     if show_search:
         kb.append([IKB("🔍  Search", callback_data="acc:ui:search")])
 
-    # ── Personal quick-access ────────────────────────────────────────────────
-    quick: list[IKB] = []
-    if show_favs:
-        quick.append(IKB("⭐  Favourites", callback_data="acc:ui:favs"))
-    if show_recent:
-        quick.append(IKB("🕐  Recent",     callback_data="acc:ui:recent"))
-    if quick:
-        kb.append(quick)
-
     # ── System controls ──────────────────────────────────────────────────────
     maint_label = (
-        "🔴  Maintenance ON"
+        "🔴  Maintenance: ON"
         if maintenance_on
-        else "🟢  Maintenance OFF"
+        else "🟢  Maintenance: OFF"
     )
     # (Panel Settings is now under 🎨 UI & Menu — no separate shortcut here.)
     kb.append([IKB(maint_label, callback_data="admin_maintenance_toggle")])
-    kb.append([IKB("🚪  Exit to Main Menu", callback_data="main_menu")])
+    kb.append([IKB("⬅️  Exit Admin Panel", callback_data="main_menu")])
     return IKM(kb)
 
 
@@ -477,10 +479,6 @@ def _build_ui_settings_keyboard() -> IKM:
              callback_data="acc:ui:tog:admin_panel_categories"),
          IKB(f"{_tog_icon('admin_panel_search', True)}  Search Bar",
              callback_data="acc:ui:tog:admin_panel_search")],
-        [IKB(f"{_tog_icon('admin_panel_favorites', True)}  Favourites",
-             callback_data="acc:ui:tog:admin_panel_favorites"),
-         IKB(f"{_tog_icon('admin_panel_recent', True)}  Recent Menus",
-             callback_data="acc:ui:tog:admin_panel_recent")],
         [IKB(f"{_tog_icon('admin_panel_compact', False)}  Compact Mode",
              callback_data="acc:ui:tog:admin_panel_compact"),
          IKB(f"{_tog_icon('admin_panel_icons', True)}  Icons",

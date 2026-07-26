@@ -1859,30 +1859,12 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
             "Tap <b>Pending Deposits</b> to open the review queue."
         )
     else:
-        # DIAGNOSTIC (rendering-only, same one used on the Pending Deposits
-        # list itself): distinguishes "truly nothing pending" from "pending
-        # activity exists, but only under auto-confirmed gateways that this
-        # queue intentionally doesn't cover" — see
-        # handlers/admin_pending_deposits.py._render_pending_deposits_list.
-        with get_db_session() as _diag_session:
-            _other_pending = (
-                _diag_session.query(func.count(Transaction.id))
-                .filter(
-                    Transaction.status.in_(_pui.pending_tx_statuses()),
-                    ~Transaction.payment_method.in_(_pui.reviewable_methods()),
-                )
-                .scalar() or 0
-            )
-        if _other_pending:
-            header = (
-                "💳 <b>Payments</b>\n\n"
-                "No deposits are currently waiting for review under "
-                "Manual / bKash / Nagad.\n"
-                f"ℹ️ {_other_pending} deposit(s) pending under other "
-                "(auto-confirmed) gateways — see Webhook Monitor."
-            )
-        else:
-            header = "💳 <b>Payments</b>\n\nNo deposits are currently waiting for review."
+        # This menu only ever reports on manual deposits (the same scope as
+        # handlers/admin_pending_deposits.py). It never references
+        # auto-confirmed gateways, webhooks, or their verification queues —
+        # those live on their own admin pages — so this header can never
+        # disagree with what the Pending Deposits list itself shows.
+        header = "💳 <b>Payments</b>\n\nNo manual deposits are waiting for review."
 
     try:
         await query.edit_message_text(

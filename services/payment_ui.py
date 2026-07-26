@@ -214,7 +214,7 @@ def build_card(
 _STAGE_TITLE = {
     "created":        "Payment Created",
     "waiting":         "Waiting for Payment",
-    "pending_review":  "Payment Under Review",
+    "pending_review":  "Deposit Submitted",
     "approved":        "Payment Approved",
     "rejected":        "Payment Rejected",
     "expired":         "Payment Expired",
@@ -396,10 +396,14 @@ def invoice_keyboard(
     submit_cb: Optional[str] = None,
     submit_label: str = "📄 Submit Transaction ID",
     cancel_cb: Optional[str] = "cancel",
+    back_cb: Optional[str] = None,
 ) -> InlineKeyboardMarkup:
     """The one action-row layout used by every invoice: optional silent
     Copy buttons, then Submit (or an external Pay link), then Cancel —
-    identical order for every gateway.
+    identical order for every gateway. ``back_cb`` is optional and only
+    used by screens that reopen an existing pending deposit (adds a
+    trailing "⬅️ Back" row); every existing caller that doesn't pass it
+    renders exactly as before.
 
     Copy buttons use Telegram's native ``copy_text`` button — the value is
     copied to the user's clipboard entirely client-side. No callback is
@@ -430,7 +434,73 @@ def invoice_keyboard(
     if cancel_cb:
         rows.append([InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)])
 
+    if back_cb:
+        rows.append([InlineKeyboardButton("⬅️ Back", callback_data=back_cb)])
+
     return InlineKeyboardMarkup(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# "Pending Deposit" notice — shown instead of a plain-text block whenever a
+# user tries to start a new deposit while one is already in progress. One
+# template for every gateway, exactly like ``invoice_card`` above: friendly
+# wording, the approved field set, no raw technical phrasing, no internal
+# database values. Presentation-only — callers still own all DB / gateway
+# logic and only hand this module the display values.
+# ─────────────────────────────────────────────────────────────────────────
+
+def pending_deposit_card(
+    *,
+    method_label: str,
+    method_emoji: str = "💳",
+    amount: str,
+    deposit_id=None,
+    created_at=None,
+    expires_at: Optional[str] = None,
+) -> str:
+    """Render the one 'you already have a deposit in progress' card.
+
+    ``expires_at`` should already be a short, human phrase such as
+    ``'12m 40s remaining'`` or ``'Expired'`` — this function only lays it
+    out, it never computes durations itself.
+    """
+    lines = [
+        "⚠️ <b>Pending Deposit</b>",
+        "",
+        "You already have a deposit in progress. Continue it or cancel it "
+        "before starting a new one.",
+        "",
+        f"{method_emoji} <b>Payment Method</b>",
+        f"<code>{method_label}</code>",
+        "",
+        "💰 <b>Amount</b>",
+        f"<code>{amount}</code>",
+    ]
+    dep = _display_deposit_id(deposit_id, created_at)
+    if dep:
+        lines.append("")
+        lines.append("🧾 <b>Deposit ID</b>")
+        lines.append(f"<code>{dep}</code>")
+    if expires_at:
+        lines.append("")
+        lines.append("⏳ <b>Expires In</b>")
+        lines.append(f"<code>{expires_at}</code>")
+    return "\n".join(lines)
+
+
+def pending_deposit_keyboard(
+    *,
+    continue_cb: str,
+    cancel_cb: str = "cancel",
+    back_cb: str = "topup_menu_back",
+) -> InlineKeyboardMarkup:
+    """Button layout for the Pending Deposit notice: Continue / Cancel /
+    Back — always in this order, identical for every gateway."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("▶️ Continue Deposit", callback_data=continue_cb)],
+        [InlineKeyboardButton("❌ Cancel Deposit", callback_data=cancel_cb)],
+        [InlineKeyboardButton("⬅️ Back", callback_data=back_cb)],
+    ])
 
 
 def binance_bybit_invoice(
@@ -601,7 +671,7 @@ class PaymentMethodView:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# "Payment Under Review" — clean fintech-style confirmation screen
+# "Deposit Submitted" — clean fintech-style confirmation screen
 #
 # Design rules (enforced here, nowhere else):
 #   • One premium layout — no dashed or dotted separator lines.
@@ -616,9 +686,8 @@ class PaymentMethodView:
 # ─────────────────────────────────────────────────────────────────────────
 
 _DEFAULT_PENDING_REVIEW_NOTE = (
-    "Your payment has been received successfully and is currently waiting "
-    "for verification.\n\nYou'll receive a notification immediately after "
-    "the review is completed."
+    "You'll receive an automatic notification as soon as your deposit has "
+    "been reviewed."
 )
 
 
@@ -635,7 +704,7 @@ def pending_review_card(
     note: Optional[str] = None,
     gateway_label_override: Optional[str] = None,
 ) -> str:
-    """Build the single, premium 'Payment Under Review' confirmation screen
+    """Build the single, premium 'Deposit Submitted' confirmation screen
     shown to a user right after they submit a payment / TXID / proof for
     manual review.
 
@@ -658,7 +727,12 @@ def pending_review_card(
     show_txn_id = bool(txn_id) and str(txn_id) != str(dep_id)
 
     # ── Build card ────────────────────────────────────────────────────────
-    lines: list[str] = ["🟡 <b>Payment Under Review</b>", ""]
+    lines: list[str] = [
+        "🟡 <b>Deposit Submitted</b>",
+        "",
+        "Your payment has been received and is waiting for verification.",
+        "",
+    ]
 
     # Payment Method
     lines.append("💳 <b>Payment Method</b>")
@@ -691,8 +765,8 @@ def pending_review_card(
         lines.append("")
 
     # Status
-    lines.append("🔍 <b>Status</b>")
-    lines.append("Pending Review")
+    lines.append("📌 <b>Status</b>")
+    lines.append("🟡 Under Review")
     lines.append("")
 
     # Confirmation note
@@ -707,16 +781,16 @@ def pending_review_keyboard(
     support_cb: str = "support",
     menu_cb: str = "main_menu",
 ) -> InlineKeyboardMarkup:
-    """Standard action keyboard for the 'Payment Under Review' screen.
+    """Standard action keyboard for the 'Deposit Submitted' screen.
 
-    Buttons (in order): 📜 Deposit History · 💬 Contact Support · 🏠 Back to Menu.
+    Buttons (in order): 📜 Deposit History · 🎧 Support · ⬅️ Back to Menu.
     All callback_data values are passed in from the caller — no new routes
     are introduced here, and future payment methods get this keyboard for free.
     """
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📜 Deposit History",  callback_data=history_cb)],
-        [InlineKeyboardButton("💬 Contact Support",  callback_data=support_cb)],
-        [InlineKeyboardButton("🏠 Back to Menu",     callback_data=menu_cb)],
+        [InlineKeyboardButton("🎧 Support",           callback_data=support_cb)],
+        [InlineKeyboardButton("⬅️ Back to Menu",      callback_data=menu_cb)],
     ])
 
 
@@ -761,6 +835,23 @@ def _status_parts(status_key: str) -> Tuple[str, str]:
     return "•", raw
 
 
+_VERIFICATION_STATUS_LABEL = {
+    "failed":         "Failed",
+    "not_applicable": "Not Applicable",
+}
+
+_DEFAULT_VERIFICATION_REASON = {
+    "failed": (
+        "Transaction could not be verified automatically.\n"
+        "Manual review is required."
+    ),
+    "not_applicable": (
+        "This payment method has no automatic verification.\n"
+        "Manual review is required."
+    ),
+}
+
+
 def admin_review_card(
     *,
     gateway_key: Optional[str],
@@ -774,6 +865,8 @@ def admin_review_card(
     user_id=None,
     network: Optional[str] = None,
     verification_result: Optional[str] = None,
+    verification_status: Optional[str] = None,
+    verification_reason: Optional[str] = None,
     time_str: Optional[str] = None,
     status_key: str = "pending_review",
     extra: Sequence[Tuple[str, str, object]] = (),
@@ -783,30 +876,31 @@ def admin_review_card(
     """Build THE single admin review card. See module comment block above
     for the layout contract.
 
-    Name resolution for the 👤 User block: prefers ``full_name`` (+
-    ``@username`` when present); falls back to a caller-supplied
-    ``customer_name`` string (legacy callers that already pre-formatted
-    it); falls back to ``User {user_id}`` when no name is known at all.
-    The username segment is simply omitted when there is no Telegram
-    username — never a placeholder like "(no username)".
+    Name resolution for the 👤 User block: shows the display name,
+    ``@username``, and Telegram ID each on their own line — prefers
+    ``full_name``; falls back to a caller-supplied ``customer_name``
+    string (legacy callers that already pre-formatted it). Any line with
+    nothing to show (no username, no name) is simply omitted — never a
+    placeholder like "(no username)".
+
+    Auto-verification results are never shown as a raw provider/exception
+    string. Pass ``verification_status`` ("failed" or "not_applicable")
+    to render the standardized "⚠️ Auto Verification" status block below;
+    optionally pair it with a short, human-written ``verification_reason``
+    (e.g. "Payment not found in Binance account history"). This block only
+    appears on the pending-review card — once a deposit is approved or
+    rejected, the verification detail is no longer relevant to show.
+    ``verification_result`` remains supported as a plain legacy field for
+    any caller that hasn't migrated to the structured version yet.
     """
     gateway_label, _ = gateway_meta(gateway_key, gateway_label_override)
     deposit_id = _display_deposit_id(order_id, created_at)
     status_emoji, status_text = _status_parts(status_key)
     title = _ADMIN_TITLES.get(status_key, "🔔 Deposit Update")
 
-    if full_name and username:
-        name_line = f"{full_name} (@{username})"
-    elif full_name:
-        name_line = full_name
-    elif username:
-        name_line = f"@{username}"
-    elif customer_name:
-        name_line = customer_name
-    elif user_id is not None:
-        name_line = f"User {user_id}"
-    else:
-        name_line = None
+    name_line = full_name or customer_name
+    username_line = f"@{username.lstrip('@')}" if username else None
+    id_line = f"ID: <code>{user_id}</code>" if user_id is not None else None
 
     submitted = time_str or (
         created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if created_at else now_str()
@@ -824,18 +918,37 @@ def admin_review_card(
 
     block("🆔", "Deposit ID", f"<code>{deposit_id}</code>" if deposit_id else None)
     block(status_emoji, "Status", status_text)
-    block("👤", "User", name_line, f"<code>{user_id}</code>" if user_id is not None else None)
-    block("💳", "Gateway", gateway_label)
+    block("👤", "User", name_line, username_line, id_line)
+    block("💳", "Payment Method", gateway_label)
+    # Network only ever appears when the caller actually has one to show —
+    # non-blockchain methods (mobile wallets, card gateways, etc.) simply
+    # never pass a value here, so the row never renders a placeholder.
+    block("🌐", "Network", network)
     block("💰", "Amount", f"<code>{amount}</code>" if amount else None)
     # Skip Transaction ID when it's identical to the Deposit ID — the same
     # reference never needs to be shown twice.
     if txn_id and str(txn_id) != str(deposit_id):
-        block("🧾", "Transaction ID", f"<code>{txn_id}</code>")
-    block("🌐", "Network", network)
-    block("⚠", "Verification Result", verification_result)
+        block("🔗", "Transaction ID", f"<code>{txn_id}</code>")
     for field_emoji, field_label, value in extra:
         block(field_emoji, field_label, value if value not in (None, "") else None)
     block("🕒", "Submitted", f"<code>{submitted}</code>" if submitted else None)
+
+    # ⚠️ Auto Verification — one clean, standardized status block. Never a
+    # raw provider/exception string: callers supply a short human reason,
+    # and a safe generic fallback is used when they don't.
+    if verification_status and status_key == "pending_review":
+        status_word = _VERIFICATION_STATUS_LABEL.get(verification_status, "Failed")
+        reason_text = verification_reason or _DEFAULT_VERIFICATION_REASON.get(
+            verification_status, _DEFAULT_VERIFICATION_REASON["failed"]
+        )
+        lines.append("⚠️ <b>Auto Verification</b>")
+        lines.append(f"Status: {status_word}")
+        lines.append("")
+        lines.append("Reason:")
+        lines.append(reason_text)
+        lines.append("")
+    elif verification_result:
+        block("⚠", "Verification Result", verification_result)
 
     if note:
         lines.append(note)
@@ -924,14 +1037,16 @@ def admin_review_keyboard(
     approve_cb: Optional[str] = None,
     reject_cb: Optional[str] = None,
     view_user_cb: Optional[str] = None,
+    history_cb: Optional[str] = None,
     back_cb: Optional[str] = None,
 ) -> InlineKeyboardMarkup:
     """Standard admin review keyboard. Order is always:
     ✅ Approve / ❌ Reject, then 🔄 Verify Again / 👤 View User, then
-    💬 Message User, then ⬅ Back. A button is omitted only if its
-    callback wasn't provided (e.g. some gateways have no automated
-    re-verification, or a caller has no natural "back" destination), but
-    relative order among the buttons that *are* present never changes.
+    💬 Message User / 📜 Deposit History, then ⬅ Back. A button is omitted
+    only if its callback wasn't provided (e.g. some gateways have no
+    automated re-verification, or a caller has no natural "back"
+    destination), but relative order among the buttons that *are* present
+    never changes.
     """
     row1, row2, row3, row4 = [], [], [], []
     if approve_cb:
@@ -945,6 +1060,8 @@ def admin_review_keyboard(
     msg_user_id = _extract_user_id_from_cb(view_user_cb)
     if msg_user_id:
         row3.append(InlineKeyboardButton("💬 Message User", url=f"tg://user?id={msg_user_id}"))
+    if history_cb:
+        row3.append(InlineKeyboardButton("📜 Deposit History", callback_data=history_cb))
     if back_cb:
         row4.append(InlineKeyboardButton("⬅ Back", callback_data=back_cb))
     rows = [r for r in (row1, row2, row3, row4) if r]

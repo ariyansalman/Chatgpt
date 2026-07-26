@@ -79,11 +79,16 @@ DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
     {"key": "support", "label_key": "main_menu.support", "callback": "support_center",
      "row": 4, "order": 1, "emoji": "🎧"},
 
-    {"key": "account", "label_key": "main_menu.account", "callback": "ua:profile",
-     "row": 5, "order": 0, "full_width": True, "emoji": "👤"},
+    # NOTE: the old full-width "👤 Profile" main-menu button has been
+    # retired as part of a Main Menu simplification pass -- the primary
+    # menu now only surfaces the handful of most-used actions. Profile /
+    # Account info still lives at the same place it always has (see
+    # handlers/account_features.py: account_menu / user_profile, callback
+    # "ua:profile", unchanged), just reached via the /profile command
+    # instead of a dedicated button, so it doesn't compete for space here.
 
     {"key": "admin", "label_key": "main_menu.admin_panel", "callback": "admin_menu",
-     "row": 6, "order": 0, "full_width": True, "admin_only": True, "emoji": "🛠"},
+     "row": 5, "order": 0, "full_width": True, "admin_only": True, "emoji": "🛠"},
 ]
 
 # bot_config key holding an optional JSON override of the list above.
@@ -121,7 +126,7 @@ _PROFILE_CFG_KEYS = {
 # admin button-press required after a deploy. Manual customizations made
 # *after* that automatic sync are left alone until the version is bumped
 # again.
-MENU_DEFAULTS_VERSION = 2
+MENU_DEFAULTS_VERSION = 3
 _MENU_DEFAULTS_VERSION_CFG_KEY = "main_menu_defaults_version"
 
 
