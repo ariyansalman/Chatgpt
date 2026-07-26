@@ -138,9 +138,13 @@ def _fmt_dt(dt: datetime | None) -> str:
     return dt.strftime("%Y-%m-%d %H:%M UTC") if dt else "—"
 
 
-def _fmt_pm(pm) -> str:
+def _fmt_pm(pm, crypto_address: str | None = None) -> str:
     if pm is None:
         return "—"
+    if getattr(pm, "value", None) == "zinipay":
+        from services.payment_ui import zinipay_provider_meta
+        label, emoji = zinipay_provider_meta(crypto_address=crypto_address)
+        return f"{emoji} {label}"
     return _PM_LABELS.get(pm, str(pm.value) if hasattr(pm, "value") else str(pm))
 
 
@@ -746,7 +750,7 @@ async def up_topup_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append("")
             for tx in txns:
                 icon        = _TX_STATUS_ICON.get(tx.status, "•")
-                gateway     = _fmt_pm(tx.payment_method)
+                gateway     = _fmt_pm(tx.payment_method, tx.crypto_address)
                 amount_str  = format_price(float(tx.amount or 0))
                 verified    = "✅ Verified" if tx.status == TransactionStatus.COMPLETED else "⏳ Pending"
                 txid_short  = f"<code>{str(tx.txid)[:20]}</code>" if tx.txid else "—"

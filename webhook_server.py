@@ -714,7 +714,18 @@ def nowpayments_webhook():
         from services.nowpayments_payment import NowPaymentsService, PAID_STATUSES
         service = NowPaymentsService()
 
-        # Signature check — skip only when no IPN secret is configured.
+        # Signature check. SECURITY: this webhook can trigger a wallet
+        # credit, so an unsigned/unverifiable request must never be
+        # trusted — otherwise anyone who can guess or observe an
+        # order_id (a small sequential Transaction.id) could POST a fake
+        # "finished" status here and get a pending deposit credited
+        # without ever paying. If no IPN secret is configured we cannot
+        # verify authenticity, so we acknowledge (200, so NOWPayments
+        # doesn't hammer retries) but do NOT credit from this request.
+        # The independent poller — handlers/payment_handlers.py
+        # check_pending_payments() — still finalizes the deposit shortly
+        # after, because it calls NowPaymentsService().check_payment_status()
+        # against NOWPayments' own API rather than trusting this payload.
         if service.ipn_secret:
             if not service.verify_webhook_signature(data, received_sig):
                 log.warning(
@@ -723,9 +734,13 @@ def nowpayments_webhook():
                 return jsonify({'error': 'invalid signature'}), 401
             log.info("[NOWPAYMENTS WEBHOOK VERIFIED] payment_id=%s", payment_id)
         else:
-            log.warning(
-                "[NOWPAYMENTS WEBHOOK] No IPN secret configured — skipping signature check"
+            log.error(
+                "[NOWPAYMENTS WEBHOOK] No IPN secret configured — refusing to trust "
+                "this unsigned request for crediting (fail closed). Configure the "
+                "NOWPayments IPN secret to enable instant webhook crediting; until "
+                "then, deposits are still credited via the background poller."
             )
+            return jsonify({'ok': True, 'note': 'ipn secret not configured; deferring to poller'}), 200
 
         if status not in PAID_STATUSES:
             log.info(

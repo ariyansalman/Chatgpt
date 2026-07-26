@@ -25,8 +25,12 @@ from telegram.error import BadRequest
 # should not be shown to end users verbatim (e.g. gateway codenames).
 # This does NOT change the stored value or any verification/API logic —
 # it only affects what text the user sees in their transaction history.
+# NOTE: "zinipay" itself is never shown — the SPECIFIC provider the user
+# paid with (bKash / Nagad / Rocket) is resolved from the transaction's
+# crypto_address in _payment_method_display() below; this generic label is
+# only a last-resort fallback for legacy rows with no provider recorded.
 _PAYMENT_METHOD_DISPLAY_OVERRIDES = {
-    "zinipay": "BKash • Nagad • Rocket",
+    "zinipay": "Mobile Banking",
 }
 
 
@@ -45,8 +49,12 @@ def _status_emoji(status: str) -> str:
     return _STATUS_EMOJI.get((status or "").lower(), "🔹")
 
 
-def _payment_method_display(payment_method) -> str:
+def _payment_method_display(payment_method, crypto_address: str | None = None) -> str:
     raw = payment_method.value if payment_method else "?"
+    if raw == "zinipay":
+        from services.payment_ui import zinipay_provider_meta
+        label, emoji = zinipay_provider_meta(crypto_address=crypto_address)
+        return f"{emoji} {label}"
     return _PAYMENT_METHOD_DISPLAY_OVERRIDES.get(raw, raw)
 
 
@@ -84,7 +92,7 @@ def _totals(tg_id: int) -> tuple[float, float, float, list[Transaction]]:
         # numeric primary key is never shown to the user.
         from services.payment_ui import format_deposit_id as _fmt_dep_id
         hist = [(_fmt_dep_id(t.id, t.created_at), t.amount, t.status.value if t.status else "?",
-                 _payment_method_display(t.payment_method),
+                 _payment_method_display(t.payment_method, t.crypto_address),
                  t.created_at) for t in history]
     return bal, total_dep, total_spent, hist
 
@@ -107,7 +115,7 @@ def _full_history(tg_id: int, limit: int = 5000) -> list[tuple]:
         from services.payment_ui import format_deposit_id as _fmt_dep_id
         return [
             (_fmt_dep_id(r.id, r.created_at), r.amount, r.status.value if r.status else "?",
-             _payment_method_display(r.payment_method), r.created_at)
+             _payment_method_display(r.payment_method, r.crypto_address), r.created_at)
             for r in rows
         ]
 

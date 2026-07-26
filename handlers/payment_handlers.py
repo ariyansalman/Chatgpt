@@ -27,6 +27,7 @@ from utils import (
     create_main_menu_keyboard, calculate_expiry_time,
     notify_admin, check_user_banned, is_admin, sanitize_message,
 )
+from utils.permissions import has_permission
 from config.settings import settings as app_settings
 
 
@@ -1437,7 +1438,7 @@ async def admin_manual_verify_again(update: Update, context: ContextTypes.DEFAUL
     Kept for UI consistency: every admin review card always shows the same
     four buttons in the same order."""
     query = update.callback_query
-    if update.effective_user.id != app_settings.ADMIN_TELEGRAM_ID and not is_admin(update.effective_user.id):
+    if not has_permission(update.effective_user.id, "manage_payments"):
         await query.answer("⛔ Access denied.", show_alert=True)
         return
     await query.answer(
@@ -1452,7 +1453,7 @@ async def admin_manual_approve(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
 
-    if update.effective_user.id != app_settings.ADMIN_TELEGRAM_ID and not is_admin(update.effective_user.id):
+    if not has_permission(update.effective_user.id, "manage_payments"):
         await query.answer("⛔ Access denied.", show_alert=True)
         return
 
@@ -1539,7 +1540,10 @@ async def admin_manual_approve(update: Update, context: ContextTypes.DEFAULT_TYP
             user_tg_id = user.telegram_id
             amount = tx.amount
             new_balance = user.wallet_balance
-            _dep_pm_label = pui.gateway_meta(tx.payment_method.value)[0]
+            if tx.payment_method and tx.payment_method.value == "zinipay":
+                _dep_pm_label = pui.zinipay_provider_meta(crypto_address=tx.crypto_address)[0]
+            else:
+                _dep_pm_label = pui.gateway_meta(tx.payment_method.value)[0]
         # Activity Feed: wallet top-up approved (best-effort, non-blocking)
         try:
             import asyncio as _asyncio
@@ -1580,7 +1584,10 @@ async def admin_manual_approve(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"৳{amount:.2f} BDT → ${credited_usd:.2f} USD"
                 if is_gateway_manual else f"${credited_usd:.2f}"
             )
-            _dep_method = tx.payment_method.value if tx else "Manual"
+            if tx and tx.payment_method and tx.payment_method.value == "zinipay":
+                _dep_method = pui.zinipay_provider_meta(crypto_address=tx.crypto_address)[0]
+            else:
+                _dep_method = tx.payment_method.value if tx else "Manual"
             _asyncio.create_task(_notify_admins(
                 context.bot,
                 "deposit",
@@ -1645,7 +1652,7 @@ async def admin_manual_reject(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
 
-    if update.effective_user.id != app_settings.ADMIN_TELEGRAM_ID and not is_admin(update.effective_user.id):
+    if not has_permission(update.effective_user.id, "manage_payments"):
         await query.answer("⛔ Access denied.", show_alert=True)
         return
 
@@ -2284,7 +2291,7 @@ async def _finish_zinipay_payment(
 
     # Resolve which provider's number to show BEFORE creating the order, so
     # the choice can be persisted on the Transaction row itself.
-    PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🟠", "rocket": "🟣", "upay": "🔵"}
+    PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🧡", "rocket": "💜", "upay": "🔵"}
     numbers_by_provider = {
         "bkash": bkash_num, "nagad": nagad_num, "rocket": rocket_num, "upay": upay_num,
     }
@@ -2444,11 +2451,13 @@ async def zinipay_cancel_submit(update: Update, context: ContextTypes.DEFAULT_TY
     """Cancel the ZiniPay TXID submission mini-conversation."""
     query = update.callback_query
     await query.answer()
-    context.user_data.pop('zinipay_tx_id', None)
+    tx_id = context.user_data.pop('zinipay_tx_id', None)
+    resubmit_cb = f"zinipay_submit:{tx_id}" if tx_id else None
     try:
         await query.edit_message_text(
             "❌ Cancelled. Your order is still pending — you can submit the "
-            "Transaction ID again anytime before it expires."
+            "Transaction ID again anytime before it expires.",
+            reply_markup=pui.still_pending_keyboard(resubmit_cb),
         )
     except BadRequest as e:
         if "Message is not modified" not in str(e):
@@ -2626,7 +2635,7 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                                 text=pui.admin_review_card(
                                     gateway_key="zinipay",
                                     gateway_label_override=(
-                                        f"{selected_provider.title()} (ZiniPay)"
+                                        selected_provider.title()
                                         if selected_provider else None
                                     ),
                                     amount=f"৳{bdt_amount:.2f} BDT (${usd_amount:.2f} USD)",
@@ -2655,8 +2664,9 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         # Provide user-friendly messages for known rejection reasons.
         pending_review_kb = None
         if is_amount_mismatch and pmv_id:
+            _provider_label, _provider_emoji = pui.zinipay_provider_meta(provider=selected_provider)
             user_msg = pui.pending_review_card(
-                gateway_key="zinipay",
+                payment_method=f"{_provider_emoji} {_provider_label}",
                 amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
                 note="⚠️ Amount mismatch detected — our team has been notified and "
                      "will review your payment shortly.",
@@ -2668,8 +2678,9 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                 f"৳{bdt_amount:.2f} BDT. Please ensure you sent the correct amount."
             )
         elif pmv_id:
+            _provider_label, _provider_emoji = pui.zinipay_provider_meta(provider=selected_provider)
             user_msg = pui.pending_review_card(
-                gateway_key="zinipay",
+                payment_method=f"{_provider_emoji} {_provider_label}",
                 amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
             )
             pending_review_kb = pui.pending_review_keyboard()
@@ -2814,9 +2825,14 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                 pass
         # The get_db_session() context manager commits on clean exit.
 
+    # Prefer the provider ZiniPay's own API confirmed the payment came from;
+    # fall back to the provider the user was shown at invoice-creation time.
+    # Never fall back to the generic "bKash • Nagad • Rocket" combined label.
+    _success_provider = (verify_result.provider or selected_provider or "").strip().lower() or None
+    _provider_label, _provider_emoji = pui.zinipay_provider_meta(provider=_success_provider)
     success_text = pui.deposit_success_card(
         amount=f"${usd_amount:.2f} USD",
-        payment_method="bKash • Nagad • Rocket",
+        payment_method=f"{_provider_emoji} {_provider_label}",
         deposit_id=pui.format_deposit_id(tx_id),
     )
     try:
@@ -3037,9 +3053,13 @@ async def binance_submit_start(update: Update, context: ContextTypes.DEFAULT_TYP
 async def binance_cancel_submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    context.user_data.pop('binance_tx_id', None)
+    tx_id = context.user_data.pop('binance_tx_id', None)
+    resubmit_cb = f"binance_submit:{tx_id}" if tx_id else None
     try:
-        await query.edit_message_text("❌ Cancelled. Your order is still pending — you can submit the Transaction ID again anytime before it expires.")
+        await query.edit_message_text(
+            "❌ Cancelled. Your order is still pending — you can submit the Transaction ID again anytime before it expires.",
+            reply_markup=pui.still_pending_keyboard(resubmit_cb),
+        )
     except BadRequest as e:
         if "Message is not modified" not in str(e):
             raise
@@ -3835,9 +3855,13 @@ async def bybit_submit_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def bybit_cancel_submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    context.user_data.pop('bybit_tx_id', None)
+    tx_id = context.user_data.pop('bybit_tx_id', None)
+    resubmit_cb = f"bybit_submit:{tx_id}" if tx_id else None
     try:
-        await query.edit_message_text("❌ Cancelled. Your order is still pending — you can submit the Transaction ID again anytime before it expires.")
+        await query.edit_message_text(
+            "❌ Cancelled. Your order is still pending — you can submit the Transaction ID again anytime before it expires.",
+            reply_markup=pui.still_pending_keyboard(resubmit_cb),
+        )
     except BadRequest as e:
         if "Message is not modified" not in str(e):
             raise
@@ -6671,16 +6695,30 @@ async def broadcast_availability_to_all_users(context: ContextTypes.DEFAULT_TYPE
 _PMV_GATEWAY_LABELS = {
     "binance_pay": "Binance Pay",
     "bybit_pay": "Bybit Pay",
-    "zinipay": "Mobile Banking (bKash/Nagad/Rocket)",
+    # Generic fallback ONLY — used when the specific bKash/Nagad/Rocket
+    # provider can't be resolved from the deposit (e.g. legacy row). Whenever
+    # a Transaction is available, _pmv_gateway_label resolves and returns
+    # the actual stored provider instead of this label.
+    "zinipay": "Mobile Banking",
 }
 
 
-def _pmv_gateway_label(gateway: str) -> str:
-    """Display label for a PendingManualVerification's gateway. Checks the
-    cosmetic override table above first (purely for wording polish on the
-    three gateways known today), then falls back to the Payment Gateway
-    Registry's ``display_name`` for any gateway registered after this file
-    was last touched, and finally to the raw key so nothing ever breaks."""
+def _pmv_gateway_label(gateway: str, tx=None) -> str:
+    """Display label for a PendingManualVerification's gateway.
+
+    For ``zinipay``, always resolves and returns the SPECIFIC bKash / Nagad
+    / Rocket provider the deposit was actually created with (stored on
+    ``tx.crypto_address`` as ``"bdt:<amount>:<provider>"``) when a
+    Transaction is supplied — never the generic combined label. Falls back
+    to the cosmetic override table only when no provider can be resolved,
+    then to the Payment Gateway Registry's ``display_name`` for any gateway
+    registered after this file was last touched, and finally to the raw key
+    so nothing ever breaks."""
+    if gateway == "zinipay":
+        provider = pui.resolve_zinipay_provider(getattr(tx, "crypto_address", None))
+        if provider:
+            label, _ = pui.zinipay_provider_meta(provider=provider)
+            return label
     if gateway in _PMV_GATEWAY_LABELS:
         return _PMV_GATEWAY_LABELS[gateway]
     from services.payment_gateway_registry import registry
@@ -6701,7 +6739,7 @@ async def _pmv_resolve(
     query = update.callback_query
     await query.answer()
 
-    if not is_admin(update.effective_user.id):
+    if not has_permission(update.effective_user.id, "manage_payments"):
         await query.answer("⛔ Admin only.", show_alert=True)
         return
 
@@ -6754,7 +6792,8 @@ async def _pmv_resolve(
                 logger.warning("Failed to write audit log for PMV rejection %s", pmv_id)
             session.commit()
 
-            gateway_label = _pmv_gateway_label(gateway)
+            _reject_tx = session.query(Transaction).filter_by(id=tx_id).first()
+            gateway_label = _pmv_gateway_label(gateway, tx=_reject_tx)
             gateway_ui_key = gateway
             # Clean up the earlier "could not verify automatically" notice so
             # the user only sees the final status.
@@ -6827,7 +6866,7 @@ async def _pmv_resolve(
 
         # Record the verified transaction (skip UNIQUE violation if already credited)
         from services.wallet import credit_locked, WalletError
-        gateway_label = _pmv_gateway_label(gateway)
+        gateway_label = _pmv_gateway_label(gateway, tx=tx)
         try:
             if gateway == "binance_pay":
                 bpt = BinancePayTransaction(
@@ -7072,7 +7111,7 @@ async def _admin_verify_again(update, context, gateway: str):
     query = update.callback_query
     await query.answer("🔄 Re-verifying…", show_alert=False)
 
-    if not is_admin(update.effective_user.id):
+    if not has_permission(update.effective_user.id, "manage_payments"):
         await query.answer("⛔ Admin only.", show_alert=True)
         return
 
@@ -7325,7 +7364,7 @@ async def admin_verify_again_zinipay(update, context):
     query = update.callback_query
     await query.answer("🔄 Re-verifying…", show_alert=False)
 
-    if not is_admin(update.effective_user.id):
+    if not has_permission(update.effective_user.id, "manage_payments"):
         await query.answer("⛔ Admin only.", show_alert=True)
         return
 
@@ -7395,7 +7434,7 @@ async def admin_reject_start(update, context):
     query = update.callback_query
     await query.answer()
 
-    if not is_admin(update.effective_user.id):
+    if not has_permission(update.effective_user.id, "manage_payments"):
         await query.answer("⛔ Admin only.", show_alert=True)
         return ConversationHandler.END
 
@@ -7417,11 +7456,17 @@ async def admin_reject_start(update, context):
     gw_label = {
         "binance_pay": "Binance Pay 🟡",
         "bybit_pay": "Bybit Pay 🔵",
-        "zinipay": "Mobile Banking (bKash/Nagad/Rocket) 🇧🇩",
+        "zinipay": "Mobile Banking 🇧🇩",
     }[gateway]
 
     # Check PMV still pending
     with get_db_session() as session:
+        if gateway == "zinipay":
+            _reject_start_tx = session.query(Transaction).filter_by(id=tx_id).first()
+            _provider = pui.resolve_zinipay_provider(getattr(_reject_start_tx, "crypto_address", None))
+            if _provider:
+                _label, _emoji = pui.zinipay_provider_meta(provider=_provider)
+                gw_label = f"{_label} {_emoji}"
         pmv = session.query(PendingManualVerification).filter_by(id=pmv_id, gateway=gateway).first()
         if not pmv:
             await query.answer(f"❌ PMV #{pmv_id} not found.", show_alert=True)
@@ -7460,7 +7505,7 @@ async def admin_reject_reason_received(update, context, reason_override: str = N
     (python-telegram-bot's Message is immutable, so update.message.text can
     never be assigned to).
     """
-    if not is_admin(update.effective_user.id):
+    if not has_permission(update.effective_user.id, "manage_payments"):
         return ConversationHandler.END
 
     reject_data = context.user_data.pop('pmv_reject', None)
@@ -7475,13 +7520,14 @@ async def admin_reject_reason_received(update, context, reason_override: str = N
     pmv_id = reject_data['pmv_id']
     tx_id = reject_data['tx_id']
     gateway = reject_data['gateway']
-    gw_label = _pmv_gateway_label(gateway)
 
     with get_db_session() as session:
         pmv = session.query(PendingManualVerification).filter_by(id=pmv_id, gateway=gateway).first()
         if not pmv or pmv.status != "pending":
             await update.message.reply_text("⚠️ This PMV is no longer pending.")
             return ConversationHandler.END
+
+        gw_label = _pmv_gateway_label(gateway, tx=session.query(Transaction).filter_by(id=tx_id).first())
 
         admin_actor = update.effective_user
         pmv.status = "rejected"
@@ -7603,7 +7649,7 @@ async def admin_view_user_from_pmv(update, context):
     query = update.callback_query
     await query.answer()
 
-    if not is_admin(update.effective_user.id):
+    if not has_permission(update.effective_user.id, "manage_payments"):
         await query.answer("⛔ Admin only.", show_alert=True)
         return
 

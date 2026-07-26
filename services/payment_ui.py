@@ -49,13 +49,20 @@ GATEWAYS: dict[str, Tuple[str, str]] = {
     "nowpayments":  ("NOWPayments", "🟢"),
     "cryptomus":    ("Cryptomus", "🟣"),
     "heleket":      ("Heleket", "🟤"),
-    "zinipay":      ("bKash • Nagad • Rocket", "🇧🇩"),
+    # NOTE: "zinipay" itself is only a *gateway family* key (bKash / Nagad /
+    # Rocket are all routed through the ZiniPay API) — it is never the
+    # actual payment method a user picked, so its label must stay generic
+    # and must never be shown as the payment method on a deposit. Every
+    # real ZiniPay deposit stores which specific provider was used (see
+    # ``resolve_zinipay_provider`` / ``zinipay_provider_meta`` below) and
+    # callers must resolve + display that instead of this fallback.
+    "zinipay":      ("Mobile Banking", "🇧🇩"),
     "usdt_trc20":   ("USDT (TRC20)", "💵"),
     "usdt_bep20":   ("USDT (BEP20)", "💵"),
     "usdt_erc20":   ("USDT (ERC20)", "💵"),
     "bkash":        ("bKash", "💗"),
-    "nagad":        ("Nagad", "🟠"),
-    "rocket":       ("Rocket", "🚀"),
+    "nagad":        ("Nagad", "🧡"),
+    "rocket":       ("Rocket", "💜"),
     "manual":       ("Manual Payment", "🧾"),
     "card":         ("Card Payment", "💳"),
     "stars":        ("Telegram Stars", "⭐"),
@@ -78,6 +85,41 @@ def gateway_meta(key: Optional[str], fallback_label: Optional[str] = None,
         return GATEWAYS[key]
     label = fallback_label or (key.replace("_", " ").title() if key else "Payment")
     return (label, fallback_emoji or _infer_emoji(label))
+
+
+def resolve_zinipay_provider(crypto_address: Optional[str]) -> Optional[str]:
+    """Extract the specific bKash / Nagad / Rocket provider a ZiniPay
+    deposit was actually created for.
+
+    The provider the user picked is persisted on ``Transaction.crypto_address``
+    at order-creation time using the format ``"bdt:<amount>:<provider>"`` (see
+    ``_finish_zinipay_payment`` in handlers/payment_handlers.py). Returns
+    ``None`` when the field is missing/empty (e.g. a legacy row created
+    before providers were tracked), never a guess.
+    """
+    if not crypto_address or not crypto_address.startswith("bdt:"):
+        return None
+    parts = crypto_address.split(":")
+    if len(parts) > 2 and parts[2]:
+        return parts[2].strip().lower()
+    return None
+
+
+def zinipay_provider_meta(
+    crypto_address: Optional[str] = None, provider: Optional[str] = None,
+) -> Tuple[str, str]:
+    """(label, emoji) for the ONE specific mobile money provider a ZiniPay
+    deposit actually used — never the generic 'bKash • Nagad • Rocket' /
+    'zinipay' combined label.
+
+    Pass either the already-known ``provider`` string, or the Transaction's
+    ``crypto_address`` to resolve it from. Falls back to a neutral generic
+    label only when no specific provider can be determined at all.
+    """
+    p = (provider or resolve_zinipay_provider(crypto_address) or "").strip().lower()
+    if p in GATEWAYS and p != "zinipay":
+        return GATEWAYS[p]
+    return GATEWAYS["zinipay"]  # ("Mobile Banking", "🇧🇩") generic fallback
 
 
 _EMOJI_HINTS: Tuple[Tuple[Tuple[str, ...], str], ...] = (
@@ -990,6 +1032,23 @@ def payment_failed_keyboard(retry_cb: str = "topup") -> InlineKeyboardMarkup:
         [InlineKeyboardButton("📞 Contact Support", callback_data="support")],
         [InlineKeyboardButton("🏠 Back to Menu", callback_data="main_menu")],
     ])
+
+
+def still_pending_keyboard(resubmit_cb: Optional[str] = None) -> InlineKeyboardMarkup:
+    """Standard keyboard shown after the user cancels a TXID-submission
+    mini-step (the order itself is still PENDING, only the "enter your
+    TXID" prompt was dismissed). Without this keyboard the user is left
+    on a plain text message with no buttons — a dead end. If
+    ``resubmit_cb`` is given (e.g. ``"bybit_submit:123"``), offer a direct
+    "Submit TXID Again" button; wallet / support / menu are always shown.
+    """
+    rows = []
+    if resubmit_cb:
+        rows.append([InlineKeyboardButton("🔄 Submit TXID Again", callback_data=resubmit_cb)])
+    rows.append([InlineKeyboardButton("👛 My Wallet", callback_data="wallet"),
+                 InlineKeyboardButton("📞 Support", callback_data="support")])
+    rows.append([InlineKeyboardButton("🏠 Back to Menu", callback_data="main_menu")])
+    return InlineKeyboardMarkup(rows)
 
 
 def payment_expired_keyboard() -> InlineKeyboardMarkup:

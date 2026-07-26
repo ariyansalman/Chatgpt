@@ -112,6 +112,11 @@ def _customer_name(user) -> str:
 def _method_label(tx) -> str:
     if tx.manual_method and tx.manual_method.name:
         return tx.manual_method.name
+    if tx.payment_method and tx.payment_method.value == "zinipay":
+        # Always show the SPECIFIC bKash / Nagad / Rocket provider the
+        # deposit was actually made with — never the generic combined label.
+        label, _ = pui.zinipay_provider_meta(crypto_address=tx.crypto_address)
+        return label
     label, _ = pui.gateway_meta(tx.payment_method.value if tx.payment_method else None)
     return label
 
