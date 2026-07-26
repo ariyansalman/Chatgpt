@@ -77,6 +77,19 @@ _PAGE_SZ = 8
 _REVIEWABLE_METHODS = pui.reviewable_methods()
 _PENDING_STATUSES = pui.pending_tx_statuses()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# BACK-NAVIGATION FIX: single source of truth for the "⬅ Back" target used by
+# every Pending Deposit screen (detail, approve ask/confirm, reject
+# ask/confirm, already-processed guard, error paths). This used to be a
+# literal "pd:list:0:desc" string copy-pasted at each call site — harmless
+# while every copy agreed, but exactly one typo/edit away from a Back button
+# that no longer points at the live list handler. Defining it once here means
+# every "Back" button is guaranteed to always resolve to pending_deposits_list
+# (below), which re-queries the database on every press and can never show a
+# stale/cached screen.
+# ─────────────────────────────────────────────────────────────────────────────
+_BACK_TO_LIST_CB = "pd:list:0:desc"
+
 _STATUS_ICON = {
     TransactionStatus.PENDING:               "⏳",
     TransactionStatus.AWAITING_CONFIRMATION: "⏳",
@@ -173,14 +186,14 @@ def _deposit_kb(tx, user=None) -> InlineKeyboardMarkup:
             approve_cb=f"pd:appr_ask:{tx.id}",
             reject_cb=f"pd:rej_ask:{tx.id}",
             view_user_cb=(f"admin_view_user_pmv_{tg_id}" if tg_id else None),
-            back_cb="pd:list:0:desc",
+            back_cb=_BACK_TO_LIST_CB,
         )
     else:
         already = "🟢 Already Approved" if tx.status == TransactionStatus.COMPLETED else "🔴 Already Rejected"
         rows = [[InlineKeyboardButton(already, callback_data="noop")]]
         if tg_id:
             rows.append([InlineKeyboardButton("👤 View User", callback_data=f"admin_view_user_pmv_{tg_id}")])
-        rows.append([InlineKeyboardButton("⬅ Back", callback_data="pd:list:0:desc")])
+        rows.append([InlineKeyboardButton("⬅ Back", callback_data=_BACK_TO_LIST_CB)])
         kb = InlineKeyboardMarkup(rows)
     # 📜 View Details stays a separate row — it opens the extended raw-info
     # screen (proof/screenshot/admin notes), which is deliberately NOT part
@@ -205,20 +218,24 @@ async def _safe_edit(query, text, reply_markup=None, parse_mode="HTML"):
 # 1. Pending Deposits List
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def pending_deposits_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback: pd:list:{page}:{sort}"""
-    query = update.callback_query
-    await query.answer()
-    if not has_permission(update.effective_user.id, "manage_orders"):
-        await query.answer("⛔ Access denied.", show_alert=True)
-        return
+async def _render_pending_deposits_list(query, page: int, sort: str):
+    """Load pending deposits fresh from the database and render whichever
+    screen the live data calls for.
 
-    parts = (query.data or "").split(":")
-    try:
-        page = int(parts[2])
-        sort = parts[3] if len(parts) > 3 else "desc"
-    except (IndexError, ValueError):
-        page, sort = 0, "desc"
+    This is the ONE implementation of the rendering rule:
+        pending_count > 0  -> render the Pending Deposits list
+        pending_count == 0 -> render the empty-state screen
+
+    It is called both by the ``pd:list:{page}:{sort}`` callback handler
+    (``pending_deposits_list`` below) and — indirectly, via the
+    ``_BACK_TO_LIST_CB`` callback target — by every "⬅ Back" button in this
+    module (detail, approve, reject, already-processed, error screens).
+    Because every one of those Back buttons is dispatched back through this
+    same function, the empty-state screen can only ever appear when the
+    database genuinely has zero rows matching ``pending_deposit_rows`` at the
+    moment the button is pressed — never a cached/stale copy of an earlier
+    screen.
+    """
     sort = "asc" if sort == "asc" else "desc"
 
     with get_db_session() as session:
@@ -242,10 +259,7 @@ async def pending_deposits_list(update: Update, context: ContextTypes.DEFAULT_TY
             amt_str = f"{tx.amount:.2f}" if tx.amount is not None else "—"
             rows.append((tx.id, username, amt_str))
 
-    total_pages = max(1, (total + _PAGE_SZ - 1) // _PAGE_SZ)
-    next_sort   = "asc" if sort == "desc" else "desc"
-    sort_lbl    = "🕒 Freshest" if sort == "desc" else "🕰 Oldest"
-
+    # ── Rendering rule: pending_count == 0 -> empty state, else -> list ─────
     if total == 0:
         # Replace the review screen with only the empty state.  In
         # particular, do not leave list controls or a section heading beside
@@ -258,6 +272,10 @@ async def pending_deposits_list(update: Update, context: ContextTypes.DEFAULT_TY
             ]),
         )
         return
+
+    total_pages = max(1, (total + _PAGE_SZ - 1) // _PAGE_SZ)
+    next_sort   = "asc" if sort == "desc" else "desc"
+    sort_lbl    = "🕒 Freshest" if sort == "desc" else "🕰 Oldest"
 
     kb = []
     for tx_id, username, amt_str in rows:
@@ -282,6 +300,24 @@ async def pending_deposits_list(update: Update, context: ContextTypes.DEFAULT_TY
     header = f"🧾 <b>Pending Deposits</b> ({total})\nDeposits waiting for manual review."
 
     await _safe_edit(query, header, InlineKeyboardMarkup(kb))
+
+
+async def pending_deposits_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: pd:list:{page}:{sort}"""
+    query = update.callback_query
+    await query.answer()
+    if not has_permission(update.effective_user.id, "manage_orders"):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+
+    parts = (query.data or "").split(":")
+    try:
+        page = int(parts[2])
+        sort = parts[3] if len(parts) > 3 else "desc"
+    except (IndexError, ValueError):
+        page, sort = 0, "desc"
+
+    await _render_pending_deposits_list(query, page, sort)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -595,7 +631,7 @@ async def deposit_approve_execute(update: Update, context: ContextTypes.DEFAULT_
         u  = session.query(User).filter_by(id=tx.user_id).first() if tx else None
         msg = _deposit_detail_msg(tx, u) if tx else f"Deposit #{tx_id} processed."
         kb  = _deposit_kb(tx) if tx else InlineKeyboardMarkup(
-            [[InlineKeyboardButton("⬅ Back", callback_data="pd:list:0:desc")]]
+            [[InlineKeyboardButton("⬅ Back", callback_data=_BACK_TO_LIST_CB)]]
         )
 
     await _safe_edit(
@@ -687,7 +723,7 @@ async def deposit_reject_execute(update: Update, context: ContextTypes.DEFAULT_T
             user_tg_id = u.telegram_id
         msg = _deposit_detail_msg(tx, u) if tx else f"Deposit #{tx_id} rejected."
         kb  = _deposit_kb(tx) if tx else InlineKeyboardMarkup(
-            [[InlineKeyboardButton("⬅ Back", callback_data="pd:list:0:desc")]]
+            [[InlineKeyboardButton("⬅ Back", callback_data=_BACK_TO_LIST_CB)]]
         )
 
     log_admin_action(
