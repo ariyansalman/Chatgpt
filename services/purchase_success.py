@@ -176,6 +176,15 @@ def _format_delivery_block(
     content = delivered_asset.strip()
     if content.startswith("📎"):
         return "\n🔑 Your products have been delivered."
+    if _PIPE_ACCOUNT_RE.search(content):
+        parts=[p.strip() for p in content.split("|")]
+        labels=["📧 Email","🔑 Password","📩 Recovery Email","🔐 2FA Key"]
+        body=["✅ Product Delivered",""]
+        for lab,val in zip(labels,parts):
+            if val:
+                body.append(f"{lab}\n{val}")
+                body.append("")
+        return "\n"+"\n".join(body).rstrip()
     label = _delivery_label(delivered_asset, product_type)
     return f"\n🔑 Delivery\n\n{label}\n{content}"
 
