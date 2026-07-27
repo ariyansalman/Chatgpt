@@ -47,6 +47,7 @@ class DeliveryResult:
     admin_notice: str = ""          # Text to send to admin channel
     error: Optional[str] = None
     idempotent_replay: bool = False # True → we've already delivered before
+    force_file_delivery: bool = False  # True → send as .txt file regardless of size
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -264,17 +265,36 @@ def _generate_value(cfg: Dict[str, Any]) -> str:
 def _render_assets_message(product: Product, values: List[str]) -> str:
     """Render delivered values for the buyer.
 
-    If the admin configured ``product.delivery_format_template`` (V17 —
-    Formatted Account Delivery), each value is parsed and rendered through
-    that template. Otherwise falls back to the exact legacy behaviour
-    (plain newline-joined raw values) so untouched products never change.
+    Priority order:
+      1. Admin-configured ``product.delivery_format_template`` (V17) — each
+         value parsed and rendered through that template.
+      2. ACCOUNT_LOGIN without a template — values formatted via
+         ``format_account_delivery`` so buyers never see raw pipe strings.
+      3. All other types — legacy newline-joined raw values.
     """
     template = getattr(product, "delivery_format_template", None)
     if template:
         from services.structured_delivery import render_delivery_message
         return "\n\n".join(render_delivery_message(template, v) for v in values)
-    return "\n".join(values)
 
+    # ACCOUNT_LOGIN without a custom template: format each value so buyers
+    # always see human-readable account cards instead of raw pipe strings.
+    if getattr(product, "product_type", None) == ProductType.ACCOUNT_LOGIN:
+        try:
+            from services.inventory_import import format_account_delivery
+            from utils.bot_config import cfg as _cfg
+            compact = _cfg.get_bool("accdel_compact_layout", False)
+            show_2fa = _cfg.get_bool("accdel_show_2fa", True)
+        except Exception:
+            from services.inventory_import import format_account_delivery
+            compact = False
+            show_2fa = True
+        return "\n\n".join(
+            format_account_delivery(v, compact=compact, show_2fa=show_2fa)
+            for v in values
+        )
+
+    return "\n".join(values)
 
 def _deliver_inventory_list(session, order: Order, item: OrderItem,
                             product: Product, label: str) -> DeliveryResult:
@@ -315,18 +335,33 @@ def deliver_redeem_link(session, order, item, product):
 
 
 def deliver_account_login(session, order, item, product):
-    from services.inventory_import import format_account_delivery
     result = _deliver_inventory_list(session, order, item, product, "📧 Account(s)")
     # _deliver_inventory_list already applied product.delivery_format_template
     # (V17 — Formatted Account Delivery) when one is configured. Only fall
-    # back to the historical hardcoded email/password/2FA formatting when the
-    # admin hasn't set a custom template, so existing products keep working
-    # exactly as before.
+    # back to the multi-account formatter when the admin hasn't set a custom
+    # template, so existing products keep working exactly as before.
     if (result.success and result.assets
             and not getattr(product, "delivery_format_template", None)):
-        result.user_message = "✅ 📧 Account(s) delivered:\n\n" + "\n\n".join(
-            format_account_delivery(value) for value in result.assets
-        )
+        from services.inventory_import import format_multi_account_delivery
+        formatted = format_multi_account_delivery(result.assets)
+        result.user_message = "✅ 📧 Account(s) delivered:\n\n" + formatted
+
+        # Check the admin-configurable inline limit (delivery presentation).
+        # When the number of accounts exceeds the limit the caller's oversized
+        # check should route delivery to a .txt file instead of an inline
+        # Telegram message.  force_file_delivery signals this without touching
+        # the character-count heuristic.
+        # Respects accdel_auto_txt_enabled: if OFF, always deliver inline.
+        try:
+            from utils.bot_config import cfg as _cfg
+            inline_limit = _cfg.get_int("account_delivery_inline_limit", 5)
+            auto_txt_enabled = _cfg.get_bool("accdel_auto_txt_enabled", True)
+        except Exception:
+            inline_limit = 5
+            auto_txt_enabled = True
+        if auto_txt_enabled and len(result.assets) > inline_limit:
+            result.force_file_delivery = True
+
     return result
 
 

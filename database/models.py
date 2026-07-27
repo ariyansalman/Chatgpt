@@ -857,6 +857,12 @@ class Settings(Base):
     exchange_rate_last_value = Column(Float, nullable=True)     # last good rate fetched from the API
     exchange_rate_last_synced = Column(DateTime, nullable=True)  # when it was last fetched
 
+    # V40: Global Delivery Message Builder — admin-customisable template.
+    # NULL means use the built-in DEFAULT_TEMPLATE from
+    # services/delivery_message_renderer.py — no migration required for
+    # existing stores.
+    delivery_message_template = Column(Text, nullable=True)
+
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

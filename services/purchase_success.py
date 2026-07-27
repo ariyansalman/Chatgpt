@@ -176,15 +176,6 @@ def _format_delivery_block(
     content = delivered_asset.strip()
     if content.startswith("📎"):
         return "\n🔑 Your products have been delivered."
-    if _PIPE_ACCOUNT_RE.search(content):
-        parts=[p.strip() for p in content.split("|")]
-        labels=["📧 Email","🔑 Password","📩 Recovery Email","🔐 2FA Key"]
-        body=["✅ Product Delivered",""]
-        for lab,val in zip(labels,parts):
-            if val:
-                body.append(f"{lab}\n{val}")
-                body.append("")
-        return "\n"+"\n".join(body).rstrip()
     label = _delivery_label(delivered_asset, product_type)
     return f"\n🔑 Delivery\n\n{label}\n{content}"
 
@@ -222,25 +213,32 @@ async def send_delivery_as_file(
     caption: Optional[str] = None,
     admin_chat_id: Optional[int] = None,
     receipt_number: Optional[str] = None,
+    filename_override: Optional[str] = None,
 ) -> bool:
     """Write ``content`` to a temp .txt file and send it as a Telegram
     document — the same fallback legacy bulk KEY delivery already uses,
     generalized so any delivery type can use it. Returns True once the buyer
     has received the file (a best-effort admin copy failing does not flip
     this back to False).
+
+    Pass *filename_override* (e.g. ``"ORD-20260727-000001.txt"``) to use an
+    exact filename instead of the auto-generated ``{product}_{receipt}.txt``.
     """
     import os
     import tempfile
     from telegram import InputFile
 
-    safe_name = "".join(
-        c for c in (product_name or "product") if c.isalnum() or c in ("-", "_")
-    )[:40] or "product"
-    filename = (
-        f"{safe_name}_{receipt_number}.txt"
-        if receipt_number else
-        f"order_{order_id}_{safe_name}.txt"
-    )
+    if filename_override:
+        filename = filename_override
+    else:
+        safe_name = "".join(
+            c for c in (product_name or "product") if c.isalnum() or c in ("-", "_")
+        )[:40] or "product"
+        filename = (
+            f"{safe_name}_{receipt_number}.txt"
+            if receipt_number else
+            f"order_{order_id}_{safe_name}.txt"
+        )
     tmp_path = os.path.join(tempfile.gettempdir(), filename)
     delivered_ok = False
     try:
@@ -291,9 +289,33 @@ def build_success_text(
     product_id: Optional[int] = None,
     purchase_date: Optional[datetime] = None,
 ) -> str:
-    """Return the single unified purchase-success message text."""
+    """Return the single unified purchase-success message text.
+
+    V40: Delegates to the template-based delivery_message_renderer so admins
+    can customise the layout without code changes. Falls back to the legacy
+    formatted blocks when the renderer fails, so delivery never silently
+    breaks on an exception.
+    """
     date_str = (purchase_date or datetime.utcnow()).strftime("%d %b %Y • %H:%M UTC")
 
+    # ── V40: Template-based renderer ──────────────────────────────────────
+    # The renderer takes over for orders that include a delivered_asset OR
+    # for all orders (the template can hide the delivery section automatically
+    # when email/password/twofa are absent).
+    try:
+        from services.delivery_message_renderer import build_delivery_message
+        return build_delivery_message(
+            order_id=receipt_number,
+            product_name=product_name,
+            quantity=quantity,
+            amount=format_price(total),
+            purchase_time=date_str,
+            delivered_asset=delivered_asset,
+        )
+    except Exception:
+        logger.exception("build_success_text: template renderer failed, using legacy format")
+
+    # ── Legacy fallback (unchanged) ───────────────────────────────────────
     lines: List[str] = [
         "✅ Payment Successful",
         "",

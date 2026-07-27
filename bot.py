@@ -37,6 +37,7 @@ from handlers import admin_order_search as _aos
 from handlers import admin_broadcast_center
 from handlers import admin_auth
 from handlers import admin_delivery_format
+from handlers import admin_delivery_message_builder as admin_dmb
 from handlers import feature_handlers, admin_features
 from handlers import account_features, admin_account_features
 from handlers import admin_menu_manager
@@ -3085,6 +3086,13 @@ def main():
     # ── V36: Delivery Management System ─────────────────────────────────────
     from handlers.admin_delivery_manager import register_handlers as _dms_register
     _dms_register(application)
+
+    # ── V40: Global Delivery Message Builder ─────────────────────────────────
+    admin_dmb.register_handlers(application)
+
+    # ── V41: Account / Login Delivery Settings ────────────────────────────────
+    from handlers.admin_account_delivery_settings import register_handlers as _accdel_reg
+    _accdel_reg(application)
 
     # V35: Bulk Product Import/Export
     from handlers.admin_bulk_products import register_handlers as _bpim_register

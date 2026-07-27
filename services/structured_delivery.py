@@ -1,4 +1,4 @@
-"""V17 — Formatted Account Delivery.
+"""V18 — Formatted Account Delivery.
 
 Lets an admin define a per-product ``delivery_format_template`` (stored on
 ``Product.delivery_format_template``) containing ``{placeholder}`` tokens,
@@ -26,6 +26,14 @@ before. This module is purely additive:
 
 Nothing here changes ``ProductKey.key_value``'s column type — it stays a
 ``Text`` column; JSON is simply one of the strings that can live in it.
+
+Changes in V18 (audit improvements)
+─────────────────────────────────────
+  • ``parse_key_value``: JSON keys are now normalised to lower-case and
+    "2fa" is aliased to both "2fa" and "twofa" so templates using either
+    name work consistently regardless of how the admin stored the key.
+  • ``render_template``: unchanged — still silently drops lines whose
+    every placeholder resolves to "".
 """
 from __future__ import annotations
 
@@ -52,6 +60,7 @@ _SAMPLE_VALUES: Dict[str, str] = {
     "username": "sample_user",
     "pin": "482913",
     "2fa": "482913",
+    "twofa": "482913",
     "code": "ABCD-1234-EFGH",
     "key": "ABCD1-EFGH2-IJKL3",
     "license": "ABCD1-EFGH2-IJKL3",
@@ -60,7 +69,6 @@ _SAMPLE_VALUES: Dict[str, str] = {
     "recovery_code": "9F3K-2QWE-7RTY",
     "profile": "Profile 1",
     "pin_code": "482913",
-    # Newly added — common fields for subscription / account-style products.
     "otp": "739284",
     "otp_code": "739284",
     "backup_codes": "1a2b3c, 4d5e6f, 7g8h9i",
@@ -109,6 +117,10 @@ class _BlankOnMissing(dict):
 def render_template(template: str, fields: Dict[str, Any]) -> str:
     """Render ``template`` against ``fields``. Missing placeholders render as ''.
 
+    Lines whose every placeholder resolves to "" are silently dropped,
+    so a template with ``{recovery}`` won't leave a blank line when the
+    delivered account has no recovery field.
+
     Never raises — a malformed template (e.g. stray ``{``) falls back to
     returning the template unchanged so delivery never hard-fails because of
     an admin typo.
@@ -118,17 +130,48 @@ def render_template(template: str, fields: Dict[str, Any]) -> str:
     safe_fields = _BlankOnMissing({
         str(k): ("" if v is None else str(v)) for k, v in (fields or {}).items()
     })
-    try:
-        return template.format_map(safe_fields)
-    except Exception:
-        return template
+
+    output_lines: List[str] = []
+    for raw_line in template.splitlines():
+        ph_names = _PLACEHOLDER_RE.findall(raw_line)
+        if ph_names:
+            all_empty = all(safe_fields.get(ph, "") == "" for ph in ph_names)
+            if all_empty:
+                continue  # drop lines whose every placeholder is blank
+        try:
+            rendered = raw_line.format_map(safe_fields)
+        except Exception:
+            rendered = raw_line  # keep as-is on any format error
+        output_lines.append(rendered)
+
+    # Collapse 3+ consecutive blank lines to 2 blank lines
+    collapsed: List[str] = []
+    blank_run = 0
+    for line in output_lines:
+        if line.strip() == "":
+            blank_run += 1
+            if blank_run <= 2:
+                collapsed.append(line)
+        else:
+            blank_run = 0
+            collapsed.append(line)
+
+    # Strip leading/trailing blank lines
+    while collapsed and collapsed[0].strip() == "":
+        collapsed.pop(0)
+    while collapsed and collapsed[-1].strip() == "":
+        collapsed.pop()
+
+    return "\n".join(collapsed)
 
 
 def parse_key_value(raw: str, placeholders: Optional[List[str]] = None) -> Dict[str, str]:
     """Parse a ``ProductKey.key_value`` string into a field dict.
 
     Handles, in order:
-      1. JSON object stock (new structured format) — used as-is.
+      1. JSON object stock (new structured format) — keys are lowercased;
+         "2fa" is aliased to both "2fa" and "twofa" so templates using
+         either name resolve correctly.
       2. Legacy pipe-delimited stock ("email|password|2fa" style) — mapped
          onto ``placeholders`` positionally, falling back to the historical
          email/password/recovery/expiry field names.
@@ -138,18 +181,30 @@ def parse_key_value(raw: str, placeholders: Optional[List[str]] = None) -> Dict[
     raw = raw or ""
     stripped = raw.strip()
 
+    # 1. JSON structured format
     if stripped.startswith("{") and stripped.endswith("}"):
         try:
             parsed = json.loads(stripped)
         except (ValueError, TypeError):
             parsed = None
         if isinstance(parsed, dict):
-            return {str(k): ("" if v is None else str(v)) for k, v in parsed.items()}
+            fields: Dict[str, str] = {}
+            for k, v in parsed.items():
+                norm_key = str(k).lower().replace("-", "_")
+                value = "" if v is None else str(v)
+                fields[norm_key] = value
+                # Alias "2fa" ↔ "twofa" so both placeholder names work
+                if norm_key == "2fa":
+                    fields.setdefault("twofa", value)
+                elif norm_key == "twofa":
+                    fields.setdefault("2fa", value)
+            return fields
 
+    # 2. Pipe-delimited format
     if "|" in raw:
         parts = [p.strip() for p in raw.split("|")]
         names = placeholders if placeholders else _LEGACY_PIPE_FIELDS
-        fields: Dict[str, str] = {}
+        fields = {}
         for i, part in enumerate(parts):
             key = names[i] if i < len(names) else f"field{i + 1}"
             fields[key] = part
@@ -161,6 +216,7 @@ def parse_key_value(raw: str, placeholders: Optional[List[str]] = None) -> Dict[
                 fields.setdefault(_LEGACY_PIPE_FIELDS[i], part)
         return fields
 
+    # 3. Plain single-value stock
     if placeholders:
         return {placeholders[0]: raw, "value": raw}
     return {"value": raw}

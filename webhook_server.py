@@ -30,6 +30,18 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
+# ── V50: Admin Web — Delivery Template Builder ────────────────────────────────
+# Register the React admin panel + REST API routes.
+# The panel is served at /admin/ and exposes /admin/api/delivery-template endpoints.
+# All existing payment, wallet, and order logic is completely unchanged.
+try:
+    from admin_web.routes import register_admin_web_routes
+    register_admin_web_routes(app)
+except Exception:
+    logging.getLogger(__name__).exception(
+        "Admin web routes failed to register — delivery template builder unavailable"
+    )
+
 # Registers every payment gateway's capabilities once for this process too
 # — this is a separate process from bot.py, so it needs its own bootstrap
 # call. Idempotent / safe to call from multiple processes.

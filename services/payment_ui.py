@@ -570,19 +570,159 @@ def binance_bybit_invoice(
     )
 
 
+def binance_pay_invoice(
+    *, amount: str, pay_id: str, deposit_id=None, created_at=None,
+    expires_at: Optional[str] = None,
+) -> str:
+    """Render the Binance Pay deposit screen.
+
+    Binance Pay calls the user-supplied reference an Order ID.  Keep this
+    presentation separate from the other gateway invoices so the Binance
+    wording can be precise without changing any shared payment behavior.
+    """
+    dep = _display_deposit_id(deposit_id, created_at)
+    lines = ["🟡 <b>Binance Pay</b>", ""]
+    lines.append(f"💰 <b>Amount:</b> {copy_code(amount)} <i>(Tap to copy)</i>")
+    lines.append(
+        f"🆔 <b>Send To (Binance Pay ID):</b> "
+        f"{copy_code(pay_id)} <i>(Tap to copy)</i>"
+    )
+    if dep:
+        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(dep)}")
+    if expires_at:
+        lines.append(f"⏳ <b>Expires In:</b> {expires_at}")
+    lines.extend([
+        "",
+        "📌 <b>Instructions:</b>",
+        "Open Binance App → Pay → Send. Enter the Pay ID above and send "
+        "the exact amount. After payment, click below and submit your Order ID.",
+    ])
+    return "\n".join(lines)
+
+
+def binance_pay_keyboard(*, submit_cb: str, cancel_cb: str = "cancel") -> InlineKeyboardMarkup:
+    """The Binance Pay invoice actions, in the user-facing order."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🧾 Submit Order ID", callback_data=submit_cb)],
+        [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
+    ])
+
+
+def bybit_pay_invoice(
+    *, amount: str, pay_id: str, deposit_id=None, created_at=None,
+    expires_at: Optional[str] = None,
+) -> str:
+    """Premium Bybit Pay (UID Transfer) deposit screen.
+
+    Matches the spec layout exactly:
+        🟠 Bybit Pay
+        💰 Amount: 1.00 USDT (Tap to copy)
+        🆔 Send To (Bybit UID): 123456789 (Tap to copy)
+        🧾 Deposit ID: DEP-YYYYMMDD-XXXXXX
+        ⏳ Expires In: 30 Minutes
+        📌 Instructions: Open Bybit App → Assets → Pay → Send…
+    """
+    dep = _display_deposit_id(deposit_id, created_at)
+    lines = ["🟠 <b>Bybit Pay</b>", ""]
+    lines.append(f"💰 <b>Amount:</b> {copy_code(amount)} <i>(Tap to copy)</i>")
+    lines.append(
+        f"🆔 <b>Send To (Bybit UID):</b> "
+        f"{copy_code(pay_id)} <i>(Tap to copy)</i>"
+    )
+    if dep:
+        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(dep)}")
+    if expires_at:
+        lines.append(f"⏳ <b>Expires In:</b> {expires_at}")
+    lines.extend([
+        "",
+        "📌 <b>Instructions:</b>",
+        "Open Bybit App → Assets → Pay → Send. Enter the UID above and send "
+        "the exact amount. After payment, click below and submit your Order ID.",
+    ])
+    return "\n".join(lines)
+
+
+def bybit_pay_keyboard(*, submit_cb: str, cancel_cb: str = "cancel") -> InlineKeyboardMarkup:
+    """The Bybit Pay invoice actions — Submit Order ID + Cancel only.
+    Amount and UID are tap-to-copy in the message body."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🧾 Submit Order ID", callback_data=submit_cb)],
+        [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
+    ])
+
+
+# Network-code → (coin label, full network name for instructions, invoice emoji)
+# Every supported Bybit on-chain / crypto network is listed here so the
+# premium invoice renders consistently with zero per-network special-casing.
+_CRYPTO_NETWORK_DISPLAY: dict = {
+    "TRC20":  ("USDT (TRC20)",             "TRC20 (Tron)",          "🟡"),
+    "BEP20":  ("USDT (BEP20)",             "BEP20 (BSC)",           "🟡"),
+    "ERC20":  ("USDT (ERC20)",             "ERC20 (Ethereum)",      "🟡"),
+    "TON":    ("USDT (TON)",               "TON",                   "🟡"),
+    "SOL":    ("USDT (Solana)",            "Solana",                "🟡"),
+    "AVAXC":  ("USDT (Avalanche C-Chain)", "Avalanche C-Chain",     "🟡"),
+    "BASE":   ("USDT (Base)",              "Base",                  "🟡"),
+    "ARBONE": ("USDT (Arbitrum One)",      "Arbitrum One",          "🟡"),
+    "OP":     ("USDT (Optimism)",          "Optimism",              "🟡"),
+    "MATIC":  ("USDT (Polygon)",           "Polygon (MATIC)",       "🟡"),
+    "LTC":    ("Litecoin (LTC)",           "Litecoin (LTC)",        "🪙"),
+}
+
+
+def crypto_network_label(network: str) -> str:
+    """Return the user-facing coin label for a given network code.
+    E.g. 'BEP20' → 'USDT (BEP20)', 'LTC' → 'Litecoin (LTC)'.
+    Purely display — callers must never use this for routing/logic."""
+    net = (network or "").strip().upper()
+    return _CRYPTO_NETWORK_DISPLAY.get(net, (f"USDT ({net})",))[0]
+
+
 def crypto_invoice(
     *, network: str, amount: str, wallet_address: str,
     deposit_id=None, created_at=None, expires_at: Optional[str] = None,
     instruction: Optional[str] = None,
 ) -> str:
-    """On-chain crypto (USDT/LTC/... on any network) invoice — spec template."""
-    return invoice_card(
-        method_label=f"USDT ({network})" if network.upper() != "LTC" else "Litecoin (LTC)",
-        method_emoji="🪙", amount=amount,
-        destination_label="Wallet Address", destination_value=wallet_address,
-        network=network, deposit_id=deposit_id, created_at=created_at, expires_at=expires_at,
-        instruction=instruction or f"⚠️ Send only via {network}, then submit your TXID.",
+    """Premium on-chain crypto (USDT/LTC/... on any network) invoice.
+
+    Layout — spec-standardised, identical for every supported network:
+
+        🟡 USDT Payment (BEP20)
+
+        💰 Amount: 1.00 USDT (Tap to copy)
+        📥 Wallet Address:
+        0x8f3a…c92d1e (Tap to copy)
+        🧾 Deposit ID: DEP-YYYYMMDD-XXXXXX
+        ⏳ Expires In: 30 Minutes
+
+        📌 Instructions:
+        Send the exact amount … BEP20 (BSC) network only …
+        ⚠️ Sending via the wrong network …
+
+    Only the coin label, network name, and wallet address change per
+    network — layout, spacing, icons, and button order are identical.
+    Presentation-only; callers own all deposit and verification logic.
+    """
+    net = (network or "").strip().upper()
+    coin_label, net_full, emoji = _CRYPTO_NETWORK_DISPLAY.get(
+        net, (f"USDT ({net})", net, "🟡")
     )
+    dep = _display_deposit_id(deposit_id, created_at)
+    instr = instruction or (
+        f"Send the exact amount to the wallet address above using the "
+        f"{net_full} network only. After payment, click below and submit "
+        "your Transaction Hash (TxHash).\n\n"
+        "⚠️ Sending via the wrong network may result in permanent loss of funds."
+    )
+    lines = [f"{emoji} <b>{coin_label} Payment</b>", ""]
+    lines.append(f"💰 <b>Amount:</b> {copy_code(amount)} <i>(Tap to copy)</i>")
+    lines.append("📥 <b>Wallet Address:</b>")
+    lines.append(f"{copy_code(wallet_address)} <i>(Tap to copy)</i>")
+    if dep:
+        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(dep)}")
+    if expires_at:
+        lines.append(f"⏳ <b>Expires In:</b> {expires_at}")
+    lines.extend(["", "📌 <b>Instructions:</b>", instr])
+    return "\n".join(lines)
 
 
 def mobile_money_invoice(
@@ -590,14 +730,26 @@ def mobile_money_invoice(
     deposit_id=None, created_at=None, expires_at: Optional[str] = None,
     instruction: Optional[str] = None,
 ) -> str:
-    """bKash / Nagad / Rocket invoice — spec template. Shows ONLY the one
-    provider that was actually selected — never all providers at once."""
-    return invoice_card(
-        method_label=f"{provider_label} Payment", method_emoji=provider_emoji, amount=amount,
-        destination_label="Send Money To", destination_value=send_to,
-        deposit_id=deposit_id, created_at=created_at, expires_at=expires_at,
-        instruction=instruction or "📌 Send the exact amount, then submit your TrxID.",
+    """bKash / Nagad / Rocket / Upay invoice — premium inline layout.
+
+    Shows ONLY the provider that was actually selected — never all providers
+    at once. Only the provider name, color emoji, and wallet number change
+    between providers; layout and spacing are identical for every method.
+    """
+    dep = _display_deposit_id(deposit_id, created_at)
+    instr = instruction or (
+        f"Send the exact amount via {provider_label} Send Money. "
+        "After successful payment, click the button below and submit your TrxID."
     )
+    lines = [f"{provider_emoji} <b>{provider_label} Payment</b>", ""]
+    lines.append(f"💰 <b>Amount:</b> <code>{amount}</code> <i>(Tap to copy)</i>")
+    lines.append(f"📲 <b>Send Money To:</b> <code>{send_to}</code> <i>(Tap to copy)</i>")
+    if dep:
+        lines.append(f"🧾 <b>Deposit ID:</b> <code>{dep}</code>")
+    if expires_at:
+        lines.append(f"⏳ <b>Expires In:</b> {expires_at}")
+    lines.extend(["", "📌 <b>Instructions:</b>", instr])
+    return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1175,40 +1327,53 @@ def deposit_success_card(
 ) -> str:
     """Build a premium 'Deposit Successful' confirmation card.
 
-    Layout — compact, mobile-optimised, no dividers:
+    Compact inline layout — identical for every gateway (mobile banking,
+    crypto, card, etc.); only the payment_method label changes:
 
-        ✅ Deposit Successful
+        ✅ Deposit Successful!
 
-        💰 Amount Credited
-        $10.00 USD
+        💵 Amount Credited: $10.00 USD
+        💳 Payment Method: Bybit Pay
+        🎁 Bonus: +1.00 USD     ← only when a bonus was applied
+        🧾 Deposit ID: DEP-YYYYMMDD-XXXXXX
+        🕒 Time: Just now
 
-        💳 Payment Method
-        Binance Pay
-
-        🎁 Bonus                ← only when a bonus was applied
-        +1.00 USD
-
-        🧾 Deposit ID           ← only when deposit_id is provided
-        DEP-20260722-000163
-
-        👛 Your wallet has been updated successfully.
+        🎉 Your wallet has been credited successfully. Thank you for using our service!
     """
-    lines = ["✅ <b>Deposit Successful</b>", ""]
-    lines.append("💰 <b>Amount Credited</b>")
-    lines.append(amount)
+    lines = ["✅ <b>Deposit Successful!</b>", ""]
+    lines.append(f"💵 <b>Amount Credited:</b> {amount}")
+    lines.append(f"💳 <b>Payment Method:</b> {payment_method}")
     if bonus_line:
-        lines.append("")
-        lines.append("🎁 <b>Bonus</b>")
-        lines.append(bonus_line)
-    lines.append("")
-    lines.append("💳 <b>Payment Method</b>")
-    lines.append(payment_method)
+        lines.append(f"🎁 <b>Bonus:</b> {bonus_line}")
     if deposit_id:
-        lines.append("")
-        lines.append("🧾 <b>Deposit ID</b>")
-        lines.append(deposit_id)
-    lines.append("")
-    lines.append("👛 Your wallet has been updated successfully.")
+        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+    lines.append("🕒 <b>Time:</b> Just now")
+    lines.extend([
+        "",
+        "🎉 Your wallet has been credited successfully. Thank you for using our service!",
+    ])
+    return "\n".join(lines)
+
+
+def binance_deposit_success_card(
+    *,
+    amount: str,
+    deposit_id: Optional[str] = None,
+    bonus_line: Optional[str] = None,
+) -> str:
+    """Binance Pay success receipt, isolated from other gateway UIs."""
+    lines = ["✅ <b>Deposit Successful!</b>", ""]
+    lines.append(f"💵 <b>Amount Credited:</b> {amount}")
+    lines.append("💳 <b>Payment Method:</b> Binance Pay")
+    if bonus_line:
+        lines.append(f"🎁 <b>Bonus:</b> {bonus_line}")
+    if deposit_id:
+        lines.append(f"🧾 <b>Deposit ID:</b> {deposit_id}")
+    lines.append("🕒 <b>Time:</b> Just now")
+    lines.extend([
+        "",
+        "🎉 Your wallet has been credited successfully. Thank you for using our service!",
+    ])
     return "\n".join(lines)
 
 
@@ -1261,6 +1426,24 @@ def verifying_card() -> str:
     )
 
 
+def binance_verifying_card(*, order_id: str, deposit_id: Optional[str] = None) -> str:
+    """Binance Pay verification state with the two user-safe references."""
+    lines = [
+        "🔎 <b>Verifying Your Payment</b>",
+        "",
+        "Please wait while we verify your transaction.",
+        "",
+        f"🧾 <b>Order ID:</b> {copy_code(order_id)}",
+    ]
+    if deposit_id:
+        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(deposit_id)}")
+    lines.extend([
+        "",
+        "⏳ This usually takes a few seconds...",
+    ])
+    return "\n".join(lines)
+
+
 def verifying_keyboard() -> InlineKeyboardMarkup:
     """All action buttons 'disabled' while auto-verification is running.
     Real Telegram buttons can't be greyed out, so — consistent with this
@@ -1271,6 +1454,152 @@ def verifying_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⏳ Verifying…", callback_data="noop")],
     ])
+
+
+def crypto_verifying_card(
+    txhash: Optional[str] = None,
+    deposit_id: Optional[str] = None,
+) -> str:
+    """Premium 'Verifying Your Payment' screen for on-chain crypto deposits
+    (USDT TRC20/BEP20/ERC20, LTC, SOL, TON, etc.). Shows the submitted
+    TxHash and Deposit ID so the user can confirm the right transaction is
+    being checked. Presentation-only — callers own all verification logic.
+    """
+    lines = ["🔎 <b>Verifying Your Payment</b>", ""]
+    lines.append("Please wait while we confirm your transaction on the blockchain.")
+    lines.append("")
+    if txhash:
+        lines.append(f"🧾 <b>TxHash:</b> <code>{txhash}</code>")
+    if deposit_id:
+        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+    lines.append("")
+    lines.append("⏳ Waiting for network confirmation...")
+    return "\n".join(lines)
+
+
+def crypto_blockchain_confirmation_pending_card() -> str:
+    """Shown while a crypto transaction has been found on-chain but has not
+    yet accumulated enough confirmations for automatic credit. Clean,
+    reassuring copy — the user does not need to do anything; they will be
+    notified automatically. No IDs shown (callers can append them if needed).
+    Presentation-only.
+    """
+    return (
+        "⏳ <b>Verification in Progress</b>\n\n"
+        "Your transaction is currently waiting for blockchain confirmations. "
+        "You will receive an automated notification as soon as your wallet is credited.\n\n"
+        "⏱ This may take a few minutes depending on network congestion."
+    )
+
+
+def crypto_verification_pending_card(
+    deposit_id: Optional[str] = None,
+    txhash: Optional[str] = None,
+) -> str:
+    """Shown when auto-verification of a crypto deposit could not complete
+    (API timeout, node unavailable, explorer down, etc.) and the deposit
+    has been queued for admin manual review.
+
+    Unlike the generic pending card, this one DOES show the Deposit ID and
+    TxHash — the user submitted them and the spec requires they are visible
+    here so the user can reference their ticket if needed. The deposit is
+    still in the queue; callers never change any verification logic.
+    """
+    lines = ["⏳ <b>Verification in Progress</b>", ""]
+    lines.append(
+        "Your transaction could not be verified automatically at this time."
+    )
+    lines.append("")
+    lines.append(
+        "Your deposit has been placed in the Pending Review queue and will be reviewed shortly."
+    )
+    if deposit_id or txhash:
+        lines.append("")
+    if deposit_id:
+        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+    if txhash:
+        lines.append(f"🔗 <b>TxHash:</b> <code>{txhash}</code>")
+    lines.extend([
+        "",
+        "⏱ <b>Estimated Review Time:</b> 5–30 Minutes",
+        "",
+        "You will receive an automatic notification once your wallet has been credited.",
+    ])
+    return "\n".join(lines)
+
+
+def bybit_verifying_card(
+    order_id: Optional[str] = None,
+    deposit_id: Optional[str] = None,
+) -> str:
+    """Premium 'Verifying Your Payment' screen for Bybit Pay (UID Transfer).
+    Shows the submitted Order ID and the Deposit ID so the user can confirm
+    they are waiting on the right order. Presentation-only — callers still
+    own all verification logic.
+    """
+    lines = ["🔎 <b>Verifying Your Payment</b>", ""]
+    lines.append("Please wait while we verify your transaction.")
+    lines.append("")
+    if order_id:
+        lines.append(f"🧾 <b>Order ID:</b> <code>{order_id}</code>")
+    if deposit_id:
+        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+    lines.append("")
+    lines.append("⏳ This usually takes a few seconds...")
+    return "\n".join(lines)
+
+
+def bybit_verification_pending_card() -> str:
+    """Shown to the user when a Bybit Pay payment is queued for admin
+    manual review (auto-verification could not confirm it).
+
+    Friendly, reassuring copy — no technical error details, no internal
+    IDs. The deposit is still being processed; the user does not need to
+    do anything.
+    """
+    return (
+        "⏳ <b>Verification in Progress</b>\n\n"
+        "Your payment is currently under review. You will receive an "
+        "automated notification as soon as your wallet is credited.\n\n"
+        "⏱ This usually takes a few minutes."
+    )
+
+
+def mobile_money_verifying_card(
+    txid: Optional[str] = None,
+    deposit_id: Optional[str] = None,
+) -> str:
+    """Premium 'Verifying Your Payment' screen for mobile-money gateways
+    (bKash / Nagad / Rocket / Upay). Shows the submitted TrxID and the
+    Deposit ID so the user can confirm they are waiting on the right order.
+    Presentation-only — callers still own all verification logic.
+    """
+    lines = ["🔎 <b>Verifying Your Payment</b>", ""]
+    lines.append("Please wait while we verify your transaction.")
+    lines.append("")
+    if txid:
+        lines.append(f"🧾 <b>TrxID:</b> <code>{txid}</code>")
+    if deposit_id:
+        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+    lines.append("")
+    lines.append("⏳ This usually takes a few seconds...")
+    return "\n".join(lines)
+
+
+def mobile_money_verification_pending_card() -> str:
+    """Shown to the user when a bKash / Nagad / Rocket / Upay payment is
+    queued for admin manual review (auto-verification could not confirm it).
+
+    Friendly, reassuring copy — no technical error details, no internal
+    IDs. Matches the Binance Pay / Bybit Pay equivalent tone. The deposit
+    is still being processed; the user does not need to do anything.
+    """
+    return (
+        "⏳ <b>Verification in Progress</b>\n\n"
+        "Your payment is currently under review. You will receive an "
+        "automated notification as soon as your wallet is credited.\n\n"
+        "⏱ This usually takes a few minutes."
+    )
 
 
 def verification_in_progress_card(
@@ -1308,6 +1637,27 @@ def verification_in_progress_card(
     return "\n".join(lines)
 
 
+def binance_verification_pending_card(
+    *, order_id: str, deposit_id: Optional[str] = None,
+) -> str:
+    """Binance Pay copy for an automatic check awaiting final review."""
+    lines = [
+        "⏳ <b>Verification in Progress</b>",
+        "",
+        "Your payment is currently under review. You will receive an "
+        "automated notification as soon as your wallet is credited.",
+        "",
+        f"🧾 <b>Order ID:</b> {copy_code(order_id)}",
+    ]
+    if deposit_id:
+        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(deposit_id)}")
+    lines.extend([
+        "",
+        "⏱ This usually takes a few minutes.",
+    ])
+    return "\n".join(lines)
+
+
 async def edit_or_reply(message, text: str, *, reply_markup=None, parse_mode: str = 'HTML'):
     """Edit an existing status message in place; if that fails for any
     reason (deleted, too old, never sent), send a fresh reply instead so
@@ -1331,7 +1681,11 @@ def payment_failed_keyboard(retry_cb: str = "topup") -> InlineKeyboardMarkup:
     ])
 
 
-def still_pending_keyboard(resubmit_cb: Optional[str] = None) -> InlineKeyboardMarkup:
+def still_pending_keyboard(
+    resubmit_cb: Optional[str] = None,
+    *,
+    resubmit_label: str = "🔄 Submit TXID Again",
+) -> InlineKeyboardMarkup:
     """Standard keyboard shown after the user cancels a TXID-submission
     mini-step (the order itself is still PENDING, only the "enter your
     TXID" prompt was dismissed). Without this keyboard the user is left
@@ -1341,7 +1695,7 @@ def still_pending_keyboard(resubmit_cb: Optional[str] = None) -> InlineKeyboardM
     """
     rows = []
     if resubmit_cb:
-        rows.append([InlineKeyboardButton("🔄 Submit TXID Again", callback_data=resubmit_cb)])
+        rows.append([InlineKeyboardButton(resubmit_label, callback_data=resubmit_cb)])
     rows.append([InlineKeyboardButton("👛 My Wallet", callback_data="wallet"),
                  InlineKeyboardButton("📞 Support", callback_data="support")])
     rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
@@ -1555,17 +1909,82 @@ def submit_txid_prompt(
     *,
     example_value: Optional[str] = None,
     cancel_cb: str = "cancel",
+    provider_name: Optional[str] = None,
 ) -> Tuple[str, InlineKeyboardMarkup]:
     """The ONE 'submit your Transaction ID' screen — clean, compact,
-    under 4 lines, identical shape for every gateway; only the label and
-    example change per category. Returns (text, keyboard); caller sends
-    with parse_mode='HTML'."""
+    identical shape for every gateway; only the label and example change
+    per category. Returns (text, keyboard); caller sends with parse_mode='HTML'.
+
+    ``provider_name`` is optional — when supplied for mobile-money gateways
+    (e.g. "bKash"), it personalises the prompt line; omitting it falls back
+    to a generic label. Never changes any gateway logic.
+    """
     label = txid_label(category)
     example = example_value or txid_example(category)
-    text = (
-        f"📄 <b>Submit {label}</b>\n\n"
-        f"Paste your {label} below.\n\n"
-        f"Example:\n<code>{example}</code>"
-    )
+
+    if category == "mobile_money":
+        method_name = provider_name or "Mobile Banking"
+        text = (
+            f"🧾 <b>Enter Transaction ID</b>\n\n"
+            f"Please enter your {method_name} Transaction ID (TrxID) below.\n\n"
+            f"💡 Example: <code>{example}</code>"
+        )
+    elif category == "crypto":
+        text = (
+            "🧾 <b>Enter Transaction Hash</b>\n\n"
+            "Please enter your Transaction Hash (TxHash) below.\n\n"
+            f"💡 Example: {copy_code(example)}\n"
+            "ℹ️ You'll find this in your wallet or exchange's transaction history."
+        )
+    else:
+        text = (
+            f"🧾 <b>Enter {label}</b>\n\n"
+            f"Please enter your {label} below.\n\n"
+            f"💡 Example: <code>{example}</code>"
+        )
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)]])
     return text, keyboard
+
+
+def binance_order_id_prompt(
+    *, example_value: Optional[str] = None,
+    cancel_cb: str = "cancel",
+) -> Tuple[str, InlineKeyboardMarkup]:
+    """The Binance Pay Order ID screen."""
+    example = example_value or "1234567890123456789"
+    text = (
+        "🧾 <b>Enter Order ID</b>\n\n"
+        "Please enter your Binance Pay Order ID below.\n\n"
+        f"💡 Example: {copy_code(example)}\n"
+        "ℹ️ You'll find this in your Binance App → Pay → Transaction History."
+    )
+    return text, InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
+    ])
+
+
+def bybit_order_id_prompt(
+    *, example_value: Optional[str] = None,
+    cancel_cb: str = "cancel",
+) -> Tuple[str, InlineKeyboardMarkup]:
+    """The Bybit Pay Order ID screen — spec layout:
+
+        🧾 Enter Order ID
+
+        Please enter your Bybit Pay Order ID below.
+
+        💡 Example: 1234567890123456789
+        ℹ️ You'll find this in your Bybit App → Assets → Pay → Transaction History.
+
+        [❌ Cancel]
+    """
+    example = example_value or "1234567890123456789"
+    text = (
+        "🧾 <b>Enter Order ID</b>\n\n"
+        "Please enter your Bybit Pay Order ID below.\n\n"
+        f"💡 Example: {copy_code(example)}\n"
+        "ℹ️ You'll find this in your Bybit App → Assets → Pay → Transaction History."
+    )
+    return text, InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
+    ])

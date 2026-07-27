@@ -2301,16 +2301,15 @@ async def _finish_gateway_manual_payment(
         deposit_id=transaction_id,
         instruction="📌 Send the exact amount, then submit your TrxID.",
     )
-    keyboard = pui.invoice_keyboard(
-        destination_value=merchant_number, destination_copy_label="Copy Number",
-        amount_value=amount_str,
-        submit_cb=None, cancel_cb="cancel",
-    )
+    # Amount and number are tap-to-copy in the message body; only Cancel here.
+    keyboard = pui.invoice_keyboard(submit_cb=None, cancel_cb="cancel")
     await update.message.reply_text(
         message, reply_markup=keyboard, parse_mode='HTML',
     )
 
-    text, submit_keyboard = pui.submit_txid_prompt("mobile_money", cancel_cb="cancel")
+    text, submit_keyboard = pui.submit_txid_prompt(
+        "mobile_money", cancel_cb="cancel", provider_name=gateway_label
+    )
     await update.message.reply_text(text, reply_markup=submit_keyboard, parse_mode='HTML')
 
     return MANUAL_TXID
@@ -2440,9 +2439,8 @@ async def _finish_zinipay_payment(
                     deposit_id=existing_pending.id,
                     instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
                 )
+                # Amount/number are tap-to-copy in the message; only Submit + Cancel + Back.
                 keyboard = pui.invoice_keyboard(
-                    destination_value=pending_send_to, destination_copy_label="Copy Number",
-                    amount_value=_pending_amount,
                     submit_cb=f"zinipay_submit:{existing_pending.id}",
                     submit_label="🧾 Submit Transaction ID",
                     back_cb="topup_menu_back",
@@ -2460,7 +2458,6 @@ async def _finish_zinipay_payment(
                     instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
                 )
                 keyboard = pui.invoice_keyboard(
-                    amount_value=_pending_amount,
                     submit_cb=f"zinipay_submit:{existing_pending.id}",
                     submit_label="🧾 Submit Transaction ID",
                     back_cb="topup_menu_back",
@@ -2490,11 +2487,10 @@ async def _finish_zinipay_payment(
     message = pui.mobile_money_invoice(
         provider_label=provider.title(), provider_emoji=PROVIDER_EMOJI[provider],
         amount=amount_str, send_to=send_to,
-        deposit_id=tx_id, expires_at="30 minutes",
+        deposit_id=tx_id, expires_at="30 Mins",
     )
+    # Only Submit + Cancel — amount/number are tap-to-copy in the message body.
     keyboard = pui.invoice_keyboard(
-        destination_value=send_to, destination_copy_label="Copy Number",
-        amount_value=amount_str,
         submit_cb=f"zinipay_submit:{tx_id}", submit_label="🧾 Submit Transaction ID",
     )
     await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
@@ -2528,8 +2524,20 @@ async def zinipay_submit_start(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.answer("⏰ This order has expired.", show_alert=True)
             return ConversationHandler.END
 
+    # Resolve the provider label (bKash / Nagad / Rocket / Upay) for the
+    # prompt wording — purely cosmetic, no change to verification logic.
+    _submit_provider: Optional[str] = None
+    with get_db_session() as _psess:
+        _ptx = _psess.query(Transaction).filter_by(id=tx_id).first()
+        if _ptx and _ptx.crypto_address and _ptx.crypto_address.startswith("bdt:"):
+            _pparts = _ptx.crypto_address.split(":")
+            if len(_pparts) > 2 and _pparts[2]:
+                _submit_provider = _pparts[2].strip().title()
+
     context.user_data['zinipay_tx_id'] = tx_id
-    text, keyboard = pui.submit_txid_prompt("mobile_money", cancel_cb="zinipay_cancel_submit")
+    text, keyboard = pui.submit_txid_prompt(
+        "mobile_money", cancel_cb="zinipay_cancel_submit", provider_name=_submit_provider
+    )
     await query.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
     return ZINIPAY_TXID
 
@@ -2632,11 +2640,16 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
 
     # ---- Step 1: Auto-verify — retried automatically several times before
     # this ever reaches manual review (services/payment_workflow.py). ----
-    # Never leave the user on the input screen: show the standard
-    # "Verifying Payment" status immediately, with all action buttons
+    # Never leave the user on the input screen: show the premium
+    # "Verifying Your Payment" screen immediately, with all action buttons
     # disabled, while auto-verification runs.
     processing_msg = await update.message.reply_text(
-        pui.verifying_card(), reply_markup=pui.verifying_keyboard(), parse_mode='HTML',
+        pui.mobile_money_verifying_card(
+            txid=txid_raw,
+            deposit_id=pui.format_deposit_id(tx_id),
+        ),
+        reply_markup=pui.verifying_keyboard(),
+        parse_mode='HTML',
     )
 
     from services.payment_workflow import (
@@ -2789,13 +2802,7 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         # Provide user-friendly messages for known rejection reasons.
         pending_review_kb = None
         if is_amount_mismatch and pmv_id:
-            _provider_label, _provider_emoji = pui.zinipay_provider_meta(provider=selected_provider)
-            user_msg = pui.pending_review_card(
-                payment_method=f"{_provider_emoji} {_provider_label}",
-                amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
-                note="⚠️ Amount mismatch detected — our team has been notified and "
-                     "will review your payment shortly.",
-            )
+            user_msg = pui.mobile_money_verification_pending_card()
             pending_review_kb = pui.pending_review_keyboard()
         elif is_amount_mismatch:
             user_msg = (
@@ -2803,17 +2810,11 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                 f"৳{bdt_amount:.2f} BDT. Please ensure you sent the correct amount."
             )
         elif pmv_id:
-            _provider_label, _provider_emoji = pui.zinipay_provider_meta(provider=selected_provider)
-            if _still_processing:
-                user_msg = pui.verification_in_progress_card(
-                    gateway_label_override=f"{_provider_emoji} {_provider_label}",
-                    amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
-                )
-            else:
-                user_msg = pui.pending_review_card(
-                    payment_method=f"{_provider_emoji} {_provider_label}",
-                    amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
-                )
+            # Both the "exhausted retries" and "terminal failure" paths show
+            # the same premium "Verification in Progress" screen — the user
+            # doesn't need to distinguish between them; the deposit is queued
+            # for admin review in both cases. Layout is purely cosmetic here.
+            user_msg = pui.mobile_money_verification_pending_card()
             pending_review_kb = pui.pending_review_keyboard()
         elif "already used" in lower_err or "duplicate" in lower_err:
             user_msg = "❌ This Transaction ID has already been used."
@@ -3053,8 +3054,10 @@ async def _finish_binance_payment(update: Update, context: ContextTypes.DEFAULT_
                 session.refresh(transaction)
                 tx_id = transaction.id
             await update.message.reply_text(
-                f"🟡 Binance Pay selected.\n\n💬 Which currency will you send for ${usd_amount:.2f}?",
+                f"🟡 <b>Binance Pay</b>\n\n"
+                f"Choose the currency you will send for <b>${usd_amount:.2f}</b>.",
                 reply_markup=_binance_currency_keyboard(tx_id),
+                parse_mode="HTML",
             )
             return METHOD
         currency = svc.allowed_currencies[0] if svc.allowed_currencies else "USDT"
@@ -3143,15 +3146,14 @@ async def binance_currency_selected(update: Update, context: ContextTypes.DEFAUL
 async def _send_binance_payment_screen(update, context, tx_id: int, usd_amount: float,
                                         currency: str, svc: "BinancePayService", is_new_message: bool):
     amount_str = f"{usd_amount:.2f} {currency}"
-    message = pui.binance_bybit_invoice(
-        method_label="Binance Pay", method_emoji="🟡",
-        amount=amount_str, pay_id=svc.pay_id,
-        deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
+    message = pui.binance_pay_invoice(
+        amount=amount_str,
+        pay_id=svc.pay_id,
+        deposit_id=tx_id,
+        expires_at=f"{svc.order_expiry_minutes} Minutes",
     )
-    keyboard = pui.invoice_keyboard(
-        destination_value=svc.pay_id, destination_copy_label="Copy Pay ID",
-        amount_value=amount_str,
-        submit_cb=f"binance_submit:{tx_id}", submit_label="📄 Submit Transaction ID",
+    keyboard = pui.binance_pay_keyboard(
+        submit_cb=f"binance_submit:{tx_id}",
     )
     if is_new_message:
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
@@ -3190,7 +3192,7 @@ async def binance_submit_start(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
 
     context.user_data['binance_tx_id'] = tx_id
-    text, keyboard = pui.submit_txid_prompt("binance_bybit", cancel_cb="binance_cancel_submit")
+    text, keyboard = pui.binance_order_id_prompt(cancel_cb="binance_cancel_submit")
     await query.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
     return BINANCE_TXID
 
@@ -3202,8 +3204,14 @@ async def binance_cancel_submit(update: Update, context: ContextTypes.DEFAULT_TY
     resubmit_cb = f"binance_submit:{tx_id}" if tx_id else None
     try:
         await query.edit_message_text(
-            "❌ Cancelled. Your order is still pending — you can submit the Transaction ID again anytime before it expires.",
-            reply_markup=pui.still_pending_keyboard(resubmit_cb),
+            "❌ <b>Cancelled</b>\n\n"
+            "Your deposit is still pending. You can submit the Order ID again "
+            "anytime before it expires.",
+            reply_markup=pui.still_pending_keyboard(
+                resubmit_cb,
+                resubmit_label="🧾 Submit Order ID Again",
+            ),
+            parse_mode="HTML",
         )
     except BadRequest as e:
         if "Message is not modified" not in str(e):
@@ -3220,13 +3228,15 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
     tx_id = context.user_data.get('binance_tx_id')
 
     if not tx_id:
-        await update.message.reply_text("❌ Session expired. Please start again from your pending order.")
+        await update.message.reply_text(
+            "❌ Session expired. Please start again from your pending deposit."
+        )
         return ConversationHandler.END
 
     if not is_valid_txid_format(txid_raw):
         await update.message.reply_text(
-            "❌ That doesn't look like a valid Transaction ID. Please paste the exact "
-            "Transaction ID / Order ID from your completed Binance Pay payment."
+            "❌ That doesn't look like a valid Order ID. Please enter the exact "
+            "Order ID from your completed Binance Pay payment."
         )
         return BINANCE_TXID
 
@@ -3272,7 +3282,12 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
     # "Verifying Payment" status immediately, with all action buttons
     # disabled, while auto-verification runs.
     processing_msg = await update.message.reply_text(
-        pui.verifying_card(), reply_markup=pui.verifying_keyboard(), parse_mode='HTML',
+        pui.binance_verifying_card(
+            order_id=txid_raw,
+            deposit_id=pui.format_deposit_id(tx_id, order_created_at),
+        ),
+        reply_markup=pui.verifying_keyboard(),
+        parse_mode='HTML',
     )
 
     # Prevent two concurrent submissions for the SAME order from both
@@ -3342,7 +3357,8 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
     if result.outcome == VerificationOutcome.NOT_CONFIGURED:
         await pui.edit_or_reply(
             processing_msg,
-            "⚠️ Binance verification is temporarily unavailable.\n\nPlease try again shortly.",
+            "⚠️ Payment verification is temporarily unavailable.\n\n"
+            "Please try again shortly.",
         )
         return BINANCE_TXID
 
@@ -3495,14 +3511,16 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                 )
         elif pmv_id:
             status_card = (
-                pui.verification_in_progress_card(
-                    gateway_key="binance_pay",
-                    amount=f"{expected_amount} {currency}", order_id=tx_id, txn_id=txid_raw,
+                pui.binance_verification_pending_card(
+                    order_id=txid_raw,
+                    deposit_id=pui.format_deposit_id(tx_id, order_created_at),
                 )
                 if _still_processing else
                 pui.pending_review_card(
                     gateway_key="binance_pay",
-                    amount=f"{expected_amount} {currency}", order_id=tx_id, txn_id=txid_raw,
+                    amount=f"{expected_amount} {currency}",
+                    order_id=tx_id,
+                    txn_id=txid_raw,
                 )
             )
             sent = await pui.edit_or_reply(
@@ -3512,7 +3530,8 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             await pui.edit_or_reply(
                 processing_msg,
-                "❌ Transaction could not be verified.\n\nPlease check the Transaction ID and try again.",
+                "❌ Order ID could not be verified.\n\n"
+                "Please check the Order ID and try again.",
             )
         return BINANCE_TXID
 
@@ -3629,7 +3648,7 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         pui.deposit_success_card(
             amount=f"${credited_usd:.2f} USD",
             payment_method="Binance Pay",
-            deposit_id=pui.format_deposit_id(tx_id),
+            deposit_id=pui.format_deposit_id(tx_id, order_created_at),
             bonus_line=_bonus_str,
         ),
         reply_markup=pui.deposit_success_keyboard(),
@@ -3992,15 +4011,15 @@ async def bybit_network_selected(update: Update, context: ContextTypes.DEFAULT_T
 async def _send_bybit_uid_screen(update, context, tx_id: int, usd_amount: float,
                                   svc: "BybitPayService", is_new_message: bool):
     amount_str = f"{usd_amount:.2f} {BYBIT_CURRENCY}"
-    message = pui.binance_bybit_invoice(
-        method_label="Bybit Pay", method_emoji="🔷",
+    # Use the premium Bybit Pay invoice layout; amount and UID are tap-to-copy
+    # in the message body so no separate copy buttons are needed on the keyboard.
+    expires_label = f"{svc.order_expiry_minutes} Minutes"
+    message = pui.bybit_pay_invoice(
         amount=amount_str, pay_id=svc.uid,
-        deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
+        deposit_id=tx_id, expires_at=expires_label,
     )
-    keyboard = pui.invoice_keyboard(
-        destination_value=svc.uid, destination_copy_label="Copy Pay ID",
-        amount_value=amount_str,
-        submit_cb=f"bybit_submit:{tx_id}", submit_label="📄 Submit Transaction ID",
+    keyboard = pui.bybit_pay_keyboard(
+        submit_cb=f"bybit_submit:{tx_id}", cancel_cb="cancel",
     )
     if is_new_message:
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
@@ -4017,24 +4036,24 @@ async def _send_bybit_onchain_screen(update, context, tx_id: int, usd_amount: fl
                                       *, locked_rate: Optional[float] = None,
                                       locked_crypto_amount: Optional[float] = None):
     address = svc.wallet_for_network(network)
+    expires_label = f"{svc.order_expiry_minutes} Minutes"
     if locked_crypto_amount is not None and locked_rate is not None:
         # Non-stablecoin order (e.g. LTC) — the exact crypto amount already
         # bakes in the rate, so no separate exchange-rate line is needed.
         amount_str = f"{locked_crypto_amount:.8f} LTC"
         message = pui.crypto_invoice(
             network="LTC", amount=amount_str, wallet_address=address,
-            deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
+            deposit_id=tx_id, expires_at=expires_label,
         )
     else:
         amount_str = f"{usd_amount:.2f} {BYBIT_CURRENCY}"
         message = pui.crypto_invoice(
             network=network, amount=amount_str, wallet_address=address,
-            deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
+            deposit_id=tx_id, expires_at=expires_label,
         )
+    # Amount and address are tap-to-copy in the message body; only Submit TxHash + Cancel.
     keyboard = pui.invoice_keyboard(
-        destination_value=address, destination_copy_label="Copy Address",
-        amount_value=amount_str,
-        submit_cb=f"bybit_submit:{tx_id}", submit_label="📄 Submit TXID",
+        submit_cb=f"bybit_submit:{tx_id}", submit_label="🧾 Submit TxHash",
     )
     if is_new_message:
         await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
@@ -4088,8 +4107,10 @@ async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT
             # currency picker instead of an invoice that doesn't exist yet.
             try:
                 await query.edit_message_text(
-                    f"🟡 Binance Pay selected.\n\n💬 Which currency will you send for ${usd_amount:.2f}?",
+                    f"🟡 <b>Binance Pay</b>\n\n"
+                    f"Choose the currency you will send for <b>${usd_amount:.2f}</b>.",
                     reply_markup=_binance_currency_keyboard(tx_id),
+                    parse_mode="HTML",
                 )
             except BadRequest as e:
                 if "Message is not modified" not in str(e):
@@ -4147,8 +4168,12 @@ async def bybit_submit_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return ConversationHandler.END
 
     context.user_data['bybit_tx_id'] = tx_id
-    category = "binance_bybit" if payment_type == BybitPaymentType.UID_TRANSFER else "crypto"
-    text, keyboard = pui.submit_txid_prompt(category, cancel_cb="bybit_cancel_submit")
+    if payment_type == BybitPaymentType.UID_TRANSFER:
+        # Bybit Pay UID Transfer — premium Order ID prompt with Bybit-specific wording.
+        text, keyboard = pui.bybit_order_id_prompt(cancel_cb="bybit_cancel_submit")
+    else:
+        # On-chain networks — generic crypto TXID prompt (blockchain hash format).
+        text, keyboard = pui.submit_txid_prompt("crypto", cancel_cb="bybit_cancel_submit")
     await query.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
     return BYBIT_TXID
 
@@ -4273,11 +4298,15 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text("❌ This transaction has already been used.")
             return BYBIT_TXID
 
-    # Never leave the user on the input screen: show the standard
-    # "Verifying Payment" status immediately, with all action buttons
-    # disabled, while auto-verification runs.
+    # Never leave the user on the input screen: show the premium verifying
+    # screen immediately — Bybit Pay UID uses Order ID; on-chain uses TxHash.
+    _dep_id_fmt = pui.format_deposit_id(tx_id)
+    if is_uid:
+        _verifying_text = pui.bybit_verifying_card(order_id=txid_raw, deposit_id=_dep_id_fmt)
+    else:
+        _verifying_text = pui.crypto_verifying_card(txhash=txid_raw, deposit_id=_dep_id_fmt)
     processing_msg = await update.message.reply_text(
-        pui.verifying_card(), reply_markup=pui.verifying_keyboard(), parse_mode='HTML',
+        _verifying_text, reply_markup=pui.verifying_keyboard(), parse_mode='HTML',
     )
 
     # Prevent two concurrent submissions for the SAME order from both
@@ -4487,17 +4516,32 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                 except Exception:
                     logger.exception("Failed to send admin notification for Bybit manual verification")
 
+        # Build the correct pending card based on payment type AND outcome:
+        #
+        #  UID Transfer (Bybit Pay):
+        #    → always clean card, no IDs shown
+        #
+        #  On-chain crypto (TRC20/BEP20/ERC20/LTC/...):
+        #    _still_processing (VERIFY_EXHAUSTED — ran out of retries without a
+        #      definitive yes/no): transaction was found but not yet confirmed
+        #      enough → show "waiting for blockchain confirmations"
+        #    terminal failure (API error, NOT_FOUND after retries, etc.):
+        #      auto-verification could not complete → show "placed in Pending
+        #      Review queue" with Deposit ID + TxHash for user reference
+        def _pending_card():
+            if is_uid:
+                return pui.bybit_verification_pending_card()
+            if _still_processing:
+                return pui.crypto_blockchain_confirmation_pending_card()
+            return pui.crypto_verification_pending_card(
+                deposit_id=_dep_id_fmt, txhash=txid_raw
+            )
+
         if result.outcome == BybitVerificationOutcome.AMOUNT_MISMATCH:
             if pmv_id:
                 sent = await pui.edit_or_reply(
                     processing_msg,
-                    pui.pending_review_card(
-                        gateway_key="bybit_pay",
-                        amount=f"{expected_amount} {verify_currency}", order_id=tx_id, txn_id=txid_raw,
-                        extra=[("📥", "Received", f"{result.received_amount} {result.currency or verify_currency}")],
-                        note="⚠️ Amount mismatch detected — our team has been notified and "
-                             "will review your payment shortly.",
-                    ),
+                    _pending_card(),
                     reply_markup=pui.pending_review_keyboard(),
                 )
                 pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
@@ -4509,19 +4553,12 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                     f"Received: {result.received_amount} {result.currency or verify_currency}",
                 )
         elif pmv_id:
-            status_card = (
-                pui.verification_in_progress_card(
-                    gateway_key="bybit_pay",
-                    amount=f"{expected_amount} {verify_currency}", order_id=tx_id, txn_id=txid_raw,
-                )
-                if _still_processing else
-                pui.pending_review_card(
-                    gateway_key="bybit_pay",
-                    amount=f"{expected_amount} {verify_currency}", order_id=tx_id, txn_id=txid_raw,
-                )
-            )
+            # All queued-for-review paths (exhausted retries or terminal failure)
+            # use the same pending card — purely cosmetic distinction.
             sent = await pui.edit_or_reply(
-                processing_msg, status_card, reply_markup=pui.pending_review_keyboard(),
+                processing_msg,
+                _pending_card(),
+                reply_markup=pui.pending_review_keyboard(),
             )
             pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
         else:
@@ -4637,10 +4674,16 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
     _bonus_str = f"+{bonus_amount:.2f} USD" if bonus_amount else None
+    # For UID Transfer show "Bybit Pay"; for on-chain show the coin/network
+    # label (e.g. "USDT (BEP20)", "Litecoin (LTC)"). Purely cosmetic.
+    if is_uid:
+        _success_method = "Bybit Pay"
+    else:
+        _success_method = pui.crypto_network_label(network or "")
     await update.message.reply_text(
         pui.deposit_success_card(
             amount=f"${credited_usd:.2f} USD",
-            payment_method="Bybit Pay",
+            payment_method=_success_method,
             deposit_id=pui.format_deposit_id(tx_id),
             bonus_line=_bonus_str,
         ),
@@ -6644,8 +6687,9 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if _dispatcher_result and _dispatcher_result.handled:
                     if _dispatcher_result.success or _dispatcher_result.queued:
                         from services.purchase_success import is_delivery_oversized
-                        if _dispatcher_result.success and is_delivery_oversized(
-                            _dispatcher_result.user_message
+                        if _dispatcher_result.success and (
+                            is_delivery_oversized(_dispatcher_result.user_message)
+                            or getattr(_dispatcher_result, "force_file_delivery", False)
                         ):
                             # Multi-quantity delivery (e.g. many ACCOUNT_LOGIN /
                             # REDEEM_LINK / VOUCHER items) too large to safely
@@ -6999,12 +7043,48 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if _v11_oversized_content:
             from services.purchase_success import send_delivery_as_file
             try:
+                # For count-triggered account deliveries, build a structured
+                # UTF-8 file with a proper header and numbered account blocks
+                # per spec (ORD-YYYYMMDD-NNNNNN.txt).  Character-oversized
+                # deliveries for other types (REDEEM_LINK, VOUCHER, …) keep
+                # using the raw user_message as before.
+                _file_content = _v11_oversized_content
+                _filename_override = None
+                if (getattr(_dispatcher_result, "force_file_delivery", False)
+                        and getattr(_dispatcher_result, "assets", None)):
+                    from services.inventory_import import build_account_delivery_file
+                    _file_content = build_account_delivery_file(
+                        receipt_number=_receipt_number,
+                        product_name=product_name,
+                        quantity=quantity,
+                        assets=_dispatcher_result.assets,
+                    )
+                    # Use admin-configured filename format (accdel_txt_filename_format)
+                    try:
+                        from utils.bot_config import cfg as _accdel_cfg
+                        _fn_fmt = _accdel_cfg.get_str(
+                            "accdel_txt_filename_format", "{order_id}.txt"
+                        ) or "{order_id}.txt"
+                        _safe_prod = "".join(
+                            c for c in (product_name or "product")
+                            if c.isalnum() or c in ("-", "_")
+                        )[:40] or "product"
+                        _filename_override = _fn_fmt.format(
+                            order_id=_receipt_number,
+                            product=_safe_prod,
+                        )
+                        if not _filename_override.endswith(".txt"):
+                            _filename_override += ".txt"
+                    except Exception:
+                        _filename_override = f"{_receipt_number}.txt"
+
                 await send_delivery_as_file(
                     context.bot, telegram_id, order.id, product_name,
-                    _v11_oversized_content,
-                    caption=f"📎 {quantity} item(s) for order #{order.id}",
+                    _file_content,
+                    caption=f"📎 {quantity} account(s) for {_receipt_number}",
                     admin_chat_id=app_settings.ADMIN_TELEGRAM_ID,
                     receipt_number=_receipt_number,
+                    filename_override=_filename_override,
                 )
             except Exception:
                 logger.exception(
@@ -7587,19 +7667,25 @@ async def _pmv_resolve(
         extra_rows.append(bonus_line)
     await pui.clear_pending_user_message(context.bot, pmv_id)
     try:
+        if gateway == "binance_pay":
+            _approved_text = pui.binance_deposit_success_card(
+                amount=f"${credited_usd:.2f} USD",
+                deposit_id=pui.format_deposit_id(tx_id, tx.created_at),
+                bonus_line=f"+{bonus_amount:.2f}" if bonus_amount else None,
+            )
+        else:
+            _approved_text = pui.user_payment_card(
+                gateway_key=gateway,
+                gateway_label_override=gateway_label,
+                stage="approved",
+                amount=f"{expected_amount:.2f} {currency}",
+                order_id=tx_id,
+                extra=extra_rows,
+                note="🎉 Your wallet has been updated successfully.",
+            )
         await context.bot.send_message(
             chat_id=pmv.telegram_user_id,
-            text=sanitize_message(
-                pui.user_payment_card(
-                    gateway_key=gateway,
-                    gateway_label_override=gateway_label,
-                    stage="approved",
-                    amount=f"{expected_amount:.2f} {currency}",
-                    order_id=tx_id,
-                    extra=extra_rows,
-                    note="🎉 Your wallet has been updated successfully.",
-                )
-            ),
+            text=sanitize_message(_approved_text),
             parse_mode="HTML",
         )
     except Exception:
@@ -7979,18 +8065,24 @@ async def _admin_verify_again(update, context, gateway: str):
 
     # Notify user
     _bonus_str = f"+{bonus_amount:.2f} USD" if bonus_amount else None
-    _gw_label = pui.gateway_meta("binance_pay" if gateway == "binance_pay" else "bybit_pay")[0]
     try:
+        if gateway == "binance_pay":
+            _success_text = pui.binance_deposit_success_card(
+                amount=f"${credited_usd:.2f} USD",
+                deposit_id=pui.format_deposit_id(tx_id, order_created_at),
+                bonus_line=_bonus_str,
+            )
+        else:
+            _gw_label = pui.gateway_meta("bybit_pay")[0]
+            _success_text = pui.deposit_success_card(
+                amount=f"${credited_usd:.2f} USD",
+                payment_method=_gw_label,
+                deposit_id=pui.format_deposit_id(tx_id, order_created_at),
+                bonus_line=_bonus_str,
+            )
         await context.bot.send_message(
             chat_id=telegram_user_id,
-            text=sanitize_message(
-                pui.deposit_success_card(
-                    amount=f"${credited_usd:.2f} USD",
-                    payment_method=_gw_label,
-                    deposit_id=pui.format_deposit_id(tx_id),
-                    bonus_line=_bonus_str,
-                )
-            ),
+            text=sanitize_message(_success_text),
             reply_markup=pui.deposit_success_keyboard(),
             parse_mode="HTML",
         )

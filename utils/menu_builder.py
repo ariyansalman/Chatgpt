@@ -604,10 +604,14 @@ register_menu("admin_settings_menu", [
      "row": 9,  "order": 0, "full_width": True},
     {"key": "loyalty_program",   "label": "🎁 Loyalty Program",             "callback": "admin_loyalty",
      "row": 10, "order": 0, "full_width": True},
-    {"key": "bot_config",        "label": "🛠 Bot Configuration",           "callback": "admin_bot_config",
+    {"key": "delivery_msg_builder", "label": "📐 Delivery Message Builder",  "callback": "dmb:menu",
      "row": 11, "order": 0, "full_width": True},
-    {"key": "back_settings",     "label": "🔙 Back",                        "callback": "admin_menu",
+    {"key": "accdel_settings",   "label": "📧 Account Delivery Settings",   "callback": "accdel:menu",
      "row": 12, "order": 0, "full_width": True},
+    {"key": "bot_config",        "label": "🛠 Bot Configuration",           "callback": "admin_bot_config",
+     "row": 13, "order": 0, "full_width": True},
+    {"key": "back_settings",     "label": "🔙 Back",                        "callback": "admin_menu",
+     "row": 14, "order": 0, "full_width": True},
 ], description="Admin store settings sub-menu")
 
 # ---------------------------------------------------------------------------

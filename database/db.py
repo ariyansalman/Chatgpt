@@ -96,22 +96,43 @@ def _build_engine():
     max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
     # Do not let a busy/limited pool freeze a Telegram update for 30 seconds.
     pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "8"))
-    pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "300"))
+    # Supabase Supavisor kills idle connections after ~10 s by default.
+    # Recycle well before that so we never hand out a dead socket.
+    pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "60"))
     connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT", "8"))
     statement_timeout = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000"))
-    pool_pre_ping = os.getenv("DB_POOL_PRE_PING", "false").strip().lower() in (
+    # pool_pre_ping=True: before handing a connection from the pool SQLAlchemy
+    # sends a lightweight "SELECT 1".  If the connection was silently dropped
+    # by Supabase/Supavisor it is discarded and a fresh one is opened instead
+    # of surfacing a cryptic InterfaceError to the user.  The extra round-trip
+    # is ~1 ms on a local network and invisible to humans; the cost of NOT
+    # doing it is the bot appearing "stuck" for up to connect_timeout seconds
+    # whenever Supabase idles out a pooled connection (happens after every
+    # period of low traffic).  Default changed from false → true.
+    pool_pre_ping = os.getenv("DB_POOL_PRE_PING", "true").strip().lower() in (
         "1", "true", "yes", "on"
     )
 
     logger.info(
-        "Connecting to PostgreSQL at %s (pool_size=%s, max_overflow=%s)",
+        "Connecting to PostgreSQL at %s (pool_size=%s, max_overflow=%s, pre_ping=%s, recycle=%ss)",
         url.split("@")[-1] if "@" in url else "<hidden>",
-        pool_size, max_overflow,
+        pool_size, max_overflow, pool_pre_ping, pool_recycle,
     )
 
     # Supabase/PostgreSQL calls are network I/O. Keep connection and query
     # failures bounded so one unhealthy DB cannot hold up the bot indefinitely.
-    connect_args = {"connect_timeout": connect_timeout}
+    # TCP keepalives ensure the OS-level socket is refreshed for long-idle
+    # connections that the application layer hasn't yet noticed are dead.
+    connect_args = {
+        "connect_timeout": connect_timeout,
+        # Send a TCP keepalive probe after 30 s idle, every 10 s, 3 retries.
+        # Prevents Supabase/NAT from silently dropping the TCP stream while
+        # SQLAlchemy still thinks the connection is alive.
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 3,
+    }
     if statement_timeout > 0:
         connect_args["options"] = f"-c statement_timeout={statement_timeout}"
 

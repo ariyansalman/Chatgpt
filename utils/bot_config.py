@@ -131,6 +131,62 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
      "inventory",
      "Bulk File Caption",
      "Sent with the .txt file. Placeholders: {qty}, {product}, {order_id}."),
+    ("account_delivery_inline_limit", "int", 5, "inventory",
+     "Account Delivery Inline Limit",
+     "Maximum number of Account/Login items delivered inline in a single Telegram "
+     "message. Orders with MORE accounts are automatically sent as a .txt file "
+     "instead. Default: 5."),
+
+    # ── 📧 Account / Login Delivery Settings ────────────────────────────────
+    ("accdel_compact_layout", "bool", False, "accdel",
+     "Compact Delivery Layout",
+     "If ON, account credentials are shown in a condensed single-line format "
+     "instead of the default multi-line card layout. "
+     "Applies only to 📧 Account / Login products."),
+    ("accdel_show_order_summary", "bool", True, "accdel",
+     "Show Order Summary",
+     "If ON, order details (Order ID, amount paid, etc.) are included in the "
+     "delivery message. Applies only to 📧 Account / Login products."),
+    ("accdel_show_product_info", "bool", True, "accdel",
+     "Show Product Information",
+     "If ON, the product name is shown in the delivery message header. "
+     "Applies only to 📧 Account / Login products."),
+    ("accdel_show_purchase_time", "bool", True, "accdel",
+     "Show Purchase Time",
+     "If ON, the purchase date and time is shown in the delivery message. "
+     "Applies only to 📧 Account / Login products."),
+    ("accdel_show_quantity", "bool", True, "accdel",
+     "Show Quantity",
+     "If ON, the quantity is shown in the delivery message. "
+     "Applies only to 📧 Account / Login products."),
+    ("accdel_show_2fa", "bool", True, "accdel",
+     "Show 2FA Code",
+     "If ON, 2FA codes are included in the delivery message when present. "
+     "If OFF, 2FA codes are hidden. Applies only to 📧 Account / Login products."),
+    ("accdel_auto_txt_enabled", "bool", True, "accdel",
+     "Auto TXT File Delivery",
+     "If ON, orders exceeding the inline limit are automatically delivered as a "
+     ".txt file. If OFF, all accounts are always sent inline regardless of quantity. "
+     "Applies only to 📧 Account / Login products."),
+    ("accdel_txt_filename_format", "str", "{order_id}.txt", "accdel",
+     "TXT Filename Format",
+     "Filename for the .txt delivery file. Placeholders: {order_id}, {product}. "
+     "Example: {order_id}.txt → ORD-20260727-000001.txt"),
+    ("accdel_txt_divider", "str", "━━━━━━━━━━━━━━", "accdel",
+     "TXT Divider Style",
+     "Section separator used between accounts in the .txt delivery file. "
+     "Examples: ━━━━━━━━━━━━━━  or  --------------  or  ================"),
+    ("accdel_txt_numbering", "str", "circle", "accdel",
+     "TXT Numbering Style",
+     "How accounts are numbered in the .txt file. "
+     "Use 'circle' for ①②③ style or 'plain' for 1, 2, 3 style."),
+    ("accdel_txt_include_summary", "bool", True, "accdel",
+     "TXT: Include Order Summary",
+     "If ON, the order header (Order ID, product, quantity) is included in the "
+     ".txt delivery file."),
+    ("accdel_txt_include_product_name", "bool", True, "accdel",
+     "TXT: Include Product Name",
+     "If ON, the product name is shown in the .txt file header."),
 
     # ── Inventory ───────────────────────────────────────────────────────────
     ("low_stock_threshold", "int", 5, "inventory",
@@ -1803,6 +1859,7 @@ CATEGORIES = [
     ("admin_ui",          "🔧 Admin Panel UI"),
     ("main_menu",         "📋 Main Menu Manager"),
     ("activity_feed",     "📡 Activity Feed"),
+    ("accdel",            "📧 Account Delivery"),
 ]
 
 
