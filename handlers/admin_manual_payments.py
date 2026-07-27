@@ -495,8 +495,8 @@ async def payment_confirm_execute(update: Update, context: ContextTypes.DEFAULT_
                         stage="approved",
                         amount=f"${amount:.2f}",
                         order_id=tx_id,
-                        extra=[("🔄", "New Balance", f"${new_balance:.2f}")],
-                        note="Thank you!",
+                        extra=[("💵", "Credited", f"${amount:.2f}")],
+                        note="🎉 Your wallet has been updated successfully.",
                     )
                 ),
                 parse_mode="HTML",

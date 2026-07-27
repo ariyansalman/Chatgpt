@@ -543,6 +543,19 @@ class Transaction(Base):
     expiry_notified = Column(Boolean, default=False, nullable=False)
     review_notified = Column(Boolean, default=False, nullable=False)
 
+    # Auto-verification workflow (services/payment_workflow.py). These make
+    # the retry-before-manual-review engine safe under concurrency:
+    #   verification_in_progress / verification_locked_at — a DB-backed lock
+    #     so only one verification job (user resubmission, scheduler retry,
+    #     or admin "Verify Again") ever runs for this order at a time.
+    #     `verification_locked_at` lets a crashed/killed worker's lock be
+    #     treated as stale and reclaimed instead of wedging the order forever.
+    #   auto_verify_attempts — running count of automatic verification
+    #     attempts made for this order, for audit/observability only.
+    verification_in_progress = Column(Boolean, default=False, nullable=False)
+    verification_locked_at = Column(DateTime, nullable=True)
+    auto_verify_attempts = Column(Integer, default=0, nullable=False)
+
     # Relationships
     user = relationship("User", back_populates="transactions")
     manual_method = relationship("ManualPaymentMethod")

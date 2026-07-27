@@ -215,11 +215,11 @@ _STAGE_TITLE = {
     "created":        "Payment Created",
     "waiting":         "Waiting for Payment",
     "pending_review":  "Deposit Submitted",
-    "approved":        "Payment Approved",
-    "rejected":        "Payment Rejected",
-    "expired":         "Payment Expired",
-    "cancelled":       "Payment Cancelled",
-    "failed":          "Payment Failed",
+    "approved":        "Deposit Approved",
+    "rejected":        "Deposit Rejected",
+    "expired":         "Deposit Expired",
+    "cancelled":       "Deposit Cancelled",
+    "failed":          "Deposit Failed",
 }
 
 _STAGE_STATUS = {
@@ -231,6 +231,18 @@ _STAGE_STATUS = {
     "expired":        "expired",
     "cancelled":      "cancelled",
     "failed":         "failed",
+}
+
+# Compact deposit-status cards (Approved / Rejected / Expired / Cancelled /
+# Failed) use a status-colored title emoji — never the gateway's own emoji —
+# so every deposit outcome reads consistently at a glance, matching the
+# same visual language as ``pending_review_card`` below.
+_STAGE_TITLE_EMOJI = {
+    "approved":  "✅",
+    "rejected":  "❌",
+    "expired":   "⌛",
+    "cancelled": "🚫",
+    "failed":    "⚠️",
 }
 
 
@@ -265,26 +277,67 @@ def user_payment_card(
     note: Optional[str] = None,
     gateway_label_override: Optional[str] = None,
 ) -> str:
-    """Build a standardized user-facing card for any gateway / stage.
+    """Build a standardized, compact user-facing card for any gateway /
+    stage. Deposit outcome stages (approved, rejected, expired, cancelled,
+    failed) render through the exact same compact, label-free layout as
+    ``pending_review_card`` — status-colored title emoji, plain
+    "💳 <method>" / "💰 <amount>" lines, "🆔 <deposit id>", any labeled
+    extra fields (e.g. "💵 Credited: <amount>"), and a closing note — so
+    every deposit-related message in the bot looks visually identical.
+    The title itself states the outcome (Deposit Approved / Rejected /
+    ...), so no separate "Status:" line repeats it.
 
     ``stage`` is one of: created, waiting, pending_review, approved,
-    rejected, expired, cancelled.
+    rejected, expired, cancelled, failed.
     """
-    label, emoji = gateway_meta(gateway_key, gateway_label_override)
-    fields = [
-        ("💳", "Payment Method", label),
-        ("💰", "Amount", copy_code(amount) if amount else None),
-        ("🧾", "Deposit ID", copy_code(_display_deposit_id(order_id, created_at))),
-        ("🔗", "Transaction ID", copy_code(txn_id) if txn_id else None),
+    label, gateway_emoji = gateway_meta(gateway_key, gateway_label_override)
+
+    if stage not in _STAGE_TITLE_EMOJI:
+        # Stages without a dedicated compact template (created / waiting /
+        # pending_review) fall back to the original generic card renderer —
+        # unchanged behavior for those, since they're not part of this
+        # redesign and pending_review has its own dedicated function.
+        fields = [
+            ("💳", "Payment Method", label),
+            ("💰", "Amount", copy_code(amount) if amount else None),
+            ("🧾", "Deposit ID", copy_code(_display_deposit_id(order_id, created_at))),
+            ("🔗", "Transaction ID", copy_code(txn_id) if txn_id else None),
+        ]
+        fields.extend(extra)
+        return build_card(
+            title=_STAGE_TITLE.get(stage, "Payment Update"),
+            title_emoji=gateway_emoji,
+            fields=fields,
+            status_key=_STAGE_STATUS.get(stage, stage),
+            note=note,
+        )
+
+    dep_id = _display_deposit_id(order_id, created_at)
+    show_txn_id = bool(txn_id) and str(txn_id) != str(dep_id)
+
+    lines: list[str] = [
+        f"{_STAGE_TITLE_EMOJI[stage]} <b>{_STAGE_TITLE.get(stage, 'Deposit Update')}</b>",
+        "",
+        f"💳 {label}",
     ]
-    fields.extend(extra)
-    return build_card(
-        title=_STAGE_TITLE.get(stage, "Payment Update"),
-        title_emoji=emoji,
-        fields=fields,
-        status_key=_STAGE_STATUS.get(stage, stage),
-        note=note,
-    )
+    if amount:
+        lines.append(f"💰 {copy_code(amount)}")
+    lines.append("")
+
+    if dep_id:
+        lines.append(f"🆔 {copy_code(dep_id)}")
+    if show_txn_id:
+        lines.append(f"🔗 {copy_code(txn_id)}")
+    for field_emoji, field_label, value in extra:
+        if value is None or value == "":
+            continue
+        lines.append(f"{field_emoji} <b>{field_label}:</b> {value}")
+
+    if note:
+        lines.append("")
+        lines.append(note)
+
+    return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -686,8 +739,7 @@ class PaymentMethodView:
 # ─────────────────────────────────────────────────────────────────────────
 
 _DEFAULT_PENDING_REVIEW_NOTE = (
-    "You'll receive an automatic notification as soon as your deposit has "
-    "been reviewed."
+    "Your deposit has been received and is waiting for verification."
 )
 
 
@@ -704,9 +756,23 @@ def pending_review_card(
     note: Optional[str] = None,
     gateway_label_override: Optional[str] = None,
 ) -> str:
-    """Build the single, premium 'Deposit Submitted' confirmation screen
+    """Build the single, compact 'Deposit Submitted' confirmation screen
     shown to a user right after they submit a payment / TXID / proof for
-    manual review.
+    manual review (this is also the screen shown when a gateway's
+    automatic check fails and the deposit is queued for manual review).
+
+    Layout is fixed at a handful of short, label-free lines — no more
+    than one blank line between groups, no separators:
+
+        🟡 Deposit Submitted
+
+        💳 <method>
+        💰 <amount>
+
+        🆔 <deposit id>
+        📌 Status: Pending Review
+
+        <note>
 
     All displayed values are resolved dynamically — nothing is ever
     hardcoded per gateway.  A new payment method added tomorrow (by code
@@ -730,46 +796,26 @@ def pending_review_card(
     lines: list[str] = [
         "🟡 <b>Deposit Submitted</b>",
         "",
-        "Your payment has been received and is waiting for verification.",
-        "",
+        f"💳 {label}",
     ]
-
-    # Payment Method
-    lines.append("💳 <b>Payment Method</b>")
-    lines.append(str(label))
+    if amount:
+        lines.append(f"💰 {copy_code(amount)}")
     lines.append("")
 
-    # Amount — tap-to-copy on mobile
-    lines.append("💰 <b>Amount</b>")
-    lines.append(f"<code>{amount}</code>")
-    lines.append("")
-
-    # Deposit ID — tap-to-copy; only if a reference exists
     if dep_id:
-        lines.append("🧾 <b>Deposit ID</b>")
-        lines.append(f"<code>{dep_id}</code>")
-        lines.append("")
+        lines.append(f"🆔 {copy_code(dep_id)}")
 
-    # Transaction ID — only when genuinely different from Deposit ID
     if show_txn_id:
-        lines.append("🔗 <b>Transaction ID</b>")
-        lines.append(f"<code>{txn_id}</code>")
-        lines.append("")
+        lines.append(f"🔗 {copy_code(txn_id)}")
 
-    # Any gateway-specific extra fields (e.g. network, screenshot hash)
-    for field_emoji, field_label, value in extra:
+    # Any gateway-specific extra fields (e.g. amount actually received)
+    for field_emoji, _field_label, value in extra:
         if value is None or value == "":
             continue
-        lines.append(f"{field_emoji} <b>{field_label}</b>")
-        lines.append(str(value))
-        lines.append("")
+        lines.append(f"{field_emoji} {value}")
 
-    # Status
-    lines.append("📌 <b>Status</b>")
-    lines.append("🟡 Under Review")
+    lines.append("📌 <b>Status:</b> Pending Review")
     lines.append("")
-
-    # Confirmation note
     lines.append(note or _DEFAULT_PENDING_REVIEW_NOTE)
 
     return "\n".join(lines)
@@ -795,7 +841,7 @@ def pending_review_keyboard(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Admin review card — compact moderation layout
+# Admin review card — compact premium moderation card
 #
 # THE single admin review card used for every payment method and every
 # manual-review surface (generic manual, bKash/Nagad manual mode, the
@@ -803,14 +849,34 @@ def pending_review_keyboard(
 # failed-auto-verification review). One template, one visual language,
 # regardless of which gateway or which surface renders it.
 #
-# Layout is fixed and identical everywhere:
-#   🆔 Deposit ID → status → 👤 User → 💳 Gateway → 💰 Amount →
-#   🧾 Transaction ID → 🕒 Submitted → (verify reminder, pending only).
-# Monospace (tap-to-copy) is used for Deposit ID, Telegram ID, Amount,
-# Transaction ID, and Submitted Time. Optional context (network,
-# verification result, per-gateway extras, free-form notes) still renders
-# — nothing that used to be shown is silently dropped — it just appears
-# after the fixed fields instead of crowding the core layout.
+# Layout is fixed and identical everywhere, grouped into short blocks with
+# a single blank line between groups and no separator lines:
+#
+#   🔔 <title>
+#
+#   🆔 <deposit id>
+#   <status emoji> <status text>
+#
+#   👤 <name> (@username)
+#   🆔 <telegram id>
+#
+#   💳 <gateway>
+#   💰 <amount>
+#   🌐 <network>            (only for on-chain methods)
+#   🔗 <txn id>              (only when it differs from the deposit id)
+#   <any per-gateway extras>
+#
+#   🕒 <submitted>
+#
+#   ⚠ Auto Verify: <status word>      (pending-review cards only)
+#   ❌/ℹ️ <reason>
+#
+#   <free-form note, e.g. submitted proof>
+#
+# Monospace (tap-to-copy) is kept for Deposit ID, Telegram ID, Amount, and
+# Transaction ID — everything else is plain text. Any field with nothing
+# to show is simply omitted — never a placeholder line or an empty
+# "Label:" — and no group ever prints more than one blank line before it.
 # ─────────────────────────────────────────────────────────────────────────
 
 _ADMIN_TITLES: dict[str, str] = {
@@ -840,15 +906,16 @@ _VERIFICATION_STATUS_LABEL = {
     "not_applicable": "Not Applicable",
 }
 
+# icon shown on the reason line — a real failure gets ❌, "no automated
+# check for this method" gets a neutral ℹ️ instead (it isn't a failure).
+_VERIFICATION_ICON = {
+    "failed":         "❌",
+    "not_applicable": "ℹ️",
+}
+
 _DEFAULT_VERIFICATION_REASON = {
-    "failed": (
-        "Transaction could not be verified automatically.\n"
-        "Manual review is required."
-    ),
-    "not_applicable": (
-        "This payment method has no automatic verification.\n"
-        "Manual review is required."
-    ),
+    "failed": "Transaction could not be verified automatically — manual review required.",
+    "not_applicable": "This payment method has no automatic verification — manual review required.",
 }
 
 
@@ -876,22 +943,23 @@ def admin_review_card(
     """Build THE single admin review card. See module comment block above
     for the layout contract.
 
-    Name resolution for the 👤 User block: shows the display name,
-    ``@username``, and Telegram ID each on their own line — prefers
-    ``full_name``; falls back to a caller-supplied ``customer_name``
-    string (legacy callers that already pre-formatted it). Any line with
-    nothing to show (no username, no name) is simply omitted — never a
-    placeholder like "(no username)".
+    Name resolution for the 👤 User block: the customer's name and
+    ``@username`` render on one line, and their Telegram ID on its own
+    line right below — prefers ``full_name``; falls back to a
+    caller-supplied ``customer_name`` string (legacy callers that already
+    pre-formatted it). Any piece with nothing to show (no username, no
+    name, no id) is simply omitted — never a placeholder like "(no
+    username)".
 
     Auto-verification results are never shown as a raw provider/exception
     string. Pass ``verification_status`` ("failed" or "not_applicable")
-    to render the standardized "⚠️ Auto Verification" status block below;
-    optionally pair it with a short, human-written ``verification_reason``
-    (e.g. "Payment not found in Binance account history"). This block only
-    appears on the pending-review card — once a deposit is approved or
-    rejected, the verification detail is no longer relevant to show.
-    ``verification_result`` remains supported as a plain legacy field for
-    any caller that hasn't migrated to the structured version yet.
+    to render the standardized "⚠ Auto Verify" line below; optionally
+    pair it with a short, human-written ``verification_reason`` (e.g.
+    "Payment not found in Binance account history"). This only appears on
+    the pending-review card — once a deposit is approved or rejected, the
+    verification detail is no longer relevant to show. ``verification_result``
+    remains supported as a plain legacy field for any caller that hasn't
+    migrated to the structured version yet.
     """
     gateway_label, _ = gateway_meta(gateway_key, gateway_label_override)
     deposit_id = _display_deposit_id(order_id, created_at)
@@ -899,63 +967,76 @@ def admin_review_card(
     title = _ADMIN_TITLES.get(status_key, "🔔 Deposit Update")
 
     name_line = full_name or customer_name
-    username_line = f"@{username.lstrip('@')}" if username else None
-    id_line = f"ID: <code>{user_id}</code>" if user_id is not None else None
-
+    username_suffix = f" (@{username.lstrip('@')})" if username else ""
     submitted = time_str or (
         created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if created_at else now_str()
     )
 
     lines = [f"<b>{title}</b>", ""]
 
-    def block(field_emoji: str, field_label: str, *value_lines) -> None:
-        vals = [v for v in value_lines if v not in (None, "")]
-        if not vals:
-            return
-        lines.append(f"{field_emoji} <b>{field_label}</b>")
-        lines.extend(str(v) for v in vals)
+    # 🆔 Deposit ID + status, grouped — no repeated "Status:" label line.
+    if deposit_id:
+        lines.append(f"🆔 <code>{deposit_id}</code>")
+    lines.append(f"{status_emoji} {status_text}")
+    lines.append("")
+
+    # 👤 Customer — name (+username) on one line, Telegram ID right below.
+    user_lines = []
+    if name_line:
+        user_lines.append(f"👤 {name_line}{username_suffix}")
+    elif username_suffix:
+        user_lines.append(f"👤 {username_suffix.strip(' ()')}")
+    if user_id is not None:
+        user_lines.append(f"🆔 <code>{user_id}</code>")
+    if user_lines:
+        lines.extend(user_lines)
         lines.append("")
 
-    block("🆔", "Deposit ID", f"<code>{deposit_id}</code>" if deposit_id else None)
-    block(status_emoji, "Status", status_text)
-    block("👤", "User", name_line, username_line, id_line)
-    block("💳", "Payment Method", gateway_label)
+    # 💳 Payment details, grouped — gateway, amount, network, txn id, extras.
+    payment_lines = []
+    if gateway_label:
+        payment_lines.append(f"💳 {gateway_label}")
+    if amount:
+        payment_lines.append(f"💰 <code>{amount}</code>")
     # Network only ever appears when the caller actually has one to show —
     # non-blockchain methods (mobile wallets, card gateways, etc.) simply
     # never pass a value here, so the row never renders a placeholder.
-    block("🌐", "Network", network)
-    block("💰", "Amount", f"<code>{amount}</code>" if amount else None)
+    if network:
+        payment_lines.append(f"🌐 {network}")
     # Skip Transaction ID when it's identical to the Deposit ID — the same
     # reference never needs to be shown twice.
     if txn_id and str(txn_id) != str(deposit_id):
-        block("🔗", "Transaction ID", f"<code>{txn_id}</code>")
-    for field_emoji, field_label, value in extra:
-        block(field_emoji, field_label, value if value not in (None, "") else None)
-    block("🕒", "Submitted", f"<code>{submitted}</code>" if submitted else None)
+        payment_lines.append(f"🔗 <code>{txn_id}</code>")
+    for field_emoji, _field_label, value in extra:
+        if value not in (None, ""):
+            payment_lines.append(f"{field_emoji} {value}")
+    if payment_lines:
+        lines.extend(payment_lines)
+        lines.append("")
 
-    # ⚠️ Auto Verification — one clean, standardized status block. Never a
-    # raw provider/exception string: callers supply a short human reason,
-    # and a safe generic fallback is used when they don't.
+    # 🕒 Submitted
+    if submitted:
+        lines.append(f"🕒 {submitted}")
+        lines.append("")
+
+    # ⚠ Auto Verify — one compact status + reason line pair. Never a raw
+    # provider/exception string: callers supply a short human reason, and
+    # a safe generic fallback is used when they don't.
     if verification_status and status_key == "pending_review":
         status_word = _VERIFICATION_STATUS_LABEL.get(verification_status, "Failed")
+        reason_icon = _VERIFICATION_ICON.get(verification_status, "❌")
         reason_text = verification_reason or _DEFAULT_VERIFICATION_REASON.get(
             verification_status, _DEFAULT_VERIFICATION_REASON["failed"]
         )
-        lines.append("⚠️ <b>Auto Verification</b>")
-        lines.append(f"Status: {status_word}")
-        lines.append("")
-        lines.append("Reason:")
-        lines.append(reason_text)
+        lines.append(f"⚠ Auto Verify: {status_word}")
+        lines.append(f"{reason_icon} {reason_text}")
         lines.append("")
     elif verification_result:
-        block("⚠", "Verification Result", verification_result)
+        lines.append(f"⚠ Verify: {verification_result}")
+        lines.append("")
 
     if note:
         lines.append(note)
-        lines.append("")
-
-    if status_key == "pending_review":
-        lines.append("⚠️ Verify the Transaction ID before approving.")
         lines.append("")
 
     while lines and lines[-1] == "":
@@ -1243,6 +1324,35 @@ def pending_deposit_rows(session, sort_desc: bool = True):
             Transaction.payment_method.in_(reviewable_methods()),
             Transaction.status.in_(pending_tx_statuses()),
         )
+        .order_by(col)
+        .all()
+    )
+
+
+def pending_pmv_rows(session, sort_desc: bool = True):
+    """Load the live pending PendingManualVerification rows — the failed
+    auto-verification queue for gateways like Binance Pay, Bybit Pay and
+    ZiniPay (bKash/Nagad/Rocket). Gateway-agnostic: returns every row with
+    status == "pending" regardless of which gateway created it, so a newly
+    registered gateway's failed verifications appear here automatically
+    with no code change.
+
+    This is the PMV-table counterpart to ``pending_deposit_rows`` (which
+    covers the Transaction-table side of the same unified Pending Deposits
+    queue). Both are combined by the admin UI (see
+    handlers/admin_pending_deposits.py) into ONE list, matching the
+    "only failed auto verification reaches admin" workflow requirement —
+    no gateway is ever hardcoded out of that list.
+    """
+    from database.models import PendingManualVerification
+
+    col = (
+        PendingManualVerification.created_at.desc()
+        if sort_desc else PendingManualVerification.created_at.asc()
+    )
+    return (
+        session.query(PendingManualVerification)
+        .filter(PendingManualVerification.status == "pending")
         .order_by(col)
         .all()
     )

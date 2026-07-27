@@ -143,6 +143,12 @@ def build_payment_selection_screen(
     if mobile:
         rows.append([InlineKeyboardButton("🇧🇩 Mobile Banking", callback_data="topup_menu_mobile")])
 
+    # Back to the Amount Selection screen (Step 1) — distinct from
+    # "topup_menu_back", which returns from the Crypto Networks / Mobile
+    # Banking submenus to *this* screen. Always shown: this screen is only
+    # ever reached after an amount has already been picked, so there is
+    # always a previous step to return to.
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_back_to_amount")])
     rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
     if amount is not None:

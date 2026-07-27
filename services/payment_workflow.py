@@ -27,8 +27,10 @@ that used to stand in for a real registry.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, Callable, Optional
+from datetime import datetime, timedelta
+from typing import Any, Callable, Optional, Tuple
 
 from services.payment_gateway_registry import registry
 
@@ -257,3 +259,210 @@ def enqueue_pending_review(
     )
     session.add(pmv)
     return pmv
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Retry-before-manual-review engine
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Required flow for every gateway:
+#
+#   Deposit Created
+#         |
+#   Auto Verification Starts
+#         |
+#   Gateway/API Check --retry if needed-->  (repeat, with backoff)
+#         |
+#       Success?
+#        ├── YES -> caller's existing "Approve -> Credit Wallet -> Notify"
+#        |          code runs, completely unchanged.
+#        └── NO  -> only AFTER retries are exhausted -> caller's existing
+#                   "Pending Manual Review -> Notify Admin" code runs.
+#
+# This module never approves a deposit, credits a wallet, or writes an
+# order status itself — it only decides *when* the caller's existing
+# success/failure branches (already implemented per-gateway in
+# handlers/payment_handlers.py) are allowed to run. Wallet logic, order
+# logic, the DB schema (aside from the lock/attempt-count columns added
+# purely to make this engine race-safe), and every gateway integration are
+# untouched.
+
+VERIFY_SUCCESS = "success"     # gateway confirmed the payment -> caller approves
+VERIFY_TERMINAL = "terminal"   # gateway gave a definitive "no" that will not
+                                # change on retry (e.g. amount mismatch) ->
+                                # caller sends straight to manual review
+VERIFY_RETRYABLE = "retryable"  # transient failure (API/HTTP error, timeout,
+                                 # "not found yet") -> worth retrying
+VERIFY_EXHAUSTED = "exhausted"  # retryable on every attempt, but ran out of
+                                 # attempts -> caller sends to manual review
+
+DEFAULT_MAX_ATTEMPTS = 4
+# Delay (seconds) before attempt 2, 3, 4... — gives the gateway/blockchain
+# time to catch up between checks. Last value repeats if max_attempts grows.
+DEFAULT_RETRY_DELAYS = (3, 8, 20)
+
+_DEFAULT_STALE_LOCK_SECONDS = 180  # a crashed worker's lock is reclaimable after this
+
+
+class VerificationLockBusy(Exception):
+    """Raised when a verification job is already running for this order
+    (another user resubmission, a background retry, or an admin's
+    "Verify Again" tap). Prevents duplicate concurrent verification jobs
+    and the race conditions / duplicate wallet credits or admin
+    notifications they could cause."""
+
+
+def acquire_verification_lock(session, tx_id: int, stale_after_seconds: int = _DEFAULT_STALE_LOCK_SECONDS) -> bool:
+    """Atomically claim the per-order verification lock.
+
+    Succeeds if the lock is free, or if it was left behind by a job that
+    started more than ``stale_after_seconds`` ago (a crashed/killed worker) —
+    otherwise fails so the caller can tell the user/admin verification is
+    already in progress. Mirrors the existing ``review_notified`` /
+    ``expiry_notified`` atomic-UPDATE dedup pattern already used elsewhere
+    in this codebase.
+    """
+    from sqlalchemy import or_
+    from database.models import Transaction
+
+    stale_cutoff = datetime.utcnow() - timedelta(seconds=stale_after_seconds)
+    claimed = session.query(Transaction).filter(
+        Transaction.id == tx_id,
+        or_(
+            Transaction.verification_in_progress.is_(False),
+            Transaction.verification_locked_at.is_(None),
+            Transaction.verification_locked_at < stale_cutoff,
+        ),
+    ).update(
+        {
+            Transaction.verification_in_progress: True,
+            Transaction.verification_locked_at: datetime.utcnow(),
+        },
+        synchronize_session=False,
+    )
+    return claimed == 1
+
+
+def release_verification_lock(tx_id: int) -> None:
+    """Release the lock in its own short-lived session — always called
+    from a ``finally`` block so a lock is never left held after the job
+    ends, whatever the outcome."""
+    from database.models import Transaction
+    try:
+        from database import get_db_session
+        with get_db_session() as session:
+            session.query(Transaction).filter(Transaction.id == tx_id).update(
+                {Transaction.verification_in_progress: False}, synchronize_session=False,
+            )
+            session.commit()
+    except Exception:
+        logger.exception("Failed to release verification lock for tx %s", tx_id)
+
+
+async def run_auto_verification_with_retries(
+    *,
+    gateway_id: str,
+    tx_id: int,
+    attempt_fn: Callable[[], Any],
+    classify: Callable[[Any], Tuple[str, str]],
+    telegram_user_id: int,
+    submitted_txid: str,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    retry_delays: Optional[Tuple[int, ...]] = None,
+) -> Tuple[Any, str, str]:
+    """Run up to ``max_attempts`` auto-verification attempts for ONE
+    deposit before conceding to manual review, for any gateway.
+
+    ``attempt_fn`` — zero-arg, synchronous callable that performs the
+    gateway's own API/blockchain check (run via ``asyncio.to_thread`` so it
+    never blocks the event loop). Returns whatever raw result object that
+    gateway's existing code already knows how to interpret.
+
+    ``classify(raw_result) -> (kind, detail)`` — gateway-specific mapping
+    from that raw result to one of VERIFY_SUCCESS / VERIFY_TERMINAL /
+    VERIFY_RETRYABLE, plus a short human-readable detail string for the
+    log. An uncaught exception from ``attempt_fn`` (network error, timeout,
+    malformed response, or any other unknown exception) is always treated
+    as VERIFY_RETRYABLE — never a reason to drop the payment.
+
+    Returns ``(last_raw_result, final_kind, final_detail)`` where
+    ``final_kind`` is VERIFY_SUCCESS, VERIFY_TERMINAL, or VERIFY_EXHAUSTED.
+    The caller's existing success/failure code (approve+credit, or
+    enqueue_pending_review+notify) is unchanged — it just runs on this
+    function's *final* result instead of a single attempt's result.
+
+    Raises ``VerificationLockBusy`` if another verification job is already
+    running for this order (caller should just tell the user/admin to wait
+    — this is not a failure, and no attempt is logged).
+    """
+    from database import get_db_session
+    from database.models import Transaction, VerificationAttemptLog
+
+    with get_db_session() as _sess:
+        got_lock = acquire_verification_lock(_sess, tx_id)
+        _sess.commit()
+    if not got_lock:
+        raise VerificationLockBusy(f"verification already in progress for transaction {tx_id}")
+
+    delays = retry_delays or DEFAULT_RETRY_DELAYS
+    last_raw: Any = None
+    last_detail = ""
+
+    try:
+        for attempt in range(1, max_attempts + 1):
+            try:
+                raw = await asyncio.to_thread(attempt_fn)
+                kind, detail = classify(raw)
+            except Exception as e:  # API error / HTTP error / timeout / webhook
+                # delay / invalid response / unknown exception — always safe
+                # to retry, never a reason to lose the deposit.
+                raw = None
+                kind, detail = VERIFY_RETRYABLE, f"{type(e).__name__}: {e}"
+                logger.warning(
+                    "Auto-verification attempt %s/%s raised for gateway=%s tx=%s",
+                    attempt, max_attempts, gateway_id, tx_id, exc_info=True,
+                )
+
+            last_raw, last_detail = raw, detail
+
+            try:
+                with get_db_session() as _sess:
+                    _sess.add(VerificationAttemptLog(
+                        gateway=gateway_id,
+                        telegram_user_id=telegram_user_id,
+                        internal_order_id=tx_id,
+                        submitted_txid=submitted_txid or "",
+                        outcome=f"AUTO_ATTEMPT_{attempt}_{kind.upper()}",
+                        detail=(detail or "")[:500],
+                    ))
+                    _sess.query(Transaction).filter_by(id=tx_id).update(
+                        {Transaction.auto_verify_attempts: Transaction.auto_verify_attempts + 1},
+                        synchronize_session=False,
+                    )
+                    _sess.commit()
+            except Exception:
+                logger.exception(
+                    "Failed to persist verification attempt log (gateway=%s tx=%s attempt=%s)",
+                    gateway_id, tx_id, attempt,
+                )
+
+            if kind == VERIFY_SUCCESS:
+                logger.info("Auto-verification succeeded for gateway=%s tx=%s on attempt %s", gateway_id, tx_id, attempt)
+                return raw, VERIFY_SUCCESS, detail
+
+            if kind == VERIFY_TERMINAL:
+                logger.info("Auto-verification terminally failed for gateway=%s tx=%s: %s", gateway_id, tx_id, detail)
+                return raw, VERIFY_TERMINAL, detail
+
+            # VERIFY_RETRYABLE — wait (unless this was the last attempt) and try again.
+            if attempt < max_attempts:
+                delay = delays[min(attempt - 1, len(delays) - 1)]
+                await asyncio.sleep(delay)
+
+        logger.info(
+            "Auto-verification exhausted %s attempts for gateway=%s tx=%s — routing to manual review",
+            max_attempts, gateway_id, tx_id,
+        )
+        return last_raw, VERIFY_EXHAUSTED, last_detail
+    finally:
+        release_verification_lock(tx_id)

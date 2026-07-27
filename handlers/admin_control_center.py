@@ -358,9 +358,10 @@ def build_acc_root_keyboard(maintenance_on: bool) -> IKM:
 
     kb: list[list[IKB]] = []
 
-    # ── Category grid, grouped under a divider label per section ────────────
+    # ── Category grid — grouped in the same Primary / Management / System
+    # order as before, just without a decorative "── Group ──" header row
+    # between them (button positions/order and callback_data unchanged).
     for group_name, cats in _ROOT_GROUPS:
-        kb.append([IKB(f"── {group_name} ──", callback_data="acc:root")])
         row: list[IKB] = []
         for cat in cats:
             icon, name = _CAT_META[cat]
@@ -373,7 +374,7 @@ def build_acc_root_keyboard(maintenance_on: bool) -> IKM:
 
     # ── Quick tools: search ───────────────────────────────────────────────────
     if show_search:
-        kb.append([IKB("🔍  Search", callback_data="acc:ui:search")])
+        kb.append([IKB("🔍 Search", callback_data="acc:ui:search")])
 
     # ── System controls ──────────────────────────────────────────────────────
     maint_label = (
@@ -383,7 +384,7 @@ def build_acc_root_keyboard(maintenance_on: bool) -> IKM:
     )
     # (Panel Settings is now under 🎨 UI & Menu — no separate shortcut here.)
     kb.append([IKB(maint_label, callback_data="admin_maintenance_toggle")])
-    kb.append([IKB("⬅️  Exit Admin Panel", callback_data="main_menu")])
+    kb.append([IKB("🚪 Exit Admin Panel", callback_data="main_menu")])
     return IKM(kb)
 
 
@@ -617,7 +618,7 @@ async def _render_category(cat: str, page: int, uid: int,
         breadcrumb = f"{cat_icon} <b>{cat_name}</b>"
 
     tagline = _CAT_DESC.get(cat, "")
-    lines   = [breadcrumb, "──────────────────────"]
+    lines   = [breadcrumb]
     if tagline:
         lines.append(f"<i>{tagline}</i>")
     text = "\n".join(lines)

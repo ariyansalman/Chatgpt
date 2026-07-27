@@ -790,6 +790,10 @@ def main():
             payment_handlers.AMOUNT_SELECT: [
                 CallbackQueryHandler(payment_handlers.topup_amount_selected, pattern="^topup_amt_\\d+(\\.\\d+)?$"),
                 CallbackQueryHandler(payment_handlers.topup_amount_custom_prompt, pattern="^topup_amt_custom$"),
+                # "⬅️ Back" on the Amount Selection screen — leaves the
+                # deposit flow and returns to the Wallet screen it was
+                # opened from (edits the same message; ends the conversation).
+                CallbackQueryHandler(payment_handlers.topup_back_to_wallet, pattern="^topup_back_to_wallet$"),
             ],
             payment_handlers.AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, payment_handlers.topup_amount)],
             payment_handlers.METHOD: [
@@ -802,6 +806,12 @@ def main():
                 CallbackQueryHandler(payment_handlers.topup_show_crypto_networks, pattern="^topup_menu_crypto$"),
                 CallbackQueryHandler(payment_handlers.topup_show_mobile_money, pattern="^topup_menu_mobile$"),
                 CallbackQueryHandler(payment_handlers.topup_back_to_methods, pattern="^topup_menu_back$"),
+                # "⬅️ Back" on the Payment Method screen itself — returns to
+                # the Amount Selection screen (Step 1), preserving the
+                # previously-picked amount. Distinct from "topup_menu_back"
+                # above, which returns from the Crypto Networks / Mobile
+                # Banking submenus back to *this* screen.
+                CallbackQueryHandler(payment_handlers.topup_back_to_amount_selection, pattern="^topup_back_to_amount$"),
                 # "▶️ Continue Deposit" on the Pending Deposit notice (Binance
                 # Pay / Bybit Pay) — reopens the existing pending order's
                 # payment screen; never creates a new deposit.
@@ -1413,6 +1423,7 @@ def main():
     from handlers import admin_pending_deposits as _apd
     application.add_handler(CallbackQueryHandler(_apd.pending_deposits_list,    pattern=r"^pd:list:\d+:(asc|desc)$"))
     application.add_handler(CallbackQueryHandler(_apd.deposit_detail,          pattern=r"^pd:det:\d+$"))
+    application.add_handler(CallbackQueryHandler(_apd.deposit_pmv_detail,      pattern=r"^pd:pmvdet:\d+$"))
     application.add_handler(CallbackQueryHandler(_apd.deposit_view_details,    pattern=r"^pd:info:\d+$"))
     application.add_handler(CallbackQueryHandler(_apd.deposit_approve_ask,     pattern=r"^pd:appr_ask:\d+$"))
     application.add_handler(CallbackQueryHandler(_apd.deposit_approve_execute, pattern=r"^pd:appr_ok:\d+$"))
@@ -1876,6 +1887,24 @@ def main():
 
     # Admin PMV rejection-with-reason conversation (Binance + Bybit + ZiniPay)
     application.add_handler(payment_handlers.build_admin_pmv_reject_conv())
+
+    # ─── Admin: Generic PMV review (any gateway beyond Binance/Bybit/ZiniPay) ──
+    # Cryptomus, NOWPayments, CryptoBot, Heleket, or any future gateway
+    # registered in services/payment_gateway_registry.py reaches the same
+    # Approve/Reject/Verify-Again workflow through these gateway-agnostic
+    # handlers — no new registration needed when a gateway is added.
+    application.add_handler(CallbackQueryHandler(
+        payment_handlers.admin_pmv_generic_approve,
+        pattern=r"^admin_pmv_approve_[a-zA-Z0-9_]+_\d+_\d+$",
+    ))
+    application.add_handler(CallbackQueryHandler(
+        payment_handlers.admin_pmv_generic_reject,
+        pattern=r"^admin_pmv_reject_[a-zA-Z0-9_]+_\d+_\d+$",
+    ))
+    application.add_handler(CallbackQueryHandler(
+        payment_handlers.admin_pmv_generic_verify,
+        pattern=r"^admin_pmv_verify_[a-zA-Z0-9_]+_\d+_\d+$",
+    ))
 
 
     # ─── V4 (Phase 2): Search, Coupons, Currency, Receipts ───────────────

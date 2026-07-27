@@ -255,18 +255,43 @@ async def _render_pending_deposits_list(query, page: int, sort: str):
     module (detail, approve, reject, already-processed, error screens).
     Because every one of those Back buttons is dispatched back through this
     same function, the empty-state screen can only ever appear when the
-    database genuinely has zero rows matching ``pending_deposit_rows`` at the
-    moment the button is pressed — never a cached/stale copy of an earlier
-    screen.
+    database genuinely has zero rows matching the live query at the moment
+    the button is pressed — never a cached/stale copy of an earlier screen.
+
+    GATEWAY-AGNOSTIC UNIFICATION: this queue merges BOTH sources of "a
+    human needs to review this deposit" in the project, so admins have one
+    single actionable list instead of having to also remember to check
+    handlers/admin_binance.py / handlers/admin_bybit.py's separate PMV
+    screens, or rely on a one-time DM notification they may have dismissed:
+
+      • ``Transaction`` rows for gateways with no API at all (generic
+        Manual Payment, bKash/Nagad in Manual mode) — pui.pending_deposit_rows.
+      • ``PendingManualVerification`` rows created for ANY gateway whose
+        own auto-verification failed (Binance Pay, Bybit Pay, ZiniPay
+        bKash/Nagad/Rocket today; any future gateway automatically, since
+        services/payment_workflow.py's enqueue_pending_review() is
+        gateway-agnostic) — pui.pending_pmv_rows.
+
+    Nothing here is gateway-specific: a brand-new gateway that starts
+    calling enqueue_pending_review() on a failed auto-verification appears
+    in this same list with zero changes to this file.
     """
     sort = "asc" if sort == "asc" else "desc"
+    sort_desc = sort == "desc"
 
     with get_db_session() as session:
-        # Use one live result for the count, empty-state decision, and page
-        # rows.  A separate COUNT query can observe a different state from
-        # the rows selected immediately afterwards.
-        pending_rows = pui.pending_deposit_rows(session, sort_desc=sort == "desc")
-        total = len(pending_rows)
+        # Use one live result per source for the count, empty-state
+        # decision, and page rows.  A separate COUNT query can observe a
+        # different state from the rows selected immediately afterwards.
+        tx_rows = pui.pending_deposit_rows(session, sort_desc=sort_desc)
+        pmv_rows = pui.pending_pmv_rows(session, sort_desc=sort_desc)
+
+        merged = (
+            [("tx", t.id, t.created_at) for t in tx_rows]
+            + [("pmv", p.id, p.created_at) for p in pmv_rows]
+        )
+        merged.sort(key=lambda r: r[2] or datetime.min, reverse=sort_desc)
+        total = len(merged)
 
         # Keep a page requested after the last item from producing a
         # misleading empty page.  This uses the same live result, rather
@@ -274,30 +299,33 @@ async def _render_pending_deposits_list(query, page: int, sort: str):
         total_pages = max(1, (total + _PAGE_SZ - 1) // _PAGE_SZ)
         page = min(page, total_pages - 1)
         start = page * _PAGE_SZ
-        txs = pending_rows[start:start + _PAGE_SZ]
+        page_slice = merged[start:start + _PAGE_SZ]
+
+        tx_by_id = {t.id: t for t in tx_rows}
+        pmv_by_id = {p.id: p for p in pmv_rows}
+
         rows = []
-        for tx in txs:
-            u = session.query(User).filter_by(id=tx.user_id).first()
-            username = f"@{u.username}" if (u and u.username) else f"ID:{u.telegram_id if u else '?'}"
-            amt_str = f"{tx.amount:.2f}" if tx.amount is not None else "—"
-            rows.append((tx.id, username, amt_str))
+        for kind, row_id, _created in page_slice:
+            if kind == "tx":
+                tx = tx_by_id[row_id]
+                u = session.query(User).filter_by(id=tx.user_id).first()
+                username = f"@{u.username}" if (u and u.username) else f"ID:{u.telegram_id if u else '?'}"
+                amt_str = f"{tx.amount:.2f}" if tx.amount is not None else "—"
+                rows.append(("tx", row_id, username, amt_str))
+            else:
+                pmv = pmv_by_id[row_id]
+                username = f"ID:{pmv.telegram_user_id}"
+                u = session.query(User).filter_by(telegram_id=pmv.telegram_user_id).first()
+                if u and u.username:
+                    username = f"@{u.username}"
+                amt_str = f"{float(pmv.amount):.2f}" if pmv.amount is not None else "—"
+                rows.append(("pmv", row_id, username, amt_str))
 
     # ── Rendering rule: pending_count == 0 -> empty state, else -> list ─────
-    #
-    # This page shows ONE thing: manual deposits (generic ManualPaymentMethod
-    # + bKash/Nagad Manual mode) waiting for a human to check a submitted
-    # TXID/screenshot. It never reports on, or references, auto-confirmed
-    # gateways (Binance Pay, Bybit Pay, Cryptomus, ZiniPay, NOWPayments,
-    # Heleket, Telegram Stars), their webhook state, or their own
-    # verification queues — those are separate concerns with their own admin
-    # pages (see handlers/admin_binance.py, handlers/admin_bybit.py,
-    # handlers/admin_webhook_monitor.py) and are intentionally out of scope
-    # here so this screen can never show two messages that disagree with
-    # each other.
     if total == 0:
         await _safe_edit(
             query,
-            "No manual deposits are waiting for review.",
+            "No deposits are currently waiting for review.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔙 Back", callback_data="admin_confirm_order")]
             ]),
@@ -309,9 +337,10 @@ async def _render_pending_deposits_list(query, page: int, sort: str):
     sort_lbl    = "🕒 Freshest" if sort == "desc" else "🕰 Oldest"
 
     kb = []
-    for tx_id, username, amt_str in rows:
+    for kind, row_id, username, amt_str in rows:
         lbl = f"⏳ {username} | ${amt_str}"
-        kb.append([InlineKeyboardButton(lbl[:64], callback_data=f"pd:det:{tx_id}")])
+        cb = f"pd:det:{row_id}" if kind == "tx" else f"pd:pmvdet:{row_id}"
+        kb.append([InlineKeyboardButton(lbl[:64], callback_data=cb)])
 
     pag = []
     if page > 0:
@@ -377,6 +406,94 @@ async def deposit_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         u   = session.query(User).filter_by(id=tx.user_id).first()
         msg = _deposit_detail_msg(tx, u)
         kb  = _deposit_kb(tx, u)
+
+    await _safe_edit(query, msg, kb)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2b. PendingManualVerification Detail (Binance Pay / Bybit Pay / ZiniPay /
+#     any future gateway whose auto-verification failed)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# This is the read-only "card" half of the unification: it renders a PMV
+# row through the exact same services.payment_ui.admin_review_card template
+# every other review surface uses, then wires its buttons to the SAME
+# already-registered callback_data patterns the original per-gateway admin
+# notification uses (admin_<gateway>_approve_/reject_start_/verify_{tx_id}_
+# {pmv_id} — see handlers/payment_handlers.py's _pmv_resolve /
+# _admin_verify_again / build_admin_pmv_reject_conv, registered in bot.py).
+# No wallet-crediting, approval, rejection, or re-verification logic is
+# duplicated here — tapping a button on this screen runs the identical
+# handler a tap on the original DM notification would have run.
+
+_LEGACY_PMV_GATEWAYS = {"binance_pay", "bybit_pay", "zinipay"}
+
+
+async def deposit_pmv_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: pd:pmvdet:{pmv_id}"""
+    query = update.callback_query
+    await query.answer()
+    if not has_permission(update.effective_user.id, "manage_orders"):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+    parts = (query.data or "").split(":")
+    try:
+        pmv_id = int(parts[2])
+    except (IndexError, ValueError):
+        return
+
+    from database.models import PendingManualVerification
+    from handlers.payment_handlers import _build_verify_again_admin_keyboard, _pmv_gateway_label
+
+    with get_db_session() as session:
+        pmv = session.query(PendingManualVerification).filter_by(id=pmv_id).first()
+        if not pmv:
+            await _safe_edit(
+                query, "❌ Verification request not found.",
+                InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data=_BACK_TO_LIST_CB)]]),
+            )
+            return
+
+        tx = session.query(Transaction).filter_by(id=pmv.internal_order_id).first()
+        u = session.query(User).filter_by(telegram_id=pmv.telegram_user_id).first()
+
+        if pmv.status != "pending":
+            already = "🟢 Already Approved" if pmv.status == "approved" else "🔴 Already Rejected"
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton(already, callback_data="noop")],
+                [InlineKeyboardButton("⬅ Back", callback_data=_BACK_TO_LIST_CB)],
+            ])
+            await _safe_edit(query, _pmv_gateway_label(pmv.gateway, tx=tx) + f" verification #{pmv.id}", kb)
+            return
+
+        amount = f"{pmv.amount} {pmv.currency}" if pmv.currency else f"{pmv.amount}"
+        msg = pui.admin_review_card(
+            gateway_key=pmv.gateway,
+            gateway_label_override=_pmv_gateway_label(pmv.gateway, tx=tx),
+            amount=amount,
+            order_id=pmv.internal_order_id,
+            created_at=pmv.created_at,
+            txn_id=pmv.submitted_txid,
+            username=u.username if u else None,
+            user_id=pmv.telegram_user_id,
+            network=pmv.network,
+            verification_status="failed",
+            verification_reason=pmv.auto_detail or pmv.auto_outcome,
+            status_key="pending_review",
+        )
+
+        kb = _build_verify_again_admin_keyboard(
+            pmv.gateway, pmv.internal_order_id, pmv.id, pmv.telegram_user_id,
+        ) if pmv.gateway in _LEGACY_PMV_GATEWAYS else pui.admin_review_keyboard(
+            verify_cb=f"admin_pmv_verify_{pmv.gateway}_{pmv.internal_order_id}_{pmv.id}",
+            approve_cb=f"admin_pmv_approve_{pmv.gateway}_{pmv.internal_order_id}_{pmv.id}",
+            reject_cb=f"admin_pmv_reject_{pmv.gateway}_{pmv.internal_order_id}_{pmv.id}",
+            view_user_cb=f"admin_view_user_pmv_{pmv.telegram_user_id}",
+        )
+        # Append the same "⬅ Back" target every other card in this queue uses.
+        rows = list(kb.inline_keyboard)
+        rows.append([InlineKeyboardButton("⬅ Back", callback_data=_BACK_TO_LIST_CB)])
+        kb = InlineKeyboardMarkup(rows)
 
     await _safe_edit(query, msg, kb)
 
@@ -624,8 +741,8 @@ async def deposit_approve_execute(update: Update, context: ContextTypes.DEFAULT_
                         amount=amount_str,
                         order_id=tx_id,
                         txn_id=txn_ref,
-                        extra=[("🔄", "New Balance", f"${new_balance:.2f}")],
-                        note="Thank you!",
+                        extra=[("💵", "Credited", f"${credited_usd:.2f}")],
+                        note="🎉 Your wallet has been updated successfully.",
                     )
                 ),
                 parse_mode="HTML",

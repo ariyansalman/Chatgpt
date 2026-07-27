@@ -124,12 +124,11 @@ def _render_dashboard_text(stats: dict) -> str:
 
     Layout, top to bottom:
       1. ⚡ Admin Control Center (title)
-      2. Action Required / All Clear
-      3. Live stats (Users, Products, Orders, Sales)
+      2. 🔴 Action Required / 🟢 All Clear (section title, only shown items)
+      3. 📊 Overview (section title) — Users, Products, Orders, Sales
 
-    Every line uses the same "<emoji> Label: value" format so the header
-    reads consistently whether it's rendered on desktop or a narrow mobile
-    screen.
+    No divider lines — sections are separated by a blank line and a clean
+    section title, consistent "<emoji> Label: value" formatting throughout.
     """
     failed_orders = stats.get("failed_orders", 0)
     system_alerts = stats.get("system_alerts", 0)
@@ -153,14 +152,13 @@ def _render_dashboard_text(stats: dict) -> str:
         attention_block = "🟢 <b>All Clear</b> — No pending actions"
 
     return (
-        "⚡ <b>Admin Control Center</b>\n"
-        "──────────────────────────\n\n"
+        "⚡ <b>Admin Control Center</b>\n\n"
         f"{attention_block}\n\n"
-        "──────────────────────────\n"
-        f"👥 Total Users: <b>{stats['users']:,}</b>\n"
-        f"📦 Total Products: <b>{stats['products']:,}</b>\n"
-        f"🛒 Total Orders: <b>{stats['orders']:,}</b>\n"
-        f"💰 Total Sales: <b>{format_price(stats['total_sales'])}</b>"
+        "📊 <b>Overview</b>\n"
+        f"👥 Users: <b>{stats['users']:,}</b>\n"
+        f"📦 Products: <b>{stats['products']:,}</b>\n"
+        f"🛒 Orders: <b>{stats['orders']:,}</b>\n"
+        f"💰 Sales: <b>{format_price(stats['total_sales'])}</b>"
     )
 
 

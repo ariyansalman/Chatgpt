@@ -34,6 +34,7 @@ namespace in this project).
   nsm:channel:set                     — ConversationHandler entry
                                          (type an ID / forward a message)
   nsm:channel:clear                   — clear the saved channel
+  nsm:tgid:toggle                     — toggle "Show Telegram ID" on notifications
   nsm:cat:menu                        — category list (Orders, Payments, …)
   nsm:cat:view:<category>             — events within one category
   nsm:cat:tgl:<category>:<event>      — toggle a single event on/off
@@ -149,6 +150,8 @@ async def nsm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             chan_line += f" — {title}"
         chan_line += " ✅" if verified else " ⚠️ unverified"
 
+    show_tid = cfg.get_bool("notif_show_telegram_id", False)
+
     text = (
         "🔔 <b>Notification Settings</b>\n\n"
         f"Current mode: <b>{_MODE_LABELS[mode]}</b>\n"
@@ -162,6 +165,10 @@ async def nsm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         rows.append([IKB(f"{mark}{label}", callback_data=f"nsm:mode:{key}")])
     rows.append([IKB("📝 Configure Log Channel", callback_data="nsm:channel:menu")])
     rows.append([IKB("📋 Notification Categories", callback_data="nsm:cat:menu")])
+    rows.append([IKB(
+        f"{'✅' if show_tid else '⬜'} 🆔 Show Telegram ID",
+        callback_data="nsm:tgid:toggle",
+    )])
     rows.append([IKB("🧪 Send Test Notification", callback_data="nsm:test")])
     rows.append([IKB("⬅️ Admin Panel", callback_data="acc:root")])
     kb = IKM(rows)
@@ -196,6 +203,23 @@ async def nsm_set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         old_value=old_mode, new_value=new_mode, module="notification_settings",
     )
     await query.answer(f"✅ Mode: {_MODE_LABELS[new_mode]}")
+    await nsm_menu(update, context)
+
+
+async def nsm_toggle_show_telegram_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Toggle whether customer Telegram IDs appear on admin notifications."""
+    query = update.callback_query
+    if not _guard(update):
+        await query.answer("⛔ Admins only.", show_alert=True)
+        return
+    old_val = cfg.get_bool("notif_show_telegram_id", False)
+    new_val = not old_val
+    cfg.set("notif_show_telegram_id", new_val)
+    log_admin_action(
+        update.effective_user.id, "notification_settings.toggle_show_telegram_id",
+        old_value=str(old_val), new_value=str(new_val), module="notification_settings",
+    )
+    await query.answer(f"🆔 Show Telegram ID: {'ON' if new_val else 'OFF'}")
     await nsm_menu(update, context)
 
 
@@ -534,6 +558,8 @@ async def nsm_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await nsm_channel_menu(update, context)
     elif data == "nsm:channel:clear":
         await nsm_channel_clear(update, context)
+    elif data == "nsm:tgid:toggle":
+        await nsm_toggle_show_telegram_id(update, context)
     elif data == "nsm:cat:menu":
         await nsm_categories_menu(update, context)
     elif data.startswith("nsm:cat:view:"):

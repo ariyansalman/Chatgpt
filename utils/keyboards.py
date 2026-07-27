@@ -507,8 +507,8 @@ def create_quantity_keyboard(product_id):
     """Create keyboard for the quantity input step."""
     keyboard = [
         [
-            InlineKeyboardButton("🔙 Back", callback_data=f"product_{product_id}"),
-            InlineKeyboardButton("❌ Close", callback_data="cancel_purchase"),
+            InlineKeyboardButton("⬅ Back to Product", callback_data=f"product_{product_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)

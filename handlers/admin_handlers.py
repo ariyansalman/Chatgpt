@@ -1815,7 +1815,8 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
         # the counter and empty/list branch from this exact result so the
         # Back action cannot show a stale empty state beside live rows.
         tx_rows = _pui.pending_deposit_rows(session, sort_desc=True)
-        pending_review_count = len(tx_rows)
+        pmv_rows = _pui.pending_pmv_rows(session, sort_desc=True)
+        pending_review_count = len(tx_rows) + len(pmv_rows)
         for txn in tx_rows:
             _u = session.query(User).filter_by(id=txn.user_id).first()
             uname = (
@@ -1859,12 +1860,14 @@ async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT
             "Tap <b>Pending Deposits</b> to open the review queue."
         )
     else:
-        # This menu only ever reports on manual deposits (the same scope as
-        # handlers/admin_pending_deposits.py). It never references
-        # auto-confirmed gateways, webhooks, or their verification queues —
-        # those live on their own admin pages — so this header can never
-        # disagree with what the Pending Deposits list itself shows.
-        header = "💳 <b>Payments</b>\n\nNo manual deposits are waiting for review."
+        # This counter includes BOTH sources the unified Pending Deposits
+        # list shows (see handlers/admin_pending_deposits.py): Transaction
+        # rows for gateways with no API (Manual/bKash/Nagad) AND
+        # PendingManualVerification rows for any gateway whose own
+        # auto-verification failed (Binance Pay, Bybit Pay, ZiniPay, or any
+        # future gateway) — so this header can never disagree with what the
+        # Pending Deposits list itself shows.
+        header = "💳 <b>Payments</b>\n\nNo deposits are currently waiting for review."
 
     try:
         await query.edit_message_text(

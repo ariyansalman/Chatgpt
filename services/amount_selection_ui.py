@@ -41,6 +41,12 @@ CUSTOM_AMOUNT_CALLBACK = "topup_amt_custom"
 # Callback-data for the "❌ Cancel" button (shared with every other payment
 # page's Cancel button — see handlers/payment_handlers.py:cancel_topup).
 CANCEL_CALLBACK = "cancel"
+# Callback-data for this screen's "⬅️ Back" button. This is Step 1 of the
+# top-up flow, so Back means leaving the flow entirely and returning to the
+# Wallet screen it was opened from — NOT the shared "cancel" callback, which
+# instead re-shows the Payment Method screen (that behavior is still correct
+# for Cancel buttons found deeper in the flow, just not for this one).
+BACK_TO_WALLET_CALLBACK = "topup_back_to_wallet"
 
 
 def _format_preset_label(amount: float) -> str:
@@ -90,7 +96,7 @@ def build_amount_selection_screen(
         rows.append(row)
 
     rows.append([InlineKeyboardButton("✍️ Custom Amount", callback_data=CUSTOM_AMOUNT_CALLBACK)])
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data=CANCEL_CALLBACK)])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data=BACK_TO_WALLET_CALLBACK)])
 
     return text, InlineKeyboardMarkup(rows)
 
