@@ -666,24 +666,58 @@ def _apply_pending_migrations():
             f"ADD COLUMN IF NOT EXISTS {_col} BOOLEAN NOT NULL DEFAULT FALSE",
         )
 
-    # ── Ensure alembic_version is clean (single head) ─────────────────
-    # The migration chain has been fixed (20260916_search_indexes is the
-    # prior head; 20260920_paynotify is the current head). Remove any
-    # stale intermediate entries so alembic works cleanly.
+    # ── Auto-verification retry lock (transactions) ──────────────────────
+    # Mirrors alembic revision 20260921_autoverifylock. These columns back
+    # the DB-level lock + attempt counter used by
+    # services/payment_workflow.run_auto_verification_with_retries — they
+    # were added to the Transaction model but this hand-maintained
+    # auto-migration list was never updated to match, which is the direct
+    # cause of "column transactions.verification_in_progress does not
+    # exist" on deploys that skip `alembic upgrade head`. NOT NULL columns
+    # have server defaults so existing rows are backfilled automatically.
+    _run(
+        "ADD COL transactions.verification_in_progress",
+        "ALTER TABLE transactions "
+        "ADD COLUMN IF NOT EXISTS verification_in_progress BOOLEAN NOT NULL DEFAULT FALSE",
+    )
+    _run(
+        "ADD COL transactions.verification_locked_at",
+        "ALTER TABLE transactions "
+        "ADD COLUMN IF NOT EXISTS verification_locked_at TIMESTAMP NULL",
+    )
+    _run(
+        "ADD COL transactions.auto_verify_attempts",
+        "ALTER TABLE transactions "
+        "ADD COLUMN IF NOT EXISTS auto_verify_attempts INTEGER NOT NULL DEFAULT 0",
+    )
+
+    # ── Ensure alembic_version has no orphaned/bogus entries ───────────
+    # Previously this deleted anything NOT IN a hardcoded snapshot of
+    # revision ids — which silently went stale every time a new migration
+    # was added (it didn't even include 20260921_autoverifylock, the
+    # revision that adds the verification_in_progress/verification_locked_at/
+    # auto_verify_attempts columns) and would have wiped out a perfectly
+    # valid current head the next time `alembic upgrade head` stamped it.
+    # Instead, look up the real revision ids from alembic/versions/ itself
+    # so this can never go stale again, and only remove rows that don't
+    # correspond to ANY known revision (true orphans, e.g. from a reverted
+    # branch) rather than rows that are merely not the latest.
     try:
-        cur.execute(
-            "DELETE FROM alembic_version "
-            "WHERE version_num NOT IN ("
-            "  '20260920_paynotify',"
-            "  '20260919_product_soft_delete',"
-            "  '20260918_product_template_system',"
-            "  '20260917_enterprise_admin_notifications',"
-            "  '20260916_search_indexes',"
-            "  '20260915_enterprise_v45',"
-            "  '20260914_broadcast_campaign_manager'"
-            ")"
-        )
-        logger.debug("[AUTO-MIGRATION] alembic_version cleaned up")
+        from alembic.script import ScriptDirectory
+        from alembic.config import Config as _AlembicConfig
+        import os as _os
+
+        _ini = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "alembic.ini")
+        _known_revisions = {
+            rev.revision for rev in ScriptDirectory.from_config(_AlembicConfig(_ini)).walk_revisions()
+        }
+        if _known_revisions:
+            placeholders = ",".join(["%s"] * len(_known_revisions))
+            cur.execute(
+                f"DELETE FROM alembic_version WHERE version_num NOT IN ({placeholders})",
+                tuple(_known_revisions),
+            )
+            logger.debug("[AUTO-MIGRATION] alembic_version cleaned up (%d known revisions)", len(_known_revisions))
     except Exception as exc:
         logger.warning("[AUTO-MIGRATION] alembic_version cleanup skipped: %s", exc)
 
@@ -724,6 +758,25 @@ def main():
     except Exception:
         logger.exception("Auto-migration failed — bot will still start but "
                          "some features may not work until migrations are applied")
+
+    # ── Schema verification gate ────────────────────────────────────────
+    # The block above only covers a hand-maintained list of past migrations
+    # and can fall out of sync with database/models.py (that mismatch is
+    # exactly what caused the `transactions.verification_in_progress does
+    # not exist` crash). This compares the ORM models against the live
+    # database directly, auto-heals any drift it finds (alembic upgrade
+    # head first, then safe ADD COLUMN/CREATE TABLE IF NOT EXISTS), and — if
+    # drift remains even after that — refuses to start with a clear message
+    # instead of letting the bot come up and crash on the first query that
+    # touches the missing table/column.
+    try:
+        from database.db import engine as _schema_engine
+        from database.schema_check import ensure_schema_synced, SchemaOutOfSyncError
+        ensure_schema_synced(_schema_engine)
+    except SchemaOutOfSyncError as e:
+        logger.error(str(e))
+        print(str(e))
+        return
 
     # Initialize database
     try:
