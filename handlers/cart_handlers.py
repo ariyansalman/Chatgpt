@@ -28,7 +28,7 @@ from telegram import (
 )
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
-from database import get_db_session, run_db
+from database import get_db_session
 from database.models import (
     Cart, Coupon, CouponRedemption, DiscountType,
     Product, ProductVariant, ProductKey, StockReservation, User, ProductType,
@@ -96,7 +96,11 @@ def _revalidate_coupon_by_id(session, coupon_id: int, user_pk: int,
     return round(min(discount, subtotal), 2), ""
 
 
-def _load_cart_view(tg_id: int, lang: str):
+async def cart_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q: await q.answer()
+    tg_id = update.effective_user.id
+    lang = get_user_language(tg_id)
     lines = [t("cart.title", lang) + "\n"]
     kb: list[list[InlineKeyboardButton]] = []
     subtotal = 0.0
@@ -128,18 +132,6 @@ def _load_cart_view(tg_id: int, lang: str):
                     InlineKeyboardButton("+", callback_data=f"cart_inc_{row.id}"),
                     InlineKeyboardButton("🗑️", callback_data=f"cart_rm_{row.id}"),
                 ])
-    return lines, kb, subtotal
-
-
-async def cart_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    if q: await q.answer()
-    tg_id = update.effective_user.id
-    lang = get_user_language(tg_id)
-    # PERF: the cart read (and every DB call below) is synchronous
-    # SQLAlchemy/Postgres I/O — run it on a worker thread via run_db so it
-    # can't block the bot's single event loop for every other user.
-    lines, kb, subtotal = await run_db(_load_cart_view, tg_id, lang)
     lines.append(t("cart.subtotal", lang, subtotal=f"${subtotal:.2f}"))
     if subtotal > 0:
         kb.append([InlineKeyboardButton(t("cart.checkout_button", lang), callback_data="cart_checkout")])
@@ -162,26 +154,6 @@ async def cart_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                                  parse_mode="HTML")
 
 
-def _load_cart_add(tg_id: int, pid: int) -> dict:
-    """Sync DB work for cart_add — returns a plain-data result describing
-    what happened, so the caller can decide what to show the user without
-    doing any Telegram I/O inside the DB session/thread."""
-    with get_db_session() as s:
-        product = s.query(Product).filter(Product.id == pid,
-                                          Product.is_active == True).first()  # noqa: E712
-        if not product:
-            return {"status": "unavailable"}
-        active_vars = [v for v in product.variants if v.is_active]
-        if active_vars:
-            return {
-                "status": "pick_variant",
-                "product_name": product.name,
-                "variants": [(v.id, v.name, v.effective_price) for v in active_vars],
-            }
-        _add_row(s, tg_id, pid, None)
-        return {"status": "added"}
-
-
 async def cart_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Add product. If the product has active variants, show a variant picker."""
     q = update.callback_query
@@ -189,25 +161,26 @@ async def cart_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pid = int(q.data.rsplit("_", 1)[1])
     tg_id = update.effective_user.id
     lang = get_user_language(tg_id)
-    # PERF: run every synchronous DB call (product/variant lookup, and the
-    # cart insert/update itself) on a worker thread via run_db instead of
-    # directly on the bot's event loop.
-    result = await run_db(_load_cart_add, tg_id, pid)
-    if result["status"] == "unavailable":
-        await q.answer(t("cart.product_unavailable", lang), show_alert=True); return
-    if result["status"] == "pick_variant":
-        kb = [[InlineKeyboardButton(
-            f"{name} — ${price:.2f}",
-            callback_data=f"cart_addv_{pid}_{vid}")] for vid, name, price in result["variants"]]
-        kb.append([InlineKeyboardButton("🔙", callback_data=f"product_{pid}")])
-        try:
-            await q.edit_message_text(t("cart.pick_variant", lang, name=result["product_name"]),
-                                      reply_markup=InlineKeyboardMarkup(kb),
-                                      parse_mode="HTML")
-        except BadRequest as e:
-            if "Message is not modified" not in str(e):
-                raise
-        return
+    with get_db_session() as s:
+        product = s.query(Product).filter(Product.id == pid,
+                                          Product.is_active == True).first()  # noqa: E712
+        if not product:
+            await q.answer(t("cart.product_unavailable", lang), show_alert=True); return
+        active_vars = [v for v in product.variants if v.is_active]
+        if active_vars:
+            kb = [[InlineKeyboardButton(
+                f"{v.name} — ${v.effective_price:.2f}",
+                callback_data=f"cart_addv_{pid}_{v.id}")] for v in active_vars]
+            kb.append([InlineKeyboardButton("🔙", callback_data=f"product_{pid}")])
+            try:
+                await q.edit_message_text(t("cart.pick_variant", lang, name=product.name),
+                                          reply_markup=InlineKeyboardMarkup(kb),
+                                          parse_mode="HTML")
+            except BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    raise
+            return
+        await _add_row(s, update.effective_user.id, pid, None)
     await cart_view(update, context)
 
 
@@ -216,18 +189,13 @@ async def cart_add_variant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     _, _, pid, vid = q.data.split("_")
     pid, vid = int(pid), int(vid)
-
-    def _do_add():
-        with get_db_session() as s:
-            _add_row(s, update.effective_user.id, pid, vid)
-
-    # PERF: run on a worker thread via run_db instead of the event loop.
-    await run_db(_do_add)
+    with get_db_session() as s:
+        await _add_row(s, update.effective_user.id, pid, vid)
     await cart_view(update, context)
 
 
-def _add_row(session, tg_id: int, product_id: int,
-             variant_id: int | None) -> None:
+async def _add_row(session, tg_id: int, product_id: int,
+                   variant_id: int | None) -> None:
     user = _get_or_create_user(session, tg_id)
     existing = session.query(Cart).filter(
         Cart.user_id == user.id,
@@ -243,47 +211,23 @@ def _add_row(session, tg_id: int, product_id: int,
     session.commit()
 
 
-def _do_cart_inc(tg_id: int, row_id: int) -> str:
-    with get_db_session() as s:
-        row = s.query(Cart).filter(Cart.id == row_id,
-            Cart.user_id == _get_or_create_user(s, tg_id).id).first()
-        if not row:
-            return "row_gone"
-        avail = inventory.count_available(row.product_id, row.variant_id)
-        if row.quantity + 1 > max(1, avail):
-            return "no_stock"
-        row.quantity += 1
-        s.commit()
-        return "ok"
-
-
 async def cart_inc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     lang = get_user_language(update.effective_user.id)
     row_id = int(q.data.rsplit("_", 1)[1])
-    # PERF: DB read/write + the inventory count both run on a worker thread
-    # via run_db instead of blocking the event loop.
-    status = await run_db(_do_cart_inc, update.effective_user.id, row_id)
-    if status == "row_gone":
-        await q.answer(t("cart.row_gone", lang), show_alert=True); return
-    if status == "no_stock":
-        await q.answer(t("cart.no_stock", lang), show_alert=True)
-    await cart_view(update, context)
-
-
-def _do_cart_dec(tg_id: int, row_id: int) -> str:
     with get_db_session() as s:
         row = s.query(Cart).filter(Cart.id == row_id,
-            Cart.user_id == _get_or_create_user(s, tg_id).id).first()
+            Cart.user_id == _get_or_create_user(s, update.effective_user.id).id).first()
         if not row:
-            return "row_gone"
-        if row.quantity <= 1:
-            s.delete(row)
+            await q.answer(t("cart.row_gone", lang), show_alert=True); return
+        avail = inventory.count_available(row.product_id, row.variant_id)
+        if row.quantity + 1 > max(1, avail):
+            await q.answer(t("cart.no_stock", lang), show_alert=True)
         else:
-            row.quantity -= 1
-        s.commit()
-        return "ok"
+            row.quantity += 1
+            s.commit()
+    await cart_view(update, context)
 
 
 async def cart_dec(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -291,39 +235,38 @@ async def cart_dec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     lang = get_user_language(update.effective_user.id)
     row_id = int(q.data.rsplit("_", 1)[1])
-    status = await run_db(_do_cart_dec, update.effective_user.id, row_id)
-    if status == "row_gone":
-        await q.answer(t("cart.row_gone", lang), show_alert=True); return
-    await cart_view(update, context)
-
-
-def _do_cart_remove(tg_id: int, row_id: int) -> None:
     with get_db_session() as s:
         row = s.query(Cart).filter(Cart.id == row_id,
-            Cart.user_id == _get_or_create_user(s, tg_id).id).first()
-        if row:
-            s.delete(row); s.commit()
+            Cart.user_id == _get_or_create_user(s, update.effective_user.id).id).first()
+        if not row:
+            await q.answer(t("cart.row_gone", lang), show_alert=True); return
+        if row.quantity <= 1:
+            s.delete(row)
+        else:
+            row.quantity -= 1
+        s.commit()
+    await cart_view(update, context)
 
 
 async def cart_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     row_id = int(q.data.rsplit("_", 1)[1])
-    await run_db(_do_cart_remove, update.effective_user.id, row_id)
-    await cart_view(update, context)
-
-
-def _do_cart_clear(tg_id: int) -> None:
     with get_db_session() as s:
-        user = _get_or_create_user(s, tg_id)
-        s.query(Cart).filter(Cart.user_id == user.id).delete()
-        s.commit()
+        row = s.query(Cart).filter(Cart.id == row_id,
+            Cart.user_id == _get_or_create_user(s, update.effective_user.id).id).first()
+        if row:
+            s.delete(row); s.commit()
+    await cart_view(update, context)
 
 
 async def cart_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    await run_db(_do_cart_clear, update.effective_user.id)
+    with get_db_session() as s:
+        user = _get_or_create_user(s, update.effective_user.id)
+        s.query(Cart).filter(Cart.user_id == user.id).delete()
+        s.commit()
     await cart_view(update, context)
 
 
@@ -385,29 +328,6 @@ def _revalidate_cart(session, user_id: int, lang: str = "en"):
     return valid, errors, subtotal
 
 
-def _load_checkout(tg_id: int, lang: str, coupon_id, coupon_code: str):
-    with get_db_session() as s:
-        user = _get_or_create_user(s, tg_id)
-        valid, errors, subtotal = _revalidate_cart(s, user.id, lang)
-        balance = float(user.wallet_balance or 0)
-
-        # ── Coupon: re-validate from DB (not trusting user_data cache) ──
-        coupon_discount = 0.0
-        coupon_rejected = False
-        if coupon_id and valid:
-            discount_val, coupon_err = _revalidate_coupon_by_id(
-                s, coupon_id, user.id, subtotal
-            )
-            if coupon_err:
-                logger.info("Cart coupon %s rejected at checkout preview: %s",
-                            coupon_id, coupon_err)
-                coupon_rejected = True
-                coupon_code = ''
-            else:
-                coupon_discount = discount_val
-    return valid, errors, subtotal, balance, coupon_discount, coupon_rejected, coupon_code
-
-
 async def cart_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show real checkout confirmation screen for wallet payment."""
     q = update.callback_query
@@ -415,20 +335,30 @@ async def cart_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tg_id = update.effective_user.id
     lang = get_user_language(tg_id)
 
-    coupon_id = context.user_data.get('purchase_coupon_id')
-    coupon_code = context.user_data.get('purchase_coupon_code', '')
-    # PERF: cart/coupon revalidation is synchronous DB I/O — run it on a
-    # worker thread via run_db instead of blocking the event loop.
-    valid, errors, subtotal, balance, coupon_discount, coupon_rejected, coupon_code = (
-        await run_db(_load_checkout, tg_id, lang, coupon_id, coupon_code)
-    )
-    if coupon_rejected:
-        for k in ('purchase_coupon_id', 'purchase_coupon_code',
-                  'purchase_coupon_discount'):
-            context.user_data.pop(k, None)
-        coupon_id = None
-    elif coupon_id and valid:
-        context.user_data['purchase_coupon_discount'] = coupon_discount
+    with get_db_session() as s:
+        user = _get_or_create_user(s, tg_id)
+        valid, errors, subtotal = _revalidate_cart(s, user.id, lang)
+        balance = float(user.wallet_balance or 0)
+
+        # ── Coupon: re-validate from DB (not trusting user_data cache) ──
+        coupon_id = context.user_data.get('purchase_coupon_id')
+        coupon_discount = 0.0
+        coupon_code = context.user_data.get('purchase_coupon_code', '')
+        if coupon_id and valid:
+            discount_val, coupon_err = _revalidate_coupon_by_id(
+                s, coupon_id, user.id, subtotal
+            )
+            if coupon_err:
+                logger.info("Cart coupon %s rejected at checkout preview: %s",
+                            coupon_id, coupon_err)
+                for k in ('purchase_coupon_id', 'purchase_coupon_code',
+                          'purchase_coupon_discount'):
+                    context.user_data.pop(k, None)
+                coupon_id = None
+                coupon_code = ''
+            else:
+                coupon_discount = discount_val
+                context.user_data['purchase_coupon_discount'] = coupon_discount
 
     if not valid:
         text = t("cart.cannot_checkout_title", lang)

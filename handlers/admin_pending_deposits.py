@@ -742,7 +742,7 @@ async def deposit_approve_execute(update: Update, context: ContextTypes.DEFAULT_
                         order_id=tx_id,
                         txn_id=txn_ref,
                         extra=[("💵", "Credited", f"${credited_usd:.2f}")],
-                        note="🎉 Your wallet has been credited successfully. Thank you for using our service!",
+                        note="🎉 Your wallet has been updated successfully.",
                     )
                 ),
                 parse_mode="HTML",

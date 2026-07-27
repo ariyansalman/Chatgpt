@@ -142,17 +142,6 @@ def guarded_callback(fallback_state=None, busy_alert: str = "⏳ Still working o
 
             if key is not None:
                 context.user_data[key] = True
-
-            # PERF: acknowledge the tap immediately, before the wrapped handler
-            # does any work (DB queries, gateway calls, etc.). Telegram shows the
-            # button's loading spinner until answer() is received, so answering
-            # up front — rather than only guaranteeing an eventual answer via the
-            # except-block fallback below — is what makes every button feel
-            # instant regardless of how long the handler's own processing takes.
-            # safe_answer() is idempotent/never raises, and a handler that also
-            # calls query.answer() itself later (e.g. with an alert) still works
-            # fine — Telegram/​safe_answer just treats the repeat call as benign.
-            await safe_answer(query)
             try:
                 return await func(update, context, *args, **kwargs)
             except Exception:
