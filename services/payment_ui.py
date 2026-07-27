@@ -1222,6 +1222,105 @@ def deposit_success_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Universal "Verifying Payment" status flow
+#
+# ONE shared visual language for the moment between "user just submitted a
+# TXID / Transaction ID / TrxID / Order ID / payment proof" and "we have a
+# final answer" — used identically by every gateway (Binance Pay, Bybit
+# Pay, every on-chain network, bKash, Nagad, Rocket, generic manual, and
+# any gateway added later) so the user is never left staring at their own
+# input with no feedback while auto-verification runs.
+#
+#   1. verifying_card() / verifying_keyboard() — shown the instant the
+#      submission is received, before any verification call is made.
+#      Buttons are swapped for inert "noop" buttons (see bot.py's shared
+#      no-op handler) so nothing is tappable while the check is running.
+#   2. verification_in_progress_card() — shown when auto-verification
+#      could not reach a definitive answer within its automatic attempts
+#      but hasn't been rejected either (e.g. the network confirmation is
+#      just slow) — a softer state than a hard failure.
+#   3. On a definitive outcome, callers reuse the existing
+#      deposit_success_card()/deposit_success_keyboard() (verified) or
+#      pending_review_card()/pending_review_keyboard() (queued for admin
+#      manual review) — unchanged, so the final screens look exactly as
+#      they always have.
+# ─────────────────────────────────────────────────────────────────────────
+
+def verifying_card() -> str:
+    """Shown immediately after the user submits a TXID / Transaction ID /
+    TrxID / Order ID / payment proof, for every gateway, while automatic
+    verification runs. Never skipped and never left showing indefinitely —
+    callers always follow up with a definitive edit once verification
+    resolves."""
+    return (
+        "⏳ <b>Verifying Payment</b>\n\n"
+        "Your payment information has been received.\n\n"
+        "🔍 Verifying your payment...\n"
+        "⏱ Please wait a few seconds."
+    )
+
+
+def verifying_keyboard() -> InlineKeyboardMarkup:
+    """All action buttons 'disabled' while auto-verification is running.
+    Real Telegram buttons can't be greyed out, so — consistent with this
+    bot's existing no-op convention (pagination labels, section dividers)
+    — this shows a single inert button routed to the shared noop handler
+    instead of a live action, rather than leaving the impression that
+    tapping something will do anything right now."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏳ Verifying…", callback_data="noop")],
+    ])
+
+
+def verification_in_progress_card(
+    *,
+    gateway_key: Optional[str] = None,
+    gateway_label_override: Optional[str] = None,
+    amount: Optional[str] = None,
+    order_id=None,
+    txn_id: Optional[str] = None,
+) -> str:
+    """Shown when automatic verification exhausted its attempts without a
+    definitive success OR failure — e.g. the network confirmation is just
+    running slower than usual. Distinct from pending_review_card (used
+    when verification came back with a definitive negative result and the
+    deposit has been queued for admin review): this is a softer "still
+    working on it" state."""
+    label, _emoji = gateway_meta(gateway_key, gateway_label_override)
+    dep_id = _display_deposit_id(order_id)
+    show_txn_id = bool(txn_id) and str(txn_id) != str(dep_id)
+
+    lines = ["🔄 <b>Verification In Progress</b>", "", f"💳 {label}"]
+    if amount:
+        lines.append(f"💰 {copy_code(amount)}")
+    lines.append("")
+    if dep_id:
+        lines.append(f"🆔 {copy_code(dep_id)}")
+    if show_txn_id:
+        lines.append(f"🔗 {copy_code(txn_id)}")
+    lines.append("")
+    lines.append(
+        "We're still confirming this payment — this can take a little "
+        "longer than usual. You'll be notified the moment it's verified, "
+        "and our team is on standby if it needs a closer look."
+    )
+    return "\n".join(lines)
+
+
+async def edit_or_reply(message, text: str, *, reply_markup=None, parse_mode: str = 'HTML'):
+    """Edit an existing status message in place; if that fails for any
+    reason (deleted, too old, never sent), send a fresh reply instead so
+    the user always ends up with a final answer. Returns the Message that
+    ends up carrying the final text, so callers can keep chaining edits
+    (e.g. remember_pending_message) off of it."""
+    try:
+        await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+        return message
+    except Exception:
+        return await message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+
+
 def payment_failed_keyboard(retry_cb: str = "topup") -> InlineKeyboardMarkup:
     """Standard keyboard shown whenever a payment could not go through:
     🔄 Try Again · 📞 Contact Support · 🏠 Back to Menu."""

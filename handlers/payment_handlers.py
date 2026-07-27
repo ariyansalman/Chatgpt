@@ -1426,7 +1426,17 @@ async def payment_manual_proof(update: Update, context: ContextTypes.DEFAULT_TYP
     # for the BDT->USD conversion applied when the admin approves.
     amount_line = f"৳{amount:.2f} BDT" if is_gateway_manual else f"${amount:.2f}"
 
-    await update.message.reply_text(
+    # Manual payment methods have no live auto-verification step (a human
+    # always makes the final call) — but the user should still see the
+    # same "Verifying Payment" acknowledgment every other gateway shows
+    # immediately after a submission, instead of jumping straight from
+    # their input to a final screen with no feedback in between.
+    processing_msg = await update.message.reply_text(
+        pui.verifying_card(), reply_markup=pui.verifying_keyboard(), parse_mode='HTML',
+    )
+
+    await pui.edit_or_reply(
+        processing_msg,
         pui.pending_review_card(
             gateway_key="manual",
             gateway_label_override=method_name,
@@ -1435,7 +1445,6 @@ async def payment_manual_proof(update: Update, context: ContextTypes.DEFAULT_TYP
             txn_id=stored_txid,
         ),
         reply_markup=pui.pending_review_keyboard(),
-        parse_mode='HTML',
     )
 
     # Notify admin with the standardized review card + action buttons.
@@ -2623,11 +2632,16 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
 
     # ---- Step 1: Auto-verify — retried automatically several times before
     # this ever reaches manual review (services/payment_workflow.py). ----
-    processing_msg = await update.message.reply_text("⏳ Verifying your transaction…")
+    # Never leave the user on the input screen: show the standard
+    # "Verifying Payment" status immediately, with all action buttons
+    # disabled, while auto-verification runs.
+    processing_msg = await update.message.reply_text(
+        pui.verifying_card(), reply_markup=pui.verifying_keyboard(), parse_mode='HTML',
+    )
 
     from services.payment_workflow import (
         run_auto_verification_with_retries, VerificationLockBusy,
-        VERIFY_SUCCESS, VERIFY_TERMINAL, VERIFY_RETRYABLE,
+        VERIFY_SUCCESS, VERIFY_TERMINAL, VERIFY_RETRYABLE, VERIFY_EXHAUSTED,
     )
 
     svc = ZiniPayService()
@@ -2646,7 +2660,7 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         return VERIFY_RETRYABLE, svc.last_error or "verification not confirmed yet"
 
     try:
-        verify_result, _verify_kind, _verify_detail = await run_auto_verification_with_retries(
+        verify_result, verify_kind, _verify_detail = await run_auto_verification_with_retries(
             gateway_id="zinipay",
             tx_id=tx_id,
             attempt_fn=lambda: svc.verify_transaction(amount=bdt_amount, transaction_id=txid_raw),
@@ -2659,6 +2673,12 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
             "⏳ Your previous submission for this order is still being verified — please wait."
         )
         return ZINIPAY_TXID
+
+    # VERIFY_EXHAUSTED (ran out of automatic attempts without a definitive
+    # yes/no — e.g. a slow network confirmation) reads better to the user
+    # as "still in progress" than as a hard failure. Purely cosmetic: the
+    # deposit is still queued for admin review exactly as before.
+    _still_processing = verify_result is None and verify_kind == VERIFY_EXHAUSTED
 
     if verify_result is None:
         error_detail = svc.last_error or "Unknown error"
@@ -2784,10 +2804,16 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
             )
         elif pmv_id:
             _provider_label, _provider_emoji = pui.zinipay_provider_meta(provider=selected_provider)
-            user_msg = pui.pending_review_card(
-                payment_method=f"{_provider_emoji} {_provider_label}",
-                amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
-            )
+            if _still_processing:
+                user_msg = pui.verification_in_progress_card(
+                    gateway_label_override=f"{_provider_emoji} {_provider_label}",
+                    amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
+                )
+            else:
+                user_msg = pui.pending_review_card(
+                    payment_method=f"{_provider_emoji} {_provider_label}",
+                    amount=f"৳{bdt_amount:.2f} BDT", order_id=tx_id, txn_id=txid_raw,
+                )
             pending_review_kb = pui.pending_review_keyboard()
         elif "already used" in lower_err or "duplicate" in lower_err:
             user_msg = "❌ This Transaction ID has already been used."
@@ -3242,16 +3268,26 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         currency = tx.crypto_address or "USDT"
         user_id = tx.user_id
 
+    # Never leave the user on the input screen: show the standard
+    # "Verifying Payment" status immediately, with all action buttons
+    # disabled, while auto-verification runs.
+    processing_msg = await update.message.reply_text(
+        pui.verifying_card(), reply_markup=pui.verifying_keyboard(), parse_mode='HTML',
+    )
+
     # Prevent two concurrent submissions for the SAME order from both
     # racing the (slow) Binance API call in parallel.
     lock = get_order_lock(telegram_id, tx_id)
     if not lock.acquire(blocking=False):
-        await update.message.reply_text("⏳ Your previous submission for this order is still being verified — please wait.")
+        await pui.edit_or_reply(
+            processing_msg,
+            "⏳ Your previous submission for this order is still being verified — please wait.",
+        )
         return BINANCE_TXID
 
     from services.payment_workflow import (
         run_auto_verification_with_retries, VerificationLockBusy,
-        VERIFY_SUCCESS, VERIFY_TERMINAL, VERIFY_RETRYABLE,
+        VERIFY_SUCCESS, VERIFY_TERMINAL, VERIFY_RETRYABLE, VERIFY_EXHAUSTED,
     )
 
     # Outcomes that are deterministic — will not change on retry — so the
@@ -3275,7 +3311,7 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
     svc = BinancePayService()
     try:
         try:
-            result, _verify_kind, _verify_detail = await run_auto_verification_with_retries(
+            result, verify_kind, _verify_detail = await run_auto_verification_with_retries(
                 gateway_id="binance_pay",
                 tx_id=tx_id,
                 attempt_fn=lambda: svc.verify_transaction(
@@ -3287,17 +3323,27 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                 submitted_txid=txid_raw,
             )
         except VerificationLockBusy:
-            await update.message.reply_text(
-                "⏳ Your previous submission for this order is still being verified — please wait."
+            await pui.edit_or_reply(
+                processing_msg,
+                "⏳ Your previous submission for this order is still being verified — please wait.",
             )
             return BINANCE_TXID
     finally:
         lock.release()
 
+    # VERIFY_EXHAUSTED (ran out of automatic attempts without a definitive
+    # yes/no) reads better to the user as "still in progress" than as a
+    # hard failure. Purely cosmetic: the deposit is still queued for admin
+    # review exactly as before.
+    _still_processing = verify_kind == VERIFY_EXHAUSTED
+
     # ---- Outcomes that are clear, pre-API-call user errors — return inline,
     # no admin notification (nothing for an admin to review yet). ----
     if result.outcome == VerificationOutcome.NOT_CONFIGURED:
-        await update.message.reply_text("⚠️ Binance verification is temporarily unavailable.\n\nPlease try again shortly.")
+        await pui.edit_or_reply(
+            processing_msg,
+            "⚠️ Binance verification is temporarily unavailable.\n\nPlease try again shortly.",
+        )
         return BINANCE_TXID
 
     # ---- Every outcome that actually reached the Binance API but wasn't a
@@ -3423,10 +3469,13 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                 except Exception:
                     logger.exception("Failed to send admin notification(s) for Binance manual verification")
 
-        # User-facing message
+        # User-facing message — edit the "Verifying Payment" status message
+        # in place rather than sending a new one, so the user always sees
+        # one screen resolve to its final state.
         if result.outcome == VerificationOutcome.AMOUNT_MISMATCH:
             if pmv_id:
-                sent = await update.message.reply_text(
+                sent = await pui.edit_or_reply(
+                    processing_msg,
                     pui.pending_review_card(
                         gateway_key="binance_pay",
                         amount=f"{expected_amount} {currency}", order_id=tx_id, txn_id=txid_raw,
@@ -3435,27 +3484,36 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
                              "will review your payment shortly.",
                     ),
                     reply_markup=pui.pending_review_keyboard(),
-                    parse_mode='HTML',
                 )
                 pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
             else:
-                await update.message.reply_text(
+                await pui.edit_or_reply(
+                    processing_msg,
                     "❌ Payment amount mismatch.\n\n"
                     f"Expected: {expected_amount} {currency}\n"
-                    f"Received: {result.received_amount} {result.currency or currency}"
+                    f"Received: {result.received_amount} {result.currency or currency}",
                 )
         elif pmv_id:
-            sent = await update.message.reply_text(
+            status_card = (
+                pui.verification_in_progress_card(
+                    gateway_key="binance_pay",
+                    amount=f"{expected_amount} {currency}", order_id=tx_id, txn_id=txid_raw,
+                )
+                if _still_processing else
                 pui.pending_review_card(
                     gateway_key="binance_pay",
                     amount=f"{expected_amount} {currency}", order_id=tx_id, txn_id=txid_raw,
-                ),
-                reply_markup=pui.pending_review_keyboard(),
-                parse_mode='HTML',
+                )
+            )
+            sent = await pui.edit_or_reply(
+                processing_msg, status_card, reply_markup=pui.pending_review_keyboard(),
             )
             pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
         else:
-            await update.message.reply_text("❌ Transaction could not be verified.\n\nPlease check the Transaction ID and try again.")
+            await pui.edit_or_reply(
+                processing_msg,
+                "❌ Transaction could not be verified.\n\nPlease check the Transaction ID and try again.",
+            )
         return BINANCE_TXID
 
     # ---- Verified — log the successful attempt, then credit the wallet
@@ -3490,7 +3548,7 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
         ).update({Transaction.status: TransactionStatus.COMPLETED, Transaction.completed_at: datetime.utcnow()},
                  synchronize_session=False)
         if flipped == 0:
-            await update.message.reply_text("❌ This order is no longer pending.")
+            await pui.edit_or_reply(processing_msg, "❌ This order is no longer pending.")
             context.user_data.pop('binance_tx_id', None)
             return ConversationHandler.END
 
@@ -3534,8 +3592,9 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
             except WalletError:
                 logger.exception("Binance Pay wallet credit failed for tx %s", tx_id)
                 session.rollback()
-                await update.message.reply_text(
-                    "⚠️ Verification succeeded but crediting your balance failed. Please contact support with your Deposit ID: %s" % pui.format_deposit_id(tx_id)
+                await pui.edit_or_reply(
+                    processing_msg,
+                    "⚠️ Verification succeeded but crediting your balance failed. Please contact support with your Deposit ID: %s" % pui.format_deposit_id(tx_id),
                 )
                 context.user_data.pop('binance_tx_id', None)
                 return ConversationHandler.END
@@ -3558,11 +3617,15 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data.pop('binance_tx_id', None)
 
     if dup:
-        await update.message.reply_text("❌ This transaction has already been used.")
+        await pui.edit_or_reply(processing_msg, "❌ This transaction has already been used.")
         return ConversationHandler.END
 
+    # ---- Verified — show the existing "Payment Verified / Deposit
+    # Successful" card and credit the wallet (already done above). Edited
+    # in place over the "Verifying Payment" status message. ----
     _bonus_str = f"+{bonus_amount:.2f} USD" if bonus_amount else None
-    await update.message.reply_text(
+    await pui.edit_or_reply(
+        processing_msg,
         pui.deposit_success_card(
             amount=f"${credited_usd:.2f} USD",
             payment_method="Binance Pay",
@@ -3570,7 +3633,6 @@ async def binance_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
             bonus_line=_bonus_str,
         ),
         reply_markup=pui.deposit_success_keyboard(),
-        parse_mode='HTML',
     )
     return ConversationHandler.END
 
@@ -4211,16 +4273,26 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text("❌ This transaction has already been used.")
             return BYBIT_TXID
 
+    # Never leave the user on the input screen: show the standard
+    # "Verifying Payment" status immediately, with all action buttons
+    # disabled, while auto-verification runs.
+    processing_msg = await update.message.reply_text(
+        pui.verifying_card(), reply_markup=pui.verifying_keyboard(), parse_mode='HTML',
+    )
+
     # Prevent two concurrent submissions for the SAME order from both
     # racing the (slow) Bybit API call in parallel.
     lock = bybit_get_order_lock(telegram_id, tx_id)
     if not lock.acquire(blocking=False):
-        await update.message.reply_text("⏳ Your previous submission for this order is still being verified — please wait.")
+        await pui.edit_or_reply(
+            processing_msg,
+            "⏳ Your previous submission for this order is still being verified — please wait.",
+        )
         return BYBIT_TXID
 
     from services.payment_workflow import (
         run_auto_verification_with_retries, VerificationLockBusy,
-        VERIFY_SUCCESS, VERIFY_TERMINAL, VERIFY_RETRYABLE,
+        VERIFY_SUCCESS, VERIFY_TERMINAL, VERIFY_RETRYABLE, VERIFY_EXHAUSTED,
     )
 
     # Outcomes that are deterministic — will not change on retry.
@@ -4256,7 +4328,7 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                 tolerance=verify_tolerance,
             )
         try:
-            result, _verify_kind, _verify_detail = await run_auto_verification_with_retries(
+            result, verify_kind, _verify_detail = await run_auto_verification_with_retries(
                 gateway_id="bybit_pay",
                 tx_id=tx_id,
                 attempt_fn=attempt_fn,
@@ -4265,16 +4337,23 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                 submitted_txid=txid_raw,
             )
         except VerificationLockBusy:
-            await update.message.reply_text(
-                "⏳ Your previous submission for this order is still being verified — please wait."
+            await pui.edit_or_reply(
+                processing_msg,
+                "⏳ Your previous submission for this order is still being verified — please wait.",
             )
             return BYBIT_TXID
     finally:
         lock.release()
 
+    # VERIFY_EXHAUSTED (ran out of automatic attempts without a definitive
+    # yes/no) reads better to the user as "still in progress" than as a
+    # hard failure. Purely cosmetic: the deposit is still queued for admin
+    # review exactly as before.
+    _still_processing = verify_kind == VERIFY_EXHAUSTED
+
     # ---- Outcomes that are clear user errors — return inline, no admin notification. ----
     if result.outcome == BybitVerificationOutcome.CURRENCY_MISMATCH:
-        await update.message.reply_text("❌ Unsupported payment currency.")
+        await pui.edit_or_reply(processing_msg, "❌ Unsupported payment currency.")
         return BYBIT_TXID
 
     # ---- Outcomes that warrant admin review — log + queue + notify. ----
@@ -4410,7 +4489,8 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if result.outcome == BybitVerificationOutcome.AMOUNT_MISMATCH:
             if pmv_id:
-                sent = await update.message.reply_text(
+                sent = await pui.edit_or_reply(
+                    processing_msg,
                     pui.pending_review_card(
                         gateway_key="bybit_pay",
                         amount=f"{expected_amount} {verify_currency}", order_id=tx_id, txn_id=txid_raw,
@@ -4419,23 +4499,29 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                              "will review your payment shortly.",
                     ),
                     reply_markup=pui.pending_review_keyboard(),
-                    parse_mode='HTML',
                 )
                 pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
             else:
-                await update.message.reply_text(
+                await pui.edit_or_reply(
+                    processing_msg,
                     "❌ Payment amount mismatch.\n\n"
                     f"Expected: {expected_amount} {verify_currency}\n"
-                    f"Received: {result.received_amount} {result.currency or verify_currency}"
+                    f"Received: {result.received_amount} {result.currency or verify_currency}",
                 )
         elif pmv_id:
-            sent = await update.message.reply_text(
+            status_card = (
+                pui.verification_in_progress_card(
+                    gateway_key="bybit_pay",
+                    amount=f"{expected_amount} {verify_currency}", order_id=tx_id, txn_id=txid_raw,
+                )
+                if _still_processing else
                 pui.pending_review_card(
                     gateway_key="bybit_pay",
                     amount=f"{expected_amount} {verify_currency}", order_id=tx_id, txn_id=txid_raw,
-                ),
-                reply_markup=pui.pending_review_keyboard(),
-                parse_mode='HTML',
+                )
+            )
+            sent = await pui.edit_or_reply(
+                processing_msg, status_card, reply_markup=pui.pending_review_keyboard(),
             )
             pui.remember_pending_message(pmv_id, sent.chat_id, sent.message_id)
         else:
@@ -4443,7 +4529,7 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
             friendly = error_map.get(
                 result.outcome, "❌ Transaction could not be verified.\n\nPlease check the Transaction ID and try again."
             )
-            await update.message.reply_text(friendly)
+            await pui.edit_or_reply(processing_msg, friendly)
         return BYBIT_TXID
 
     # ---- Verified — log the successful attempt, then credit the wallet exactly once, atomically. ----
@@ -4476,7 +4562,7 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
         ).update({Transaction.status: TransactionStatus.COMPLETED, Transaction.completed_at: datetime.utcnow()},
                  synchronize_session=False)
         if flipped == 0:
-            await update.message.reply_text("❌ This order is no longer pending.")
+            await pui.edit_or_reply(processing_msg, "❌ This order is no longer pending.")
             context.user_data.pop('bybit_tx_id', None)
             return ConversationHandler.END
 
@@ -4522,8 +4608,9 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
             except WalletError:
                 logger.exception("Bybit Pay wallet credit failed for tx %s", tx_id)
                 session.rollback()
-                await update.message.reply_text(
-                    "⚠️ Verification succeeded but crediting your balance failed. Please contact support with your Deposit ID: %s" % pui.format_deposit_id(tx_id)
+                await pui.edit_or_reply(
+                    processing_msg,
+                    "⚠️ Verification succeeded but crediting your balance failed. Please contact support with your Deposit ID: %s" % pui.format_deposit_id(tx_id),
                 )
                 context.user_data.pop('bybit_tx_id', None)
                 return ConversationHandler.END

@@ -2333,7 +2333,11 @@ def main():
     application.add_handler(CommandHandler("panel", _panel_command))
 
     # ── noop handler — must come AFTER specific patterns to avoid false positives ──
-    application.add_handler(CallbackQueryHandler(lambda u, c: None, pattern="^noop$"))
+    async def _noop_handler(update, context):
+        # Acknowledge the callback so Telegram doesn't show a loading spinner,
+        # but do nothing else. Must be async — PTB awaits every callback handler.
+        await update.callback_query.answer()
+    application.add_handler(CallbackQueryHandler(_noop_handler, pattern="^noop$"))
 
     # ─── V18: User Features (Wishlist, Price Alerts, Recently Viewed,
     #          Quick Buy, Preferred Payment, Buy Again) ─────────────────────────
