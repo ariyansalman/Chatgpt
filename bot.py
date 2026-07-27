@@ -1893,13 +1893,13 @@ def main():
     # registered in services/payment_gateway_registry.py reaches the same
     # Approve/Reject/Verify-Again workflow through these gateway-agnostic
     # handlers — no new registration needed when a gateway is added.
+    # (Reject-with-reason for these gateways is an entry point on the
+    # ConversationHandler above — admin_reject_start now handles both the
+    # legacy admin_<gateway>_reject_start_ pattern AND the generic
+    # admin_pmv_reject_start_{gateway}_ pattern.)
     application.add_handler(CallbackQueryHandler(
         payment_handlers.admin_pmv_generic_approve,
         pattern=r"^admin_pmv_approve_[a-zA-Z0-9_]+_\d+_\d+$",
-    ))
-    application.add_handler(CallbackQueryHandler(
-        payment_handlers.admin_pmv_generic_reject,
-        pattern=r"^admin_pmv_reject_[a-zA-Z0-9_]+_\d+_\d+$",
     ))
     application.add_handler(CallbackQueryHandler(
         payment_handlers.admin_pmv_generic_verify,

@@ -5394,6 +5394,9 @@ async def cancel_payment_page(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def check_pending_payments(context: ContextTypes.DEFAULT_TYPE):
     """Background job to check pending payment transactions (non-blocking)."""
     import asyncio
+    from services.payment_workflow import (
+        acquire_verification_lock, release_verification_lock, log_verification_attempt,
+    )
 
     def _check_and_process_payments_sync():
         """Synchronous database operations run in thread pool."""
@@ -5409,45 +5412,87 @@ async def check_pending_payments(context: ContextTypes.DEFAULT_TYPE):
                 if transaction.expires_at and datetime.utcnow() > transaction.expires_at:
                     continue  # Will be handled by check_expired_payments
 
-                # Verify payment based on payment method. Each check is
-                # isolated in its own try/except: an unexpected exception
-                # from one gateway/transaction (network blip, malformed
-                # stored reference, etc.) must never abort this whole
-                # polling cycle and silently skip every OTHER pending
-                # deposit — it just leaves this one is_paid=False and lets
-                # the next poll cycle retry it.
-                is_paid = False
-                try:
-                    if transaction.payment_method == PaymentMethod.CRYPTO_WALLET:
-                        crypto_service = CryptoBotService()
-                        is_paid = crypto_service.check_payment_status(transaction.crypto_address, transaction.amount)
-                    elif transaction.payment_method == PaymentMethod.BKASH:
-                        bkash_service = BkashPaymentService()
-                        is_paid = bkash_service.check_payment_status(transaction.crypto_address, transaction.amount)
-                    elif transaction.payment_method == PaymentMethod.NAGAD:
-                        nagad_service = NagadPaymentService()
-                        is_paid = nagad_service.check_payment_status(transaction.crypto_address, transaction.amount)
-                    elif transaction.payment_method == PaymentMethod.CRYPTOMUS:
-                        cryptomus_service = CryptomusPaymentService()
-                        is_paid = cryptomus_service.check_payment_status(transaction.crypto_address, transaction.amount)
-                    elif transaction.payment_method == PaymentMethod.NOWPAYMENTS:
-                        nowpayments_service = NowPaymentsService()
-                        is_paid = nowpayments_service.check_payment_status(transaction.crypto_address, transaction.amount)
-                    # NOTE: PaymentMethod.ZINIPAY is no longer polled here.
-                    # The new ZiniPay flow is user-driven (verify+confirm on TXID
-                    # submission) — there is no background polling or webhook.
-                    # Pending ZINIPAY transactions are cleaned up by
-                    # check_expired_payments as usual.
-                except Exception:
-                    logger.warning(
-                        "[POLL] gateway status check raised for tx %s (%s) — "
-                        "leaving PENDING for the next poll cycle",
-                        transaction.id,
-                        transaction.payment_method.value if transaction.payment_method else "?",
-                        exc_info=True,
-                    )
-                    is_paid = False
+                # These four methods are plain boolean check_payment_status()
+                # gateways (no user-submitted TXID, no rich outcome
+                # classifier) — CRYPTO_WALLET's registry id differs from its
+                # enum value (see the same mapping in check_expired_payments).
+                _POLL_GATEWAY_ID = {
+                    PaymentMethod.CRYPTO_WALLET: "cryptobot",
+                    PaymentMethod.BKASH: "bkash",
+                    PaymentMethod.NAGAD: "nagad",
+                    PaymentMethod.CRYPTOMUS: "cryptomus",
+                    PaymentMethod.NOWPAYMENTS: "nowpayments",
+                }.get(transaction.payment_method)
 
+                # Claim the same per-order verification lock the retry engine
+                # uses, so a concurrent admin "Verify Again" tap (or an
+                # overlapping run of this same job) can't check/credit this
+                # transaction at the same time. Not a failure if busy — just
+                # skip this transaction for this cycle and retry next time.
+                got_lock = True
+                if _POLL_GATEWAY_ID:
+                    got_lock = acquire_verification_lock(session, transaction.id)
+                    session.commit()
+                if not got_lock:
+                    continue
+
+                try:
+                    # Verify payment based on payment method. Each check is
+                    # isolated in its own try/except: an unexpected exception
+                    # from one gateway/transaction (network blip, malformed
+                    # stored reference, etc.) must never abort this whole
+                    # polling cycle and silently skip every OTHER pending
+                    # deposit — it just leaves this one is_paid=False and lets
+                    # the next poll cycle retry it.
+                    is_paid = False
+                    attempt_detail = ""
+                    try:
+                        if transaction.payment_method == PaymentMethod.CRYPTO_WALLET:
+                            crypto_service = CryptoBotService()
+                            is_paid = crypto_service.check_payment_status(transaction.crypto_address, transaction.amount)
+                        elif transaction.payment_method == PaymentMethod.BKASH:
+                            bkash_service = BkashPaymentService()
+                            is_paid = bkash_service.check_payment_status(transaction.crypto_address, transaction.amount)
+                        elif transaction.payment_method == PaymentMethod.NAGAD:
+                            nagad_service = NagadPaymentService()
+                            is_paid = nagad_service.check_payment_status(transaction.crypto_address, transaction.amount)
+                        elif transaction.payment_method == PaymentMethod.CRYPTOMUS:
+                            cryptomus_service = CryptomusPaymentService()
+                            is_paid = cryptomus_service.check_payment_status(transaction.crypto_address, transaction.amount)
+                        elif transaction.payment_method == PaymentMethod.NOWPAYMENTS:
+                            nowpayments_service = NowPaymentsService()
+                            is_paid = nowpayments_service.check_payment_status(transaction.crypto_address, transaction.amount)
+                        # NOTE: PaymentMethod.ZINIPAY is no longer polled here.
+                        # The new ZiniPay flow is user-driven (verify+confirm on TXID
+                        # submission) — there is no background polling or webhook.
+                        # Pending ZINIPAY transactions are cleaned up by
+                        # check_expired_payments as usual.
+                    except Exception as _poll_exc:
+                        attempt_detail = f"{type(_poll_exc).__name__}: {_poll_exc}"
+                        logger.warning(
+                            "[POLL] gateway status check raised for tx %s (%s) — "
+                            "leaving PENDING for the next poll cycle",
+                            transaction.id,
+                            transaction.payment_method.value if transaction.payment_method else "?",
+                            exc_info=True,
+                        )
+                        is_paid = False
+
+                    if _POLL_GATEWAY_ID:
+                        log_verification_attempt(
+                            gateway_id=_POLL_GATEWAY_ID,
+                            tx_id=transaction.id,
+                            submitted_txid=transaction.crypto_address or "",
+                            outcome="PAID" if is_paid else ("ERROR" if attempt_detail else "NOT_PAID_YET"),
+                            detail=attempt_detail or ("Confirmed by gateway" if is_paid else "Not confirmed yet — will retry next poll cycle"),
+                        )
+                finally:
+                    # Release the verification lock now — the check itself is
+                    # done. The credit step below has its own independent
+                    # atomic guards (idempotency claim + conditional status
+                    # UPDATE), so it doesn't need to hold this lock too.
+                    if _POLL_GATEWAY_ID:
+                        release_verification_lock(transaction.id)
 
                 if is_paid:
                     # Idempotency guard — stable reference is the transaction's
@@ -5567,12 +5612,20 @@ async def check_expired_payments(context: ContextTypes.DEFAULT_TYPE):
     silently dropped — even if the regular polling missed it.
     """
     import asyncio
+    from services.payment_workflow import (
+        acquire_verification_lock, release_verification_lock, log_verification_attempt,
+    )
 
     # Gateway methods that can self-report confirmed payments via API.
     AUTOMATED_GATEWAY_METHODS = {
         PaymentMethod.NOWPAYMENTS,
         PaymentMethod.CRYPTOMUS,
         PaymentMethod.CRYPTO_WALLET,  # CryptoBot
+    }
+    _EXPIRY_GATEWAY_ID = {
+        PaymentMethod.NOWPAYMENTS: "nowpayments",
+        PaymentMethod.CRYPTOMUS: "cryptomus",
+        PaymentMethod.CRYPTO_WALLET: "cryptobot",
     }
 
     def _check_expired_sync():
@@ -5602,6 +5655,12 @@ async def check_expired_payments(context: ContextTypes.DEFAULT_TYPE):
                 # If the user actually paid before the clock ran out we MUST
                 # credit them even though the expiry window has passed.
                 if transaction.payment_method in AUTOMATED_GATEWAY_METHODS:
+                    _exp_gw_id = _EXPIRY_GATEWAY_ID.get(transaction.payment_method)
+                    if _exp_gw_id and not acquire_verification_lock(session, transaction.id):
+                        session.commit()
+                        continue  # Another verification job is already checking this order
+                    session.commit()
+
                     is_paid = False
                     gateway_raised = False
                     gw_error_detail = None
@@ -5631,6 +5690,16 @@ async def check_expired_payments(context: ContextTypes.DEFAULT_TYPE):
                             transaction.id,
                         )
 
+                    if _exp_gw_id:
+                        release_verification_lock(transaction.id)
+                        log_verification_attempt(
+                            gateway_id=_exp_gw_id,
+                            tx_id=transaction.id,
+                            submitted_txid=transaction.crypto_address or "",
+                            outcome="PAID" if is_paid else ("ERROR" if gateway_raised else "NOT_PAID_AT_EXPIRY"),
+                            detail=gw_error_detail or ("Confirmed by gateway at expiry" if is_paid else "Not confirmed by gateway — expiring normally"),
+                        )
+
                     if gateway_raised:
                         # We could not confirm payment status AND could not
                         # confirm non-payment — per the "API unavailable /
@@ -5641,17 +5710,7 @@ async def check_expired_payments(context: ContextTypes.DEFAULT_TYPE):
                         # AUTOMATED_GATEWAY_METHODS with no per-gateway code.
                         try:
                             from database.models import PendingManualVerification as _PMV
-                            # PaymentMethod enum values line up with the
-                            # Payment Gateway Registry's gateway_id for every
-                            # method except CRYPTO_WALLET, whose registry id
-                            # is "cryptobot" (see
-                            # services/payment_gateway_bootstrap.py) rather
-                            # than the enum's "crypto_wallet".
-                            gw_key = (
-                                "cryptobot"
-                                if transaction.payment_method == PaymentMethod.CRYPTO_WALLET
-                                else transaction.payment_method.value
-                            )
+                            gw_key = _exp_gw_id or transaction.payment_method.value
                             ref = transaction.crypto_address or f"tx:{transaction.id}"
                             already_queued = session.query(_PMV).filter_by(
                                 gateway=gw_key, internal_order_id=transaction.id, submitted_txid=ref,
@@ -5759,6 +5818,33 @@ async def check_expired_payments(context: ContextTypes.DEFAULT_TYPE):
                                 'created_at': transaction.created_at,
                                 'payment_method': transaction.payment_method.value if transaction.payment_method else None,
                             })
+
+                        # This transaction may have an earlier PMV row from a
+                        # prior expiry cycle's gateway exception (see the
+                        # escalation branch above). Now that the gateway has
+                        # confirmed payment, that review request is stale —
+                        # auto-resolve it so it doesn't linger in the Pending
+                        # Deposits queue pointing at an already-completed order.
+                        try:
+                            from database.models import PendingManualVerification as _PMV2
+                            session.query(_PMV2).filter(
+                                _PMV2.internal_order_id == transaction.id,
+                                _PMV2.status == "pending",
+                            ).update(
+                                {
+                                    _PMV2.status: "approved",
+                                    _PMV2.admin_note: "Auto-resolved: gateway confirmed payment on a later retry (late credit)",
+                                    _PMV2.resolved_at: datetime.utcnow(),
+                                },
+                                synchronize_session=False,
+                            )
+                            session.commit()
+                        except Exception:
+                            logger.warning(
+                                "Failed to auto-resolve stale PMV rows for late-credited tx %s",
+                                transaction.id, exc_info=True,
+                            )
+
                         continue  # Do NOT cancel — we just credited
 
                 # ── Cancel the expired transaction ────────────────────────────
@@ -7940,9 +8026,11 @@ async def admin_verify_again_zinipay(update, context):
 async def admin_reject_start(update, context):
     """Entry point for admin rejection — prompts admin to type a rejection reason.
 
-    Handles both:
+    Handles:
       admin_binance_reject_start_{tx_id}_{pmv_id}
       admin_bybit_reject_start_{tx_id}_{pmv_id}
+      admin_zinipay_reject_start_{tx_id}_{pmv_id}
+      admin_pmv_reject_start_{gateway}_{tx_id}_{pmv_id}   (any other gateway)
     """
     query = update.callback_query
     await query.answer()
@@ -7952,34 +8040,32 @@ async def admin_reject_start(update, context):
         return ConversationHandler.END
 
     data = query.data
-    parts = data.split("_")
-    try:
-        pmv_id = int(parts[-1])
-        tx_id = int(parts[-2])
-    except (IndexError, ValueError):
-        await query.answer("❌ Invalid data.", show_alert=True)
-        return ConversationHandler.END
-
-    if "binance" in data:
-        gateway = "binance_pay"
-    elif "bybit" in data:
-        gateway = "bybit_pay"
+    if data.startswith("admin_pmv_reject_start_"):
+        try:
+            gateway, tx_id, pmv_id = _parse_pmv_generic_cb(data, "reject_start")
+        except (ValueError, IndexError):
+            await query.answer("❌ Invalid data.", show_alert=True)
+            return ConversationHandler.END
     else:
-        gateway = "zinipay"
-    gw_label = {
-        "binance_pay": "Binance Pay 🟡",
-        "bybit_pay": "Bybit Pay 🔵",
-        "zinipay": "Mobile Banking 🇧🇩",
-    }[gateway]
+        parts = data.split("_")
+        try:
+            pmv_id = int(parts[-1])
+            tx_id = int(parts[-2])
+        except (IndexError, ValueError):
+            await query.answer("❌ Invalid data.", show_alert=True)
+            return ConversationHandler.END
+
+        if "binance" in data:
+            gateway = "binance_pay"
+        elif "bybit" in data:
+            gateway = "bybit_pay"
+        else:
+            gateway = "zinipay"
 
     # Check PMV still pending
     with get_db_session() as session:
-        if gateway == "zinipay":
-            _reject_start_tx = session.query(Transaction).filter_by(id=tx_id).first()
-            _provider = pui.resolve_zinipay_provider(getattr(_reject_start_tx, "crypto_address", None))
-            if _provider:
-                _label, _emoji = pui.zinipay_provider_meta(provider=_provider)
-                gw_label = f"{_label} {_emoji}"
+        _reject_start_tx = session.query(Transaction).filter_by(id=tx_id).first()
+        gw_label = _pmv_gateway_label(gateway, tx=_reject_start_tx)
         pmv = session.query(PendingManualVerification).filter_by(id=pmv_id, gateway=gateway).first()
         if not pmv:
             await query.answer(f"❌ PMV #{pmv_id} not found.", show_alert=True)
@@ -8142,6 +8228,7 @@ def build_admin_pmv_reject_conv():
             CQH(admin_reject_start, pattern=r"^admin_binance_reject_start_\d+_\d+$"),
             CQH(admin_reject_start, pattern=r"^admin_bybit_reject_start_\d+_\d+$"),
             CQH(admin_reject_start, pattern=r"^admin_zinipay_reject_start_\d+_\d+$"),
+            CQH(admin_reject_start, pattern=r"^admin_pmv_reject_start_[a-zA-Z0-9_]+_\d+_\d+$"),
         ],
         states={
             PMV_REJECT_REASON_STATE: [
@@ -8249,17 +8336,6 @@ async def admin_pmv_generic_approve(update, context):
     await _pmv_resolve(update, context, gateway, tx_id, pmv_id, approve=True)
 
 
-async def admin_pmv_generic_reject(update, context):
-    """Handle admin_pmv_reject_{gateway}_{tx_id}_{pmv_id} for any gateway."""
-    query = update.callback_query
-    try:
-        gateway, tx_id, pmv_id = _parse_pmv_generic_cb(query.data or "", "reject")
-    except (ValueError, IndexError):
-        await query.answer("❌ Invalid callback data.", show_alert=True)
-        return
-    await _pmv_resolve(update, context, gateway, tx_id, pmv_id, approve=False)
-
-
 async def admin_pmv_generic_verify(update, context):
     """Handle admin_pmv_verify_{gateway}_{tx_id}_{pmv_id} for any gateway
     registered in the Payment Gateway Registry whose service class exposes
@@ -8310,16 +8386,39 @@ async def admin_pmv_generic_verify(update, context):
             return
         reference = pmv.submitted_txid
         amount = float(pmv.amount)
+        pmv_telegram_user_id = pmv.telegram_user_id
+
+    from services.payment_workflow import (
+        acquire_verification_lock, release_verification_lock, log_verification_attempt,
+    )
+
+    with get_db_session() as _lock_sess:
+        got_lock = acquire_verification_lock(_lock_sess, tx_id)
+        _lock_sess.commit()
+    if not got_lock:
+        await query.answer("⏳ A verification check is already running for this order — please wait.", show_alert=True)
+        return
 
     try:
-        svc = g.service_cls()
-        is_paid = await asyncio.to_thread(svc.check_payment_status, reference, amount)
-    except Exception as e:
-        logger.warning("Generic PMV verify-again raised for gateway=%s pmv=%s", gateway, pmv_id, exc_info=True)
-        is_paid = False
-        _err = f"{type(e).__name__}: {e}"
-    else:
-        _err = None
+        try:
+            svc = g.service_cls()
+            is_paid = await asyncio.to_thread(svc.check_payment_status, reference, amount)
+        except Exception as e:
+            logger.warning("Generic PMV verify-again raised for gateway=%s pmv=%s", gateway, pmv_id, exc_info=True)
+            is_paid = False
+            _err = f"{type(e).__name__}: {e}"
+        else:
+            _err = None
+        log_verification_attempt(
+            gateway_id=gateway,
+            tx_id=tx_id,
+            telegram_user_id=pmv_telegram_user_id,
+            submitted_txid=reference,
+            outcome="PAID" if is_paid else ("ERROR" if _err else "NOT_PAID_YET"),
+            detail=_err or ("Confirmed by gateway" if is_paid else "Still not confirmed — admin-triggered re-check"),
+        )
+    finally:
+        release_verification_lock(tx_id)
 
     if is_paid:
         # Success -> reuse the exact same generic approve path (credits

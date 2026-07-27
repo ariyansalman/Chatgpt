@@ -487,7 +487,7 @@ async def deposit_pmv_detail(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ) if pmv.gateway in _LEGACY_PMV_GATEWAYS else pui.admin_review_keyboard(
             verify_cb=f"admin_pmv_verify_{pmv.gateway}_{pmv.internal_order_id}_{pmv.id}",
             approve_cb=f"admin_pmv_approve_{pmv.gateway}_{pmv.internal_order_id}_{pmv.id}",
-            reject_cb=f"admin_pmv_reject_{pmv.gateway}_{pmv.internal_order_id}_{pmv.id}",
+            reject_cb=f"admin_pmv_reject_start_{pmv.gateway}_{pmv.internal_order_id}_{pmv.id}",
             view_user_cb=f"admin_view_user_pmv_{pmv.telegram_user_id}",
         )
         # Append the same "⬅ Back" target every other card in this queue uses.

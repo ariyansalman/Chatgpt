@@ -359,6 +359,45 @@ def release_verification_lock(tx_id: int) -> None:
         logger.exception("Failed to release verification lock for tx %s", tx_id)
 
 
+def log_verification_attempt(
+    gateway_id: str,
+    tx_id: int,
+    telegram_user_id: int = 0,
+    submitted_txid: str = "",
+    outcome: str = "",
+    detail: str = "",
+) -> None:
+    """Durably log ONE verification attempt for a gateway that checks
+    payment status with a simple boolean (Cryptomus / NOWPayments /
+    CryptoBot's background poll and expiry-time checks) rather than the
+    outcome-classified ``run_auto_verification_with_retries`` engine used
+    by Binance Pay / Bybit Pay / ZiniPay.
+
+    Writes to the SAME ``VerificationAttemptLog`` table that engine uses,
+    so "every verification attempt is logged" holds for every gateway, not
+    just the ones with a rich classifier. Best-effort — a logging failure
+    must never block the actual payment check/credit it's describing.
+    """
+    from database import get_db_session
+    from database.models import VerificationAttemptLog
+    try:
+        with get_db_session() as _sess:
+            _sess.add(VerificationAttemptLog(
+                gateway=gateway_id,
+                telegram_user_id=telegram_user_id or 0,
+                internal_order_id=tx_id,
+                submitted_txid=submitted_txid or "",
+                outcome=outcome[:120] if outcome else "",
+                detail=(detail or "")[:500],
+            ))
+            _sess.commit()
+    except Exception:
+        logger.exception(
+            "Failed to persist verification attempt log (gateway=%s tx=%s)",
+            gateway_id, tx_id,
+        )
+
+
 async def run_auto_verification_with_retries(
     *,
     gateway_id: str,
