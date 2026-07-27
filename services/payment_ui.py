@@ -430,7 +430,7 @@ def invoice_card(
 
     if expires_at:
         lines.append("")
-        lines.append("⏳ <b>Expires</b>")
+        lines.append("⏳ <b>Expires In</b>")
         lines.append(f"<code>{expires_at}</code>")
 
     lines.append("")
@@ -1191,7 +1191,8 @@ def deposit_success_card(
         🧾 Deposit ID           ← only when deposit_id is provided
         DEP-20260722-000163
 
-        👛 Your wallet has been updated successfully.
+        🎉 Your wallet has been credited successfully. Thank you for
+        using our service!
     """
     lines = ["✅ <b>Deposit Successful</b>", ""]
     lines.append("💰 <b>Amount Credited</b>")
@@ -1208,7 +1209,7 @@ def deposit_success_card(
         lines.append("🧾 <b>Deposit ID</b>")
         lines.append(deposit_id)
     lines.append("")
-    lines.append("👛 Your wallet has been updated successfully.")
+    lines.append("🎉 Your wallet has been credited successfully. Thank you for using our service!")
     return "\n".join(lines)
 
 
@@ -1216,7 +1217,7 @@ def deposit_success_keyboard() -> InlineKeyboardMarkup:
     """Standard keyboard shown after every successful deposit:
     👛 Open Wallet · 📜 Deposit History · 🛍 Continue Shopping."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("👛 Open Wallet", callback_data="wallet")],
+        [InlineKeyboardButton("💰 View Wallet", callback_data="wallet")],
         [InlineKeyboardButton("📜 Deposit History", callback_data="wallet_history"),
          InlineKeyboardButton("🛍 Continue Shopping", callback_data="products")],
     ])

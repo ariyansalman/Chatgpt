@@ -10,7 +10,7 @@ from __future__ import annotations
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
-from database import get_db_session
+from database import get_db_session, run_db
 from database.models import User, Transaction, TransactionStatus, Order, OrderStatus
 from utils.currency import toggle_user_currency, format_price_for_user
 from utils.perf import perf_track
@@ -117,7 +117,7 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer()
     tg_id = update.effective_user.id
     lang = get_user_language(tg_id)
-    bal, dep, spent, _ = _totals(tg_id)
+    bal, dep, spent, _ = await run_db(_totals, tg_id)
 
     # Premium marketplace wallet card — no dividers, clean spacing
     bal_str   = format_price_for_user(bal,   tg_id)
@@ -154,7 +154,7 @@ async def wallet_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     tg_id = update.effective_user.id
     lang = get_user_language(tg_id)
-    _, _, _, hist = _totals(tg_id)
+    _, _, _, hist = await run_db(_totals, tg_id)
     if not hist:
         body = t("common.no_transactions", lang)
     else:
@@ -183,7 +183,7 @@ async def wallet_currency_toggle(update: Update, context: ContextTypes.DEFAULT_T
     q = update.callback_query
     tg_id = update.effective_user.id
     lang = get_user_language(tg_id)
-    new_currency = toggle_user_currency(tg_id)
+    new_currency = await run_db(toggle_user_currency, tg_id)
     await q.answer(t("common.prices_now_in", lang, currency=new_currency))
     await wallet_menu(update, context)
 

@@ -9,7 +9,7 @@ stock, per-user currency price, and out-of-stock emoji override.
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from database import get_db_session, Product
+from database import get_db_session, run_db, Product
 from utils import (
     check_user_banned, get_user_currency,
     catalog_stock_emoji, format_product_button_text,
@@ -30,9 +30,8 @@ def _escape_like(text: str) -> str:
     )
 
 
-def _price_display(price: float, currency: str, telegram_id: int) -> str:
+def _price_display(price: float, currency: str, user_currency: str) -> str:
     from services.pricing import convert_currency
-    user_currency = get_user_currency(telegram_id)
     amount = convert_currency(price, currency or "USD", user_currency)
     if user_currency == "BDT":
         return f"৳{amount:,.2f}"
@@ -97,24 +96,34 @@ async def _run_search(message, keyword: str, telegram_id: int):
     """Shared search executor — sends the full, unpaginated result list to
     ``message`` as one message with one inline keyboard."""
     like = f"%{_escape_like(keyword)}%"
-    with get_db_session() as session:
-        products = (
-            session.query(Product)
-            .filter(Product.is_active == True)
-            .filter(Product.name.ilike(like, escape="\\"))
-            .all()
-        )
-        rows = [
-            {
-                "id": p.id,
-                "name": p.name,
-                "emoji": p.product_emoji,
-                "price": p.price,
-                "currency": p.currency,
-                "sort_order": p.sort_order,
-            }
-            for p in products
-        ]
+
+    def _load():
+        # PERF: everything here is synchronous SQLAlchemy/Postgres I/O.
+        # Run it all on one worker thread (via run_db below) instead of
+        # directly on the bot's event loop, and fetch the user's currency
+        # preference once here instead of once-per-result-row.
+        with get_db_session() as session:
+            products = (
+                session.query(Product)
+                .filter(Product.is_active == True)
+                .filter(Product.name.ilike(like, escape="\\"))
+                .all()
+            )
+            rows = [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "emoji": p.product_emoji,
+                    "price": p.price,
+                    "currency": p.currency,
+                    "sort_order": p.sort_order,
+                }
+                for p in products
+            ]
+        user_currency = get_user_currency(telegram_id)
+        return rows, user_currency
+
+    rows, user_currency = await run_db(_load)
 
     if not rows:
         await message.reply_text(
@@ -127,10 +136,10 @@ async def _run_search(message, keyword: str, telegram_id: int):
         return
 
     from services.inventory import count_available_bulk
-    stock_map = count_available_bulk([r["id"] for r in rows])
+    stock_map = await run_db(count_available_bulk, [r["id"] for r in rows])
     for r in rows:
         r["stock"] = stock_map.get(r["id"], 0)
-        r["price_display"] = _price_display(r["price"], r["currency"], telegram_id)
+        r["price_display"] = _price_display(r["price"], r["currency"], user_currency)
 
     rows.sort(key=lambda r: (
         0 if r["stock"] > 0 else 1,

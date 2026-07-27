@@ -1998,7 +1998,7 @@ async def payment_method_crypto(update: Update, context: ContextTypes.DEFAULT_TY
         message = pui.invoice_card(
             method_label="CryptoBot", method_emoji="🤖",
             amount=_amount_str, deposit_id=transaction.id,
-            created_at=transaction.created_at, expires_at="30 minutes",
+            created_at=transaction.created_at, expires_at="30 Minutes",
             instruction="👉 Tap below to pay with any supported cryptocurrency.",
         )
         reply_markup = pui.invoice_keyboard(
@@ -2098,7 +2098,12 @@ async def _finish_gateway_automated_payment(
                     gateway_label, existing_pending.id,
                 )
                 _recovery_svc = service_cls()
-                _recovery_ref = _recovery_svc.create_payment(
+                # PERF: create_payment() makes a blocking `requests` HTTP call to the
+                # gateway's API. Run it on a worker thread so a slow/unresponsive
+                # gateway cannot freeze the bot's single asyncio event loop (and every
+                # other user's button tap) while we wait for it. No behavior change.
+                _recovery_ref = await asyncio.to_thread(
+                    _recovery_svc.create_payment,
                     float(existing_pending.amount), existing_pending.id
                 )
                 if _recovery_ref:
@@ -2173,7 +2178,14 @@ async def _finish_gateway_automated_payment(
 
     # ---- Gateway API call (outside the session) ----
     service = service_cls()
-    reference = service.create_payment(usd_amount, new_tx_id)
+    # PERF: create_payment() makes a blocking `requests` HTTP call to the
+    # gateway's API (often 1-5s+). Run it on a worker thread instead of
+    # awaiting it directly, so this one user's gateway call cannot freeze
+    # the bot's single asyncio event loop for every other user. This is the
+    # single dispatch point every gateway (Cryptomus, bKash, Nagad, NOWPayments,
+    # Binance Pay, Bybit Pay, Heleket, ZiniPay, ...) funnels through, so this one
+    # change covers all of them. No behavior change.
+    reference = await asyncio.to_thread(service.create_payment, usd_amount, new_tx_id)
 
     if not reference:
         # Use a fresh session to mark FAILED so it's durable regardless of
@@ -2219,7 +2231,7 @@ async def _finish_gateway_automated_payment(
         message = pui.invoice_card(
             method_label=gateway_label, method_emoji="💳",
             amount=_amount_str, deposit_id=transaction.id,
-            expires_at="30 minutes",
+            expires_at="30 Minutes",
             instruction=f"👉 Tap below to pay via {gateway_label}.",
         )
         if not pay_url:
@@ -2490,7 +2502,7 @@ async def _finish_zinipay_payment(
     message = pui.mobile_money_invoice(
         provider_label=provider.title(), provider_emoji=PROVIDER_EMOJI[provider],
         amount=amount_str, send_to=send_to,
-        deposit_id=tx_id, expires_at="30 minutes",
+        deposit_id=tx_id, expires_at="30 Minutes",
     )
     keyboard = pui.invoice_keyboard(
         destination_value=send_to, destination_copy_label="Copy Number",
@@ -3146,7 +3158,7 @@ async def _send_binance_payment_screen(update, context, tx_id: int, usd_amount: 
     message = pui.binance_bybit_invoice(
         method_label="Binance Pay", method_emoji="🟡",
         amount=amount_str, pay_id=svc.pay_id,
-        deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
+        deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} Minutes",
     )
     keyboard = pui.invoice_keyboard(
         destination_value=svc.pay_id, destination_copy_label="Copy Pay ID",
@@ -3995,7 +4007,7 @@ async def _send_bybit_uid_screen(update, context, tx_id: int, usd_amount: float,
     message = pui.binance_bybit_invoice(
         method_label="Bybit Pay", method_emoji="🔷",
         amount=amount_str, pay_id=svc.uid,
-        deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
+        deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} Minutes",
     )
     keyboard = pui.invoice_keyboard(
         destination_value=svc.uid, destination_copy_label="Copy Pay ID",
@@ -4023,13 +4035,13 @@ async def _send_bybit_onchain_screen(update, context, tx_id: int, usd_amount: fl
         amount_str = f"{locked_crypto_amount:.8f} LTC"
         message = pui.crypto_invoice(
             network="LTC", amount=amount_str, wallet_address=address,
-            deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
+            deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} Minutes",
         )
     else:
         amount_str = f"{usd_amount:.2f} {BYBIT_CURRENCY}"
         message = pui.crypto_invoice(
             network=network, amount=amount_str, wallet_address=address,
-            deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} minutes",
+            deposit_id=tx_id, expires_at=f"{svc.order_expiry_minutes} Minutes",
         )
     keyboard = pui.invoice_keyboard(
         destination_value=address, destination_copy_label="Copy Address",
@@ -7597,7 +7609,7 @@ async def _pmv_resolve(
                     amount=f"{expected_amount:.2f} {currency}",
                     order_id=tx_id,
                     extra=extra_rows,
-                    note="🎉 Your wallet has been updated successfully.",
+                    note="🎉 Your wallet has been credited successfully. Thank you for using our service!",
                 )
             ),
             parse_mode="HTML",

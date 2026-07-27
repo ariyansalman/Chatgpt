@@ -421,7 +421,7 @@ def heleket_webhook():
                     f"${amount_usd:.2f} {currency}\n\n"
                     "💳 <b>Payment Method</b>\n"
                     "Heleket\n\n"
-                    "👛 Your wallet has been updated successfully."
+                    "👛 Your wallet has been credited successfully. Thank you for using our service!"
                 )
                 _requests.post(
                     f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage",
@@ -510,7 +510,7 @@ def _credit_wallet_once(source: str, external_ref: str, transaction) -> Optional
                 f"${transaction.amount:.2f} USD\n\n"
                 "💳 <b>Payment Method</b>\n"
                 f"{_pm_label}\n\n"
-                "👛 Your wallet has been updated successfully."
+                "👛 Your wallet has been credited successfully. Thank you for using our service!"
             )
             _requests.post(
                 f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage",
