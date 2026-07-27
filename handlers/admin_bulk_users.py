@@ -327,7 +327,7 @@ async def bum_bulk_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if need_confirm:
             kb = [
                 [InlineKeyboardButton("✅ Yes, delete inactive users", callback_data="bum:bulk:exec:delete_inactive:all"),
-                 InlineKeyboardButton("❌ Cancel", callback_data="bum:menu")],
+                 InlineKeyboardButton("⬅️ Back", callback_data="bum:menu")],
             ]
             await _safe_edit(
                 query,

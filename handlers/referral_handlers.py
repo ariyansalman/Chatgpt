@@ -221,7 +221,7 @@ async def admin_referral_amount_start(update: Update, context: ContextTypes.DEFA
         await q.edit_message_text(
             f"👑 Current referral reward: <b>${current:.2f}</b>\n\n"
             f"Send the new reward amount in USDT (e.g. <code>0.10</code>):",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_settings")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_settings")]]),
             parse_mode="HTML",
         )
     except BadRequest as e:

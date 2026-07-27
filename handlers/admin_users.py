@@ -530,7 +530,7 @@ async def balance_amount_receive(update: Update, context: ContextTypes.DEFAULT_T
         [
             InlineKeyboardButton("✅ Yes, Confirm",
                                  callback_data=f"usr:bal:cfm:{user_id}:{idem_tok}"),
-            InlineKeyboardButton("❌ No, Cancel",
+            InlineKeyboardButton("⬅️ Back",
                                  callback_data=f"usr:det:{user_id}"),
         ]
     ])
@@ -745,7 +745,7 @@ async def ban_screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Yes, Ban",  callback_data=f"usr:ban:cfm:{user_id}"),
-            InlineKeyboardButton("❌ No, Cancel", callback_data=f"usr:det:{user_id}"),
+            InlineKeyboardButton("⬅️ Back", callback_data=f"usr:det:{user_id}"),
         ]
     ])
     try:
@@ -833,7 +833,7 @@ async def unban_screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Yes, Unban",  callback_data=f"usr:ubn:cfm:{user_id}"),
-            InlineKeyboardButton("❌ No, Cancel",   callback_data=f"usr:det:{user_id}"),
+            InlineKeyboardButton("⬅️ Back",   callback_data=f"usr:det:{user_id}"),
         ]
     ])
     try:

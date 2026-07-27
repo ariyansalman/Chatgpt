@@ -501,7 +501,7 @@ async def gat_search_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔍 <b>Search Timeline</b>\n\n"
         "Send a keyword, username, action, or order/product ID to search:",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="gat:menu")
+            InlineKeyboardButton("⬅️ Back", callback_data="gat:menu")
         ]]),
         parse_mode="HTML",
     )

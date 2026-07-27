@@ -55,7 +55,7 @@ async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from telegram.error import BadRequest
     text = "🔍 Search Products\n\nSend the product name or keyword you want to search for."
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="main_menu")]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]])
     try:
         if query.message and query.message.photo:
             await query.message.delete()

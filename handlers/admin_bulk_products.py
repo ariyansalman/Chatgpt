@@ -532,7 +532,7 @@ async def bpim_bulk_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if need_confirm:
             kb = [
                 [InlineKeyboardButton("✅ Yes, delete", callback_data=f"bpim:bulk:delete:exec:{scope}"),
-                 InlineKeyboardButton("❌ Cancel",       callback_data="bpim:menu")],
+                 InlineKeyboardButton("⬅️ Back",       callback_data="bpim:menu")],
             ]
             await _safe_edit(
                 query,

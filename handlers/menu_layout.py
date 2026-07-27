@@ -180,7 +180,7 @@ async def mm_layout_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Yes, Reset to Default", callback_data="mm:layout:reset:confirm"),
-            InlineKeyboardButton("❌ Cancel", callback_data="mm:menu"),
+            InlineKeyboardButton("⬅️ Back", callback_data="mm:menu"),
         ],
     ])
     await safe_edit(query, text, kb)

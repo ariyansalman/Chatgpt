@@ -600,7 +600,7 @@ async def asb_receive_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for mtype, mlabel in MEDIA_TYPES[i:i+2]:
             row.append(InlineKeyboardButton(mlabel, callback_data=f"asb:mtype:{mtype}"))
         rows.append(row)
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="asb:menu")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="asb:menu")])
     await update.message.reply_text(
         "📨 <b>Step 2/8 — Media Type</b>\n\nChoose the content type for this broadcast:",
         reply_markup=InlineKeyboardMarkup(rows), parse_mode="HTML")
@@ -768,7 +768,7 @@ def _target_kb() -> InlineKeyboardMarkup:
         for key, label, _ in TARGET_DEFS[i:i+2]:
             row.append(InlineKeyboardButton(label, callback_data=f"asb:tgt:{key}"))
         rows.append(row)
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="asb:menu")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="asb:menu")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -840,7 +840,7 @@ def _schedule_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🗓 Monthly",            callback_data="asb:sched:monthly"),
             InlineKeyboardButton("⏱ Custom Interval",    callback_data="asb:sched:custom_interval"),
         ],
-        [InlineKeyboardButton("❌ Cancel",                callback_data="asb:menu")],
+        [InlineKeyboardButton("⬅️ Back",                callback_data="asb:menu")],
     ])
 
 
@@ -902,7 +902,7 @@ async def asb_receive_schedule_text(update: Update, context: ContextTypes.DEFAUL
     data["recurrence_type"] = None
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Confirm & Save", callback_data="asb:confirm"),
-         InlineKeyboardButton("❌ Cancel", callback_data="asb:menu")],
+         InlineKeyboardButton("⬅️ Back", callback_data="asb:menu")],
     ])
     await update.message.reply_text(
         _build_confirm_text(data), reply_markup=kb, parse_mode="HTML")
@@ -955,7 +955,7 @@ async def _show_confirm_cb(query, data: dict):
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Confirm & Save", callback_data="asb:confirm"),
          InlineKeyboardButton("💾 Save Draft", callback_data="asb:save_draft"),
-         InlineKeyboardButton("❌ Cancel", callback_data="asb:menu")],
+         InlineKeyboardButton("⬅️ Back", callback_data="asb:menu")],
     ])
     await _safe_edit(query, _build_confirm_text(data), kb)
     return ASB_CONFIRM
@@ -1288,7 +1288,7 @@ async def asb_delete_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑 Yes, delete", callback_data=f"asb:del_ok:{bid}"),
-         InlineKeyboardButton("❌ Cancel", callback_data=f"asb:view:{bid}")],
+         InlineKeyboardButton("⬅️ Back", callback_data=f"asb:view:{bid}")],
     ])
     await _safe_edit(query, f"⚠️ Delete broadcast #{bid}? This cannot be undone.", kb)
 
@@ -1878,7 +1878,7 @@ async def asb_receive_custom_interval(update: Update, context: ContextTypes.DEFA
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Confirm & Save", callback_data="asb:confirm"),
          InlineKeyboardButton("💾 Save Draft",     callback_data="asb:save_draft"),
-         InlineKeyboardButton("❌ Cancel",         callback_data="asb:menu")],
+         InlineKeyboardButton("⬅️ Back",         callback_data="asb:menu")],
     ])
     await update.message.reply_text(
         _build_confirm_text(data), reply_markup=kb, parse_mode="HTML")

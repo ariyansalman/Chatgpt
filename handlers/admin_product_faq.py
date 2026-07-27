@@ -276,7 +276,7 @@ async def pfaq_del_confirm(update, context, faq_id: int):
     )
     kb = [[
         InlineKeyboardButton("✅ Yes, Delete", callback_data=f"acc:pfaq:delok:{faq_id}"),
-        InlineKeyboardButton("❌ Cancel", callback_data=f"acc:pfaq:view:{faq_id}"),
+        InlineKeyboardButton("⬅️ Back", callback_data=f"acc:pfaq:view:{faq_id}"),
     ]]
     await send(update, text, InlineKeyboardMarkup(kb))
 

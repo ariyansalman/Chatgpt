@@ -438,7 +438,7 @@ async def pmm_search_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         "🔍 <b>Search Modules</b>\n\nSend a module name or keyword to search:",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="pmm:menu")
+            InlineKeyboardButton("⬅️ Back", callback_data="pmm:menu")
         ]]),
         parse_mode="HTML",
     )

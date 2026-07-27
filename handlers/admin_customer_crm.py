@@ -473,7 +473,7 @@ async def crm_note_del_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
         InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Yes, Delete",
                                   callback_data=f"crm:note:delok:{note_id}:{db_uid}"),
-             InlineKeyboardButton("❌ Cancel",
+             InlineKeyboardButton("⬅️ Back",
                                   callback_data=f"crm:notes:all:{db_uid}")],
         ]),
     )

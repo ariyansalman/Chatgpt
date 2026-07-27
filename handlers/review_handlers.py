@@ -458,7 +458,7 @@ async def review_delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Yes, delete it", callback_data=f"review_del_confirm_{review_id}")],
-        [InlineKeyboardButton("❌ Cancel",         callback_data="my_reviews")],
+        [InlineKeyboardButton("⬅️ Back",         callback_data="my_reviews")],
     ])
     try:
         await query.edit_message_text(

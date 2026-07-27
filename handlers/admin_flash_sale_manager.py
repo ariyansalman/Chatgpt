@@ -454,7 +454,7 @@ async def fsm_del_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"fsm:del_ok:{fid}")],
-        [InlineKeyboardButton("❌ Cancel",      callback_data=f"fsm:view:{fid}")],
+        [InlineKeyboardButton("⬅️ Back",      callback_data=f"fsm:view:{fid}")],
     ])
     await _send(update, text, kb)
 

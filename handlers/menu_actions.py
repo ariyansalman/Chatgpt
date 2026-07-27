@@ -1377,7 +1377,7 @@ async def mm_amgr_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Yes, Reset", callback_data=f"mm:amgr:{menu_id}:reset:confirm"),
-            InlineKeyboardButton("❌ Cancel",     callback_data=f"mm:amgr:{menu_id}"),
+            InlineKeyboardButton("⬅️ Back",     callback_data=f"mm:amgr:{menu_id}"),
         ],
     ])
     await safe_edit(query, text, kb)
@@ -1490,7 +1490,7 @@ async def mm_amgr_delconfirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Yes, Delete", callback_data=f"mm:amgr:{menu_id}:delitem:{key}"),
-            InlineKeyboardButton("❌ Cancel",      callback_data=f"mm:amgr:{menu_id}:item:{key}"),
+            InlineKeyboardButton("⬅️ Back",      callback_data=f"mm:amgr:{menu_id}:item:{key}"),
         ]
     ])
     await safe_edit(query, text, kb)
@@ -1549,7 +1549,7 @@ async def mm_amgr_deletemenu(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "✅ Yes, Delete" if is_custom else "🔄 Reset to Default",
                 callback_data=f"mm:amgr:{menu_id}:deletemenu:confirm",
             ),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"mm:amgr:{menu_id}"),
+            InlineKeyboardButton("⬅️ Back", callback_data=f"mm:amgr:{menu_id}"),
         ]
     ])
     await safe_edit(query, text, kb)

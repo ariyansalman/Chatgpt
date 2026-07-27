@@ -292,7 +292,7 @@ async def fav_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"This action cannot be undone.",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Yes, clear all", callback_data="fav:clr_ok")],
-                [InlineKeyboardButton("❌ Cancel",          callback_data="fav:list:new:0")],
+                [InlineKeyboardButton("⬅️ Back",          callback_data="fav:list:new:0")],
             ]),
         )
         return
@@ -346,7 +346,7 @@ async def _search_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔍 <b>Search Favorites</b>\n\n"
         "Type a product name (or part of it) to filter your saved items.\n"
         "Send /cancel to go back.",
-        InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="fav:list:new:0")]]),
+        InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="fav:list:new:0")]]),
     )
     return FAV_SEARCH
 

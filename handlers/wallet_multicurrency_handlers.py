@@ -318,7 +318,7 @@ async def mcw_transfer_amount(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return ConversationHandler.END
 
-    kb_rows.append([InlineKeyboardButton("❌ Cancel", callback_data="mcw:overview")])
+    kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data="mcw:overview")])
     await update.message.reply_text(
         f"Select the currency to send <b>TO</b>:",
         reply_markup=InlineKeyboardMarkup(kb_rows),

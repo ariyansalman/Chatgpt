@@ -455,7 +455,7 @@ async def apt_receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     rows: List[List[IKB]] = []
     for pt, emoji, label in catalog:
         rows.append([IKB(f"{emoji} {label}", callback_data=f"apt:new:type:{pt.name}")])
-    rows.append([IKB("❌ Cancel", callback_data="apt:menu")])
+    rows.append([IKB("⬅️ Back", callback_data="apt:menu")])
 
     await update.message.reply_text(
         "📋 <b>Step 2 of 3 — Choose product type:</b>",
@@ -920,7 +920,7 @@ async def apt_delete_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "⚠️ This cannot be undone.",
         IKM([
             [IKB("✅ Yes, Delete", callback_data=f"apt:del_ok:{tpl_id}"),
-             IKB("❌ Cancel",      callback_data=f"apt:view:{tpl_id}")],
+             IKB("⬅️ Back",      callback_data=f"apt:view:{tpl_id}")],
         ]))
 
 

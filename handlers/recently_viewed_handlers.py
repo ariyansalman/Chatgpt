@@ -407,7 +407,7 @@ async def rv_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("✅ Yes, Clear All", callback_data="rv:clr_ok"),
-                    InlineKeyboardButton("❌ Cancel",          callback_data="rv:list:0"),
+                    InlineKeyboardButton("⬅️ Back",          callback_data="rv:list:0"),
                 ],
             ]),
         )

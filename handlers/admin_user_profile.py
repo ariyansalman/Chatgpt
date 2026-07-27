@@ -1190,7 +1190,7 @@ async def up_bal_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if amount <= 0:
             raise ValueError("Amount must be positive.")
     except (InvalidOperation, ValueError) as e:
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"up:view:{uid}")]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data=f"up:view:{uid}")]])
         try:
             await context.bot.edit_message_text(
                 f"❌ Invalid amount: <code>{_esc(raw)}</code>\n\n"
@@ -1216,7 +1216,7 @@ async def up_bal_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "✅ Confirm",
                 callback_data=f"up:bal:cfm:{uid}:{action}:{tok}",
             ),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"up:view:{uid}"),
+            InlineKeyboardButton("⬅️ Back", callback_data=f"up:view:{uid}"),
         ]
     ])
     try:
@@ -1405,7 +1405,7 @@ async def up_ban_screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🚫 Confirm Ban",  callback_data=f"up:ban:cfm:{uid}"),
-            InlineKeyboardButton("❌ Cancel",         callback_data=f"up:view:{uid}"),
+            InlineKeyboardButton("⬅️ Back",         callback_data=f"up:view:{uid}"),
         ]
     ])
     await _safe_edit(
@@ -1482,7 +1482,7 @@ async def up_unban_screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Confirm Unban", callback_data=f"up:ubn:cfm:{uid}"),
-            InlineKeyboardButton("❌ Cancel",         callback_data=f"up:view:{uid}"),
+            InlineKeyboardButton("⬅️ Back",         callback_data=f"up:view:{uid}"),
         ]
     ])
     await _safe_edit(
@@ -1562,7 +1562,7 @@ async def up_delete_screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑 CONFIRM DELETE", callback_data=f"up:del:cfm:{uid}")],
-        [InlineKeyboardButton("❌ Cancel",          callback_data=f"up:view:{uid}")],
+        [InlineKeyboardButton("⬅️ Back",          callback_data=f"up:view:{uid}")],
     ])
     await _safe_edit(
         query,

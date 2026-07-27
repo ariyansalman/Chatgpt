@@ -217,7 +217,7 @@ async def _start_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         await _safe_edit(query,
             "🔍 <b>Audit Log Search</b>\n\nSend a search term (action, module, details):",
-            InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="acc:audit:page:0")]]))
+            InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="acc:audit:page:0")]]))
     context.user_data["_audit_search"] = True
     return AUDIT_SEARCH_INPUT
 

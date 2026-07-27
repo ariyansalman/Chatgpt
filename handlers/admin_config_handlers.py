@@ -172,7 +172,7 @@ async def admin_config_search_start(update: Update, context: ContextTypes.DEFAUL
     context.user_data.pop("cfg_search_results", None)
     context.user_data.pop("cfg_search_term",    None)
 
-    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="admin_bot_config")]]
+    kb = [[InlineKeyboardButton("⬅️ Back", callback_data="admin_bot_config")]]
     await _safe_edit(
         query,
         "🔍 <b>Search Settings</b>\n\n"
@@ -488,7 +488,7 @@ async def admin_config_edit_start(update: Update, context: ContextTypes.DEFAULT_
     }.get(vtype, "Send the new value.")
 
     cat_label = _CAT_LABELS.get(_cat, _cat)
-    kb = [[InlineKeyboardButton("❌ Cancel", callback_data=f"cfg_view_{key}")]]
+    kb = [[InlineKeyboardButton("⬅️ Back", callback_data=f"cfg_view_{key}")]]
     try:
         await query.edit_message_text(
             f"✏️ <b>Edit: {label}</b>\n"

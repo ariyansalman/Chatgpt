@@ -994,7 +994,7 @@ async def bca_delete_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Yes, Delete", callback_data=f"bca:del_ok:{bid}"),
-        InlineKeyboardButton("❌ Cancel",       callback_data=f"bca:analytics:{bid}"),
+        InlineKeyboardButton("⬅️ Back",       callback_data=f"bca:analytics:{bid}"),
     ]])
     await _safe_edit(query,
         f"🗑 <b>Delete Broadcast #{bid}: {title}</b>\n\n"

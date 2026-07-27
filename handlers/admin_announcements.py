@@ -492,7 +492,7 @@ async def ann_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚠️ <b>Delete Announcement #{ann_id}?</b>\nThis cannot be undone. Tap again to confirm.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🗑 Yes, Delete", callback_data=f"ann:delete:{ann_id}")],
-                [InlineKeyboardButton("❌ Cancel", callback_data=f"ann:view:{ann_id}")],
+                [InlineKeyboardButton("⬅️ Back", callback_data=f"ann:view:{ann_id}")],
             ]),
         )
 
@@ -616,7 +616,7 @@ async def ann_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query,
         "➕ <b>New Announcement</b>\n\nStep 1/2 — Send the <b>title</b> of the announcement:",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="ann:menu")
+            InlineKeyboardButton("⬅️ Back", callback_data="ann:menu")
         ]]),
     )
     return ANN_TITLE
@@ -641,7 +641,7 @@ async def ann_title_received(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Step 2/2 — Now send the <b>announcement content</b> (supports HTML):",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="ann:menu")
+            InlineKeyboardButton("⬅️ Back", callback_data="ann:menu")
         ]]),
     )
     return ANN_CONTENT

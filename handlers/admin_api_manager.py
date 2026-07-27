@@ -495,7 +495,7 @@ async def aim_del_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Delete", callback_data=f"aim:del_ok:{iid}"),
-         InlineKeyboardButton("❌ Cancel", callback_data=f"aim:view:{iid}")],
+         InlineKeyboardButton("⬅️ Back", callback_data=f"aim:view:{iid}")],
     ])
     await _send(update, text, kb)
 
@@ -540,7 +540,7 @@ async def aim_rotate_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Clear Key", callback_data=f"aim:rotate_ok:{iid}"),
-         InlineKeyboardButton("❌ Cancel", callback_data=f"aim:view:{iid}")],
+         InlineKeyboardButton("⬅️ Back", callback_data=f"aim:view:{iid}")],
     ])
     await _send(update, text, kb)
 

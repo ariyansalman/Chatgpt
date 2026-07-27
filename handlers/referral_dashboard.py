@@ -471,7 +471,7 @@ async def rd_adm_set_fpb_start(update: Update, context: ContextTypes.DEFAULT_TYP
         f"🛒 <b>Set First-Purchase Bonus</b>\n\nCurrent: <b>${cur:.2f}</b>\n\n"
         f"Extra bonus to referrer when their referred user makes their first purchase:",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="rd:admin")
+            InlineKeyboardButton("⬅️ Back", callback_data="rd:admin")
         ]]),
     )
     return RD_ADM_FPB

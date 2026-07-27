@@ -458,7 +458,7 @@ async def bcm_campaign_del_ask(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑 Yes, Delete", callback_data=f"bcm:campaign:del_ok:{campaign_id}")],
-        [InlineKeyboardButton("❌ Cancel",       callback_data=f"bcm:campaign:view:{campaign_id}")],
+        [InlineKeyboardButton("⬅️ Back",       callback_data=f"bcm:campaign:view:{campaign_id}")],
     ])
     await _safe_edit(query, f"⚠️ Delete campaign <b>{c.name}</b>?\n\nThis cannot be undone.", kb)
 
@@ -896,7 +896,7 @@ async def bcm_template_del_ask(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑 Yes, Delete", callback_data=f"bcm:template:del_ok:{template_id}")],
-        [InlineKeyboardButton("❌ Cancel",       callback_data=f"bcm:template:view:{template_id}")],
+        [InlineKeyboardButton("⬅️ Back",       callback_data=f"bcm:template:view:{template_id}")],
     ])
     await _safe_edit(query, f"⚠️ Delete template <b>{t.name}</b>?\n\nThis cannot be undone.", kb)
 
@@ -1153,7 +1153,7 @@ async def bcm_rule_del_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🗑 Yes, Delete", callback_data=f"bcm:rule:del_ok:{rule_id}")],
-        [InlineKeyboardButton("❌ Cancel",       callback_data=f"bcm:rule:view:{rule_id}")],
+        [InlineKeyboardButton("⬅️ Back",       callback_data=f"bcm:rule:view:{rule_id}")],
     ])
     await _safe_edit(query, f"⚠️ Delete rule <b>{r.name}</b>?\n\nThis cannot be undone.", kb)
 

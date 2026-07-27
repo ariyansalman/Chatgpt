@@ -596,7 +596,7 @@ async def flm_keys_del_bulk_menu(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton("⌛ Delete All EXPIRED",  callback_data="flm:keys:del_bulk:confirm:all:expired")],
         [InlineKeyboardButton("♻️ Delete All RECYCLED", callback_data="flm:keys:del_bulk:confirm:all:recycled")],
         [InlineKeyboardButton("🗑 Delete ALL Keys",     callback_data="flm:keys:del_bulk:confirm:all:all")],
-        [InlineKeyboardButton("❌ Cancel", callback_data="flm:keys:menu")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="flm:keys:menu")],
     ]
     await _send(update, text, InlineKeyboardMarkup(btns))
 
@@ -619,7 +619,7 @@ async def flm_keys_del_bulk_confirm(update: Update, context: ContextTypes.DEFAUL
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Confirm Delete", callback_data=f"flm:keys:del_bulk:go:{kt}:{status}")],
-        [InlineKeyboardButton("❌ Cancel",         callback_data="flm:keys:menu")],
+        [InlineKeyboardButton("⬅️ Back",         callback_data="flm:keys:menu")],
     ])
     await _send(update, text, kb)
 
@@ -701,7 +701,7 @@ async def flm_keys_import_prompt(update: Update, context: ContextTypes.DEFAULT_T
     btns = []
     for kt, label in _KEY_TYPES:
         btns.append([InlineKeyboardButton(label, callback_data=f"flm_import_type:{kt}")])
-    btns.append([InlineKeyboardButton("❌ Cancel", callback_data="flm:keys:menu")])
+    btns.append([InlineKeyboardButton("⬅️ Back", callback_data="flm:keys:menu")])
     await q.message.reply_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode="HTML")
     return _KEY_IMPORT_TYPE
 

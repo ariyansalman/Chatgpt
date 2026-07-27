@@ -142,7 +142,7 @@ async def maintenance_set_msg_start(update: Update, context: ContextTypes.DEFAUL
         f"📝 <b>Set Maintenance Message</b>\n\nCurrent:\n<i>{cur}</i>\n\n"
         f"Send the new message (supports HTML):",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="maint:menu")
+            InlineKeyboardButton("⬅️ Back", callback_data="maint:menu")
         ]]),
     )
     return MAINT_MSG
@@ -189,7 +189,7 @@ async def maintenance_set_return_start(update: Update, context: ContextTypes.DEF
         f"Send a human-readable time (e.g. <code>~2 hours</code>, <code>14:00 UTC</code>).\n"
         f"Send <code>clear</code> to remove it.",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="maint:menu")
+            InlineKeyboardButton("⬅️ Back", callback_data="maint:menu")
         ]]),
     )
     return MAINT_RETURN
@@ -268,7 +268,7 @@ async def maintenance_whitelist_add_start(update: Update, context: ContextTypes.
         query,
         "➕ <b>Add User to Maintenance Whitelist</b>\n\nSend the Telegram user ID to add:",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="maint:wl")
+            InlineKeyboardButton("⬅️ Back", callback_data="maint:wl")
         ]]),
     )
     return MAINT_WL_ADD

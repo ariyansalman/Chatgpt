@@ -288,7 +288,7 @@ async def _start_edit(query, context, field_key: str, prompt: str, state: int):
         await query.edit_message_text(
             prompt,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("❌ Cancel", callback_data="admin_zinipay_view")]
+                [InlineKeyboardButton("⬅️ Back", callback_data="admin_zinipay_view")]
             ]),
             parse_mode="HTML",
         )

@@ -347,7 +347,7 @@ async def vip_tier_del_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"vip:tier_del_ok:{tier_id}"),
-         InlineKeyboardButton("❌ Cancel", callback_data=f"vip:tier:{tier_id}")],
+         InlineKeyboardButton("⬅️ Back", callback_data=f"vip:tier:{tier_id}")],
     ])
     await _send(update, text, kb)
 
@@ -716,7 +716,7 @@ async def vip_reward_del_ask(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = f"🗑 <b>Delete Reward</b>\n\nReward: <b>{name}</b>\n\nThis will also delete all claim records. Continue?"
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Delete", callback_data=f"vip:reward_del_ok:{rid}"),
-         InlineKeyboardButton("❌ Cancel", callback_data=f"vip:reward:{rid}")],
+         InlineKeyboardButton("⬅️ Back", callback_data=f"vip:reward:{rid}")],
     ])
     await _send(update, text, kb)
 
@@ -977,7 +977,7 @@ async def vip_pts_rst(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     text = "⚠️ <b>Reset Points</b>\n\nThis will set the user's loyalty points to 0. Continue?"
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Reset", callback_data=f"vip:pts_rst_ok:{user_db_id}"),
-         InlineKeyboardButton("❌ Cancel", callback_data=f"vip:user:{user_db_id}")],
+         InlineKeyboardButton("⬅️ Back", callback_data=f"vip:user:{user_db_id}")],
     ])
     await _send(update, text, kb)
 

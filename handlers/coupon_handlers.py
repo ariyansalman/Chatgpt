@@ -279,7 +279,7 @@ async def admin_coupon_add_start(update: Update, context: ContextTypes.DEFAULT_T
             "🎟 <b>New Coupon</b>\n\nEnter the coupon <b>code</b> (letters/numbers, no spaces):",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("❌ Cancel", callback_data="admin_coupons")
+                InlineKeyboardButton("⬅️ Back", callback_data="admin_coupons")
             ]]),
         )
     except BadRequest as e:
