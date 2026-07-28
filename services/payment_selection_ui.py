@@ -173,8 +173,7 @@ def build_crypto_networks_screen(gateways: Optional[Sequence[dict]]) -> Tuple[st
     crypto_sorted = sorted(crypto, key=lambda g: order.get(g["key"], len(order)))
 
     rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in crypto_sorted]
-    rows.append([InlineKeyboardButton("🔙 Back", callback_data="topup_menu_back")])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
 
     text = "₿ <b>Crypto Networks</b>\n\nSelect your preferred network."
     return text, InlineKeyboardMarkup(rows)
@@ -220,6 +219,21 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
     by_key = {gw["key"]: gw for gw in mobile}
     has_zinipay = "zinipay" in by_key
 
+    # Each ZiniPay-routed provider (bKash / Nagad / Rocket / Upay) must only
+    # reach the customer when the admin has actually set a wallet number for
+    # it in the Wallet Manager. A provider with no wallet number is
+    # "Not Configured" and must never appear here — see
+    # services/zinipay_payment.configured_providers(), read fresh on every
+    # call so a Wallet Manager edit takes effect immediately, no restart
+    # required.
+    zini_configured = {}
+    if has_zinipay:
+        try:
+            from services.zinipay_payment import configured_providers
+            zini_configured = configured_providers()
+        except Exception:
+            zini_configured = {}
+
     rows: List[List[InlineKeyboardButton]] = []
     used_keys = set()
 
@@ -227,7 +241,7 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
         emoji, label = _MOBILE_MONEY_DISPLAY["bkash"]
         rows.append([_btn(by_key["bkash"], label=label, emoji=emoji)])
         used_keys.add("bkash")
-    elif has_zinipay:
+    elif has_zinipay and zini_configured.get("bkash"):
         emoji, label = _MOBILE_MONEY_DISPLAY["bkash"]
         rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_bkash")])
 
@@ -235,25 +249,25 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
         emoji, label = _MOBILE_MONEY_DISPLAY["nagad"]
         rows.append([_btn(by_key["nagad"], label=label, emoji=emoji)])
         used_keys.add("nagad")
-    elif has_zinipay:
+    elif has_zinipay and zini_configured.get("nagad"):
         emoji, label = _MOBILE_MONEY_DISPLAY["nagad"]
         rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_nagad")])
 
     if has_zinipay:
-        emoji, label = _MOBILE_MONEY_DISPLAY["rocket"]
-        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_rocket")])
+        if zini_configured.get("rocket"):
+            emoji, label = _MOBILE_MONEY_DISPLAY["rocket"]
+            rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_rocket")])
+        if zini_configured.get("upay"):
+            emoji, label = _MOBILE_MONEY_DISPLAY["upay"]
+            rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_upay")])
         used_keys.add("zinipay")
-
-        emoji, label = _MOBILE_MONEY_DISPLAY["upay"]
-        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_upay")])
 
     # Any future BD mobile-money gateway that isn't bkash/nagad/zinipay.
     for key, gw in by_key.items():
         if key not in used_keys:
             rows.append([_btn(gw)])
 
-    rows.append([InlineKeyboardButton("🔙 Back", callback_data="topup_menu_back")])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
 
     text = "🇧🇩 <b>Mobile Banking</b>\n\nSelect your preferred provider."
     return text, InlineKeyboardMarkup(rows)

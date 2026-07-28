@@ -24,23 +24,23 @@
         "choose_option": "👇 Choose an option below",
         "greeting": "👋 Hey {name}, welcome back!",
         "dashboard_title": "🛍️ Premium Digital Store",
-        "dashboard_subtitle": "",
-        "dashboard_wallet_label": "💰 Wallet Balance",
+        "dashboard_subtitle": "AI Subscriptions • Software • Digital Products",
+        "dashboard_wallet_label": "💰 Balance",
         "dashboard_footer": "",
-        "dashboard_orders_label": "📦 Total Orders"
+        "dashboard_orders_label": "📦 Orders"
     },
     "main_menu": {
-        "products": "🛒 Products",
+        "products": "🛍️ Products",
         "flash_sales": "🔥 Flash Sales",
         "search": "🔎 Search Products",
-        "topup": "💰 Top Up",
-        "order_history": "📦 Orders",
+        "topup": "💵 Add Funds",
+        "order_history": "📦 My Orders",
         "availability": "🧮 Availability",
-        "support": "🎧 Support",
-        "refer": "👥 Referral",
+        "support": "🎧 Support Center",
+        "refer": "👥 Referrals",
         "loyalty": "🎁 Loyalty",
         "wallet": "👛 Wallet",
-        "admin_panel": "🛠 Admin Panel",
+        "admin_panel": "🛠️ Admin Panel",
         "account": "👤 Profile"
     },
     "wallet": {

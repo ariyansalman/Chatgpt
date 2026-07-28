@@ -244,13 +244,13 @@ _CAT_META: dict[str, tuple[str, str]] = {
     "products":       ("📦", "Products"),
     "orders":         ("🛒", "Orders"),
     "payments":       ("💳", "Payments"),
-    "customers":      ("👥", "Customers"),
+    "customers":      ("👥", "Users"),
     "marketing":      ("📣", "Marketing"),
     "notifications":  ("🔔", "Notifications"),
     "ui_menu":        ("🎨", "UI & Menu"),
-    "store_settings": ("🏪", "Store Settings"),
-    "security":       ("🛡", "Security"),
-    "system":         ("⚙", "System"),
+    "store_settings": ("🏪", "Store"),
+    "security":       ("🔒", "Security"),
+    "system":         ("⚙️", "System"),
     "tools":          ("🧰", "Tools"),
 }
 
@@ -347,44 +347,68 @@ _ROOT_GROUPS: list[tuple[str, list[str]]] = [
 ]
 
 
-def build_acc_root_keyboard(maintenance_on: bool) -> IKM:
-    """Categorized root panel keyboard, grouped into Primary / Management / System."""
-    from utils.bot_config import cfg
-    use_icons   = cfg.get_bool("admin_panel_icons",     True)
-    show_search = cfg.get_bool("admin_panel_search",    True)
+def build_acc_root_keyboard(maintenance_on: bool,
+                            stats: "dict | None" = None) -> IKM:
+    """Compact premium root panel — 2-column grid with dynamic status badges.
 
-    def lbl(icon: str, text: str) -> str:
-        return f"{icon}  {text}" if use_icons else text
+    Button order and callback_data are fully preserved; only the visual
+    presentation (layout, labels, badges) has changed.
+    """
+    if stats is None:
+        stats = {}
+
+    # ── Dynamic badge counts ──────────────────────────────────────────────────
+    low_stock         = stats.get("low_stock", 0)
+    pending_orders    = stats.get("pending_orders", 0)
+    pending_payments  = stats.get("pending_payments", 0)
+    open_tickets      = stats.get("open_tickets", 0)
+
+    def _badge(base: str, count: int, suffix: str = "") -> str:
+        """Append a parenthetical badge when count > 0."""
+        if count:
+            tag = f"{count} {suffix}".strip() if suffix else str(count)
+            return f"{base} ({tag})"
+        return base
+
+    # ── Fixed 2-column grid, exact order from spec ────────────────────────────
+    _GRID: list[tuple[str, str, int, str]] = [
+        ("dashboard",      "📊 Dashboard",      0,               ""),
+        ("products",       "📦 Products",       low_stock,       "Low Stock"),
+        ("orders",         "🛒 Orders",         pending_orders,  "Pending"),
+        ("payments",       "💳 Payments",       pending_payments,"Pending"),
+        ("customers",      "👥 Users",          0,               ""),
+        ("marketing",      "📣 Marketing",      0,               ""),
+        ("notifications",  "🔔 Notifications",  open_tickets,    ""),
+        ("ui_menu",        "🎨 UI & Menu",      0,               ""),
+        ("store_settings", "🏪 Store",          0,               ""),
+        ("security",       "🔒 Security",       0,               ""),
+        ("system",         "⚙️ System",         0,               ""),
+        ("tools",          "🧰 Tools",          0,               ""),
+    ]
 
     kb: list[list[IKB]] = []
-
-    # ── Category grid — grouped in the same Primary / Management / System
-    # order as before, just without a decorative "── Group ──" header row
-    # between them (button positions/order and callback_data unchanged).
-    for group_name, cats in _ROOT_GROUPS:
-        row: list[IKB] = []
-        for cat in cats:
-            icon, name = _CAT_META[cat]
-            row.append(IKB(lbl(icon, name), callback_data=f"acc:cat:{cat}"))
-            if len(row) == 2:
-                kb.append(row)
-                row = []
-        if row:
+    row: list[IKB] = []
+    for cat, base_label, count, suffix in _GRID:
+        label = _badge(base_label, count, suffix)
+        row.append(IKB(label, callback_data=f"acc:cat:{cat}"))
+        if len(row) == 2:
             kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
 
-    # ── Quick tools: search ───────────────────────────────────────────────────
-    if show_search:
-        kb.append([IKB("🔍 Search", callback_data="acc:ui:search")])
+    # ── Search ────────────────────────────────────────────────────────────────
+    kb.append([IKB("🔍 Search", callback_data="acc:ui:search")])
 
-    # ── System controls ──────────────────────────────────────────────────────
+    # ── Maintenance toggle ────────────────────────────────────────────────────
     maint_label = (
-        "🔴 Maintenance: ON"
-        if maintenance_on
-        else "🟢 Maintenance: OFF"
+        "🔴 Maintenance (ON)" if maintenance_on else "🟢 Maintenance (OFF)"
     )
-    # (Panel Settings is now under 🎨 UI & Menu — no separate shortcut here.)
     kb.append([IKB(maint_label, callback_data="admin_maintenance_toggle")])
-    kb.append([IKB("🚪 Exit Admin Panel", callback_data="main_menu")])
+
+    # ── Exit ──────────────────────────────────────────────────────────────────
+    kb.append([IKB("🚪 Exit Admin", callback_data="main_menu")])
+
     return IKM(kb)
 
 
@@ -520,7 +544,7 @@ async def render_control_center(update: Update,
 
     stats = _collect_dashboard_stats()
     text  = _render_dashboard_text(stats)
-    kb    = build_acc_root_keyboard(cfg.get_bool("maintenance_mode", False))
+    kb    = build_acc_root_keyboard(cfg.get_bool("maintenance_mode", False), stats=stats)
 
     query = getattr(update, "callback_query", None)
     if query is not None:

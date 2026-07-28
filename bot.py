@@ -20,6 +20,7 @@ warnings.filterwarnings(
 )
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler, PreCheckoutQueryHandler
 from utils import global_button_colors  # noqa: F401 -- patches InlineKeyboardButton so every button in the bot gets a color, not just the main menu
+from utils import global_callback_reliability  # noqa: F401 -- patches CallbackQuery.edit_message_text/.answer so every callback in the bot survives expired queries, deleted/unmodifiable messages, etc.
 from config import settings, validate_settings
 from database.init_data import initialize_database
 from handlers import (
@@ -808,6 +809,14 @@ def main():
     application = Application.builder().token(settings.BOT_TOKEN).build()
 
     # ── Global middleware ──────────────────────────────────────────────
+    # Callback-query reliability gate — must run before EVERYTHING else so
+    # every button tap gets answered (spinner cleared) immediately and an
+    # accidental double-tap of the same button is dropped before any
+    # handler group (including the maintenance gate below) sees it twice.
+    # (The matching catch-all safety net for stale/unroutable callback_data
+    # is registered separately, at the very end of this function, after
+    # every other handler — see the comment there for why.)
+    global_callback_reliability.register_immediate_ack(application)
     # Maintenance mode gate — must run BEFORE all other handlers
     application.add_handler(TypeHandler(_TgUpdate, _track_activity), group=-2)
     application.add_handler(TypeHandler(_TgUpdate, _maintenance_gate), group=-1)
@@ -2822,12 +2831,14 @@ def main():
     # Leaderboard have been removed; Commission History is now reached from
     # the essential referral screen — see handlers/referral_handlers.py.)
     from handlers.referral_dashboard import (
-        rd_commissions,
+        rd_commissions, rd_commissions_page,
         rd_admin_menu, rd_admin_toggle_lifetime,
         rd_admin_withdrawals_list, rd_admin_approve_withdrawal, rd_admin_reject_withdrawal,
         build_rd_admin_convs,
     )
     application.add_handler(CallbackQueryHandler(rd_commissions,              pattern=r"^rd:comm$"))
+    application.add_handler(CallbackQueryHandler(rd_commissions_page,         pattern=r"^rd:comm:p:\d+$"))
+    application.add_handler(CallbackQueryHandler(referral_handlers.copy_ref_link_callback, pattern=r"^copy_ref_link$"))
     application.add_handler(CallbackQueryHandler(rd_admin_menu,               pattern=r"^rd:admin$"))
     application.add_handler(CallbackQueryHandler(rd_admin_toggle_lifetime,    pattern=r"^rd:adm:toggle_lifetime$"))
     application.add_handler(CallbackQueryHandler(rd_admin_withdrawals_list,   pattern=r"^rd:adm:withdrawals$"))
@@ -3305,6 +3316,14 @@ def main():
     application.add_handler(CallbackQueryHandler(_aos.aos_copy,   pattern=r"^aos:copy:\d+$"))
     # Standalone cancel — covers stale Cancel buttons from ended conversations.
     application.add_handler(CallbackQueryHandler(_aos.aos_cancel, pattern=r"^aos:cancel$"))
+
+    # Callback-data safety net — MUST be the very last handler registered
+    # in the default group. It only ever runs when no ConversationHandler
+    # state/fallback and no dedicated CallbackQueryHandler above claimed
+    # the update (e.g. stale, renamed, or otherwise unroutable
+    # callback_data), so a leftover/expired button can never go completely
+    # unanswered — the user is always returned to a working screen.
+    global_callback_reliability.register_catchall(application)
 
     # Register global error handler — catches every unhandled exception
     application.add_error_handler(global_error_handler)

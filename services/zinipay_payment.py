@@ -74,6 +74,83 @@ def _get_or_create_config(session, PaymentGatewayConfig):
     return row
 
 
+# ---------------------------------------------------------------------------
+# Per-provider (bKash / Nagad / Rocket / Upay) configuration status.
+#
+# ZiniPay is a single API-key gateway that fans out to four BD mobile-money
+# providers, each identified purely by whether the admin has set a wallet
+# (merchant) number for it in the Wallet Manager. A provider with no wallet
+# number is always "Not Configured":
+#   - it must never be shown to customers on the payment selection screen
+#   - it can never be selected as the Default Provider
+# regardless of the overall ZiniPay enable/disable toggle. These helpers are
+# the single source of truth every other module reads to answer that
+# question, so a Wallet Manager edit is reflected everywhere immediately —
+# no caching, no restart required.
+# ---------------------------------------------------------------------------
+
+PROVIDER_ORDER = ("bkash", "nagad", "rocket", "upay")
+
+
+def provider_numbers() -> dict:
+    """Return {provider: wallet_number_or_""}, read fresh from the DB on
+    every call."""
+    numbers = {p: "" for p in PROVIDER_ORDER}
+    get_db_session, PaymentGatewayConfig = _gw_cfg()
+    if get_db_session is None:
+        return numbers
+    try:
+        with get_db_session() as session:
+            row = session.query(PaymentGatewayConfig).filter_by(gateway="zinipay").first()
+            if row:
+                numbers = {
+                    "bkash":  (row.zinipay_bkash_number  or "").strip(),
+                    "nagad":  (row.zinipay_nagad_number  or "").strip(),
+                    "rocket": (row.zinipay_rocket_number or "").strip(),
+                    "upay":   (row.zinipay_upay_number   or "").strip(),
+                }
+    except Exception:
+        logger.exception("Failed to load ZiniPay provider wallet numbers")
+    return numbers
+
+
+def configured_providers(numbers: Optional[dict] = None) -> dict:
+    """Return {provider: bool} — True only when a wallet number is set for
+    that provider. A provider with no wallet number is "Not Configured"."""
+    numbers = numbers if numbers is not None else provider_numbers()
+    return {p: bool(numbers.get(p)) for p in PROVIDER_ORDER}
+
+
+def is_any_provider_configured(numbers: Optional[dict] = None) -> bool:
+    """True when at least one BD mobile-money provider has a wallet number
+    set. Used to decide whether the combined ZiniPay entry point (top-level
+    'Mobile Banking' row / legacy gateway list) should appear at all."""
+    return any(configured_providers(numbers).values())
+
+
+def first_configured_provider(numbers: Optional[dict] = None) -> Optional[str]:
+    """First configured provider in canonical bKash → Nagad → Rocket → Upay
+    order, or None when nothing is configured at all."""
+    cfg = configured_providers(numbers)
+    for p in PROVIDER_ORDER:
+        if cfg.get(p):
+            return p
+    return None
+
+
+def provider_status(provider: str, *, enabled_overall: bool, numbers: Optional[dict] = None) -> str:
+    """One of "not_configured" | "enabled" | "disabled" for a single provider:
+      - "not_configured": no wallet number set. Must never be shown to
+        customers and can never be the Default Provider.
+      - "enabled": wallet number set AND the ZiniPay gateway is turned on.
+      - "disabled": wallet number set but the ZiniPay gateway is turned off.
+    """
+    numbers = numbers if numbers is not None else provider_numbers()
+    if not numbers.get(provider):
+        return "not_configured"
+    return "enabled" if enabled_overall else "disabled"
+
+
 class ZiniPayService:
     """Service for ZiniPay verify+confirm deposit flow.
 

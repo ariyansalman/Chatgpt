@@ -76,16 +76,48 @@ def _get_or_create(session) -> PaymentGatewayConfig:
 
 
 def _load_cfg() -> dict:
+    from services.zinipay_payment import PROVIDER_ORDER, first_configured_provider
+
     with get_db_session() as session:
         row = _get_or_create(session)
+        numbers = {
+            "bkash":  row.zinipay_bkash_number  or "",
+            "nagad":  row.zinipay_nagad_number  or "",
+            "rocket": row.zinipay_rocket_number or "",
+            "upay":   row.zinipay_upay_number   or "",
+        }
+        enabled = bool(row.is_enabled)
+        stored_default = (row.zinipay_default_provider or "").lower()
+
+        # A provider only counts as the Default Provider while it's actually
+        # configured — if the stored value is stale (its wallet number was
+        # cleared), fall back to the first configured provider for display
+        # purposes. The DB row itself is corrected in
+        # admin_zinipay_receive_value() the moment a wallet number changes.
+        if stored_default and numbers.get(stored_default):
+            default_provider = stored_default
+        else:
+            default_provider = first_configured_provider(numbers) or ""
+
+        configured = {p: bool(numbers[p]) for p in PROVIDER_ORDER}
+        status = {
+            p: ("enabled" if configured[p] and enabled else
+                "disabled" if configured[p] else
+                "not_configured")
+            for p in PROVIDER_ORDER
+        }
+
         return {
-            "enabled":           bool(row.is_enabled),
+            "enabled":           enabled,
             "api_key":           row.api_key or "",
-            "bkash":             row.zinipay_bkash_number or "",
-            "nagad":             row.zinipay_nagad_number or "",
-            "rocket":            row.zinipay_rocket_number or "",
-            "upay":              row.zinipay_upay_number or "",
-            "default_provider":  row.zinipay_default_provider or "bkash",
+            "bkash":             numbers["bkash"],
+            "nagad":             numbers["nagad"],
+            "rocket":            numbers["rocket"],
+            "upay":              numbers["upay"],
+            "numbers":           numbers,
+            "configured":        configured,
+            "status":            status,
+            "default_provider":  default_provider,
             "rate":              row.zinipay_usd_to_bdt_rate,
             "auto_rate":         bool(row.zinipay_auto_rate),
             "instructions":      row.zinipay_instructions or "",
@@ -108,6 +140,18 @@ def _num(value: str) -> str:
     return f"<code>{value}</code>" if value else "❌ <i>not set</i>"
 
 
+# Real per-provider status, always computed from the wallet number + the
+# overall gateway toggle — never hand-set, so it can never drift from what's
+# actually in the DB.
+_STATUS_DISPLAY = {
+    "enabled":        "✅ Enabled",
+    "not_configured": "⚪ Not Configured",
+    "disabled":       "⛔ Disabled",
+}
+
+_PROVIDER_TITLE = {"bkash": "bKash", "nagad": "Nagad", "rocket": "Rocket", "upay": "Upay"}
+
+
 def _summary(cfg: dict) -> str:
     status = "✅ Enabled" if cfg["enabled"] else "🚫 Disabled"
     rate_display = (
@@ -116,19 +160,25 @@ def _summary(cfg: dict) -> str:
     if cfg["auto_rate"]:
         rate_display += " (auto-refresh ✅)"
     instr_preview = cfg["instructions"][:60] + "…" if len(cfg["instructions"]) > 60 else (cfg["instructions"] or "❌ <i>not set</i>")
+
+    provider_lines = "\n".join(
+        f"  📱 {_PROVIDER_TITLE[p]}: {_num(cfg[p])} — {_STATUS_DISPLAY[cfg['status'][p]]}"
+        for p in ("bkash", "nagad", "rocket", "upay")
+    )
+    default_display = cfg["default_provider"].title() if cfg["default_provider"] else "❌ <i>none configured</i>"
+
     return (
         "🇧🇩 <b>ZiniPay Configuration</b>\n\n"
-        f"<b>Status:</b> {status}\n"
+        f"<b>Gateway Status:</b> {status}\n"
         f"<b>API Key:</b> {_mask(cfg['api_key'])}\n\n"
-        "<b>Wallet Numbers:</b>\n"
-        f"  📱 bKash:  {_num(cfg['bkash'])}\n"
-        f"  📱 Nagad:  {_num(cfg['nagad'])}\n"
-        f"  📱 Rocket: {_num(cfg['rocket'])}\n"
-        f"  📱 Upay:   {_num(cfg['upay'])}\n\n"
-        f"<b>Default Provider:</b> {cfg['default_provider'].title()}\n"
+        "<b>Mobile Banking Providers:</b>\n"
+        f"{provider_lines}\n\n"
+        f"<b>Default Provider:</b> {default_display}\n"
         f"<b>Exchange Rate:</b> {rate_display}\n"
         f"<b>Instructions:</b> {instr_preview}\n\n"
-        "⚠️ API Key and at least one wallet number must be set before enabling."
+        "⚠️ API Key and at least one wallet number must be set before enabling. "
+        "A provider with no wallet number is ⚪ Not Configured — it's hidden "
+        "from customers and can't be the Default Provider."
     )
 
 
@@ -241,7 +291,9 @@ async def admin_zinipay_provider_menu(update: Update, context: ContextTypes.DEFA
     current = cfg["default_provider"]
     buttons = []
     for p in VALID_PROVIDERS:
-        label = f"{'✅ ' if p == current else ''}{p.title()}"
+        is_configured = cfg["configured"][p]
+        mark = "✅ " if p == current else ("⚪ " if not is_configured else "")
+        label = f"{mark}{p.title()}"
         buttons.append(InlineKeyboardButton(label, callback_data=f"admin_zinipay_setprovider_{p}"))
     keyboard = InlineKeyboardMarkup([
         buttons[:2], buttons[2:],
@@ -251,7 +303,9 @@ async def admin_zinipay_provider_menu(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text(
             "🏦 <b>Select the default payment provider</b>\n\n"
             "This provider will be highlighted first on the user's payment screen. "
-            "All configured wallet numbers are always shown.",
+            "All configured wallet numbers are always shown.\n\n"
+            "⚪ = Not Configured (no wallet number set) — set a wallet number for "
+            "it first before it can be selected as the Default Provider.",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
@@ -262,14 +316,28 @@ async def admin_zinipay_provider_menu(update: Update, context: ContextTypes.DEFA
 
 async def admin_zinipay_set_provider(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     if not has_permission(update.effective_user.id, "manage_payments"):
+        await query.answer()
         return
 
     provider = query.data.replace("admin_zinipay_setprovider_", "")
     if provider not in VALID_PROVIDERS:
+        await query.answer()
         return
 
+    # A "Not Configured" provider (no wallet number set) can never be saved
+    # as the Default Provider — prevent this invalid configuration outright
+    # rather than accepting it and silently falling back at payment time.
+    cfg = _load_cfg()
+    if not cfg["configured"][provider]:
+        await query.answer(
+            f"⚠️ {provider.title()} has no wallet number set yet. "
+            "Add a wallet number for it before making it the default.",
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
     with get_db_session() as session:
         row = _get_or_create(session)
         row.zinipay_default_provider = provider
@@ -470,6 +538,36 @@ async def admin_zinipay_receive_value(update: Update, context: ContextTypes.DEFA
             row.zinipay_usd_to_bdt_rate = save_value
         elif field == "zinipay_instructions":
             row.zinipay_instructions = None if clear else value[:2000]
+
+        wallet_fields = (
+            "zinipay_bkash_number", "zinipay_nagad_number",
+            "zinipay_rocket_number", "zinipay_upay_number",
+        )
+        if field in wallet_fields:
+            # A wallet number was just set or cleared — the provider's
+            # Configured/Not Configured status changes immediately (no
+            # restart required). If that just made the current Default
+            # Provider "Not Configured", auto-switch the default to the
+            # first still-configured provider, bKash → Nagad → Rocket →
+            # Upay, so an invalid Default Provider is never left saved.
+            # Guarded on its own: if this step fails for any reason, the
+            # wallet number the admin just typed must still be saved below.
+            try:
+                current_numbers = {
+                    "bkash":  row.zinipay_bkash_number  or "",
+                    "nagad":  row.zinipay_nagad_number  or "",
+                    "rocket": row.zinipay_rocket_number or "",
+                    "upay":   row.zinipay_upay_number   or "",
+                }
+                current_default = (row.zinipay_default_provider or "").lower()
+                if not current_numbers.get(current_default):
+                    from services.zinipay_payment import PROVIDER_ORDER
+                    row.zinipay_default_provider = next(
+                        (p for p in PROVIDER_ORDER if current_numbers.get(p)), None
+                    )
+            except Exception:
+                logger.exception("Failed to auto-correct ZiniPay default provider")
+
         session.commit()
 
     context.user_data.pop("zinipay_editing_field", None)

@@ -232,7 +232,22 @@ def _collect_topup_gateways():
         gateways.append({"key": "nagad", "label": "Nagad", "emoji": "🟠"})
     zinipay = ZiniPayService()
     if zinipay.enabled and zinipay.is_configured():
-        gateways.append({"key": "zinipay", "label": "bKash • Nagad • Rocket • Upay", "emoji": "🇧🇩"})
+        # The combined ZiniPay entry point only ever appears when at least
+        # one BD mobile-money provider (bKash/Nagad/Rocket/Upay) actually has
+        # a wallet number set — a provider (or the whole gateway, if none of
+        # its providers are configured) is "Not Configured" and must never
+        # reach the customer payment menu. See services/zinipay_payment.py.
+        # Guarded: this must never be able to break the OTHER gateways
+        # (Bybit/Binance/crypto/etc.) in this same list if it fails for any
+        # reason — fail closed by hiding ZiniPay rather than raising.
+        try:
+            from services.zinipay_payment import is_any_provider_configured
+            _zini_visible = is_any_provider_configured()
+        except Exception:
+            logger.exception("Failed to check ZiniPay provider configuration")
+            _zini_visible = False
+        if _zini_visible:
+            gateways.append({"key": "zinipay", "label": "bKash • Nagad • Rocket • Upay", "emoji": "🇧🇩"})
     stars_cfg = telegram_stars_service.get_config()
     if stars_cfg["enabled"]:
         gateways.append({"key": "stars", "label": "Telegram Stars", "emoji": "⭐"})
@@ -892,8 +907,20 @@ async def topup_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             nmax = cfg.get_float("nagad_max_amount", 0.0)
             if amount >= nmin and (not nmax or amount <= nmax):
                 gateways.append({"key": "nagad", "label": "Nagad", "emoji": "🟠"})
-        if ZiniPayService().enabled:
-            gateways.append({"key": "zinipay", "label": "bKash • Nagad • Rocket • Upay", "emoji": "🇧🇩"})
+        _zini_svc = ZiniPayService()
+        if _zini_svc.enabled and _zini_svc.is_configured():
+            # Same rule as _collect_topup_gateways above: only show the
+            # combined ZiniPay entry when at least one provider actually has
+            # a wallet number configured. Guarded the same way — a failure
+            # here must not break the rest of this gateway list.
+            try:
+                from services.zinipay_payment import is_any_provider_configured
+                _zini_visible = is_any_provider_configured()
+            except Exception:
+                logger.exception("Failed to check ZiniPay provider configuration")
+                _zini_visible = False
+            if _zini_visible:
+                gateways.append({"key": "zinipay", "label": "bKash • Nagad • Rocket • Upay", "emoji": "🇧🇩"})
         stars_cfg = telegram_stars_service.get_config()
         if stars_cfg["enabled"]:
             stars_needed = telegram_stars_service.stars_for_usd(amount)
@@ -2403,9 +2430,19 @@ async def _finish_zinipay_payment(
         # the admin's configured default, as long as a number is set for it.
         provider = requested_provider
     else:
-        provider = default_provider if numbers_by_provider.get(default_provider) else next(
-            (p for p, n in numbers_by_provider.items() if n), None
-        )
+        # The stored Default Provider is only honored while it's actually
+        # configured. If it has since become "Not Configured" (its wallet
+        # number was cleared), fall back to the first configured provider in
+        # bKash → Nagad → Rocket → Upay order — see services/zinipay_payment.py.
+        if numbers_by_provider.get(default_provider):
+            provider = default_provider
+        else:
+            try:
+                from services.zinipay_payment import first_configured_provider
+                provider = first_configured_provider(numbers_by_provider)
+            except Exception:
+                logger.exception("Failed to resolve fallback ZiniPay provider")
+                provider = next((p for p, n in numbers_by_provider.items() if n), None)
     send_to = numbers_by_provider.get(provider)
     if not provider or not send_to:
         await update.message.reply_text(
@@ -6263,7 +6300,7 @@ async def buy_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 Price: {format_price(product_price)}\n"
         f"📦 Available Stock: {available}\n"
         f"\n"
-        f"Choose the quantity you'd like to purchase."
+        f"Select Quantity:"
     )
 
     # Build dynamic preset keyboard from quantity_presets service (already
@@ -6306,8 +6343,7 @@ async def qty_custom_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         product_id = context.user_data.get('purchase_product_id', 0)
 
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("⬅ Back to Product", callback_data=f"product_{product_id}"),
-        InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
+        InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}"),
     ]])
 
     try:
@@ -6396,13 +6432,13 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
 
     if has_sufficient_balance:
         balance_section = (
-            f"👛 Wallet: {format_price(wallet_balance)}\n"
-            f"💳 After: {format_price(remaining_after)}"
+            f"👛 Wallet Balance: {format_price(wallet_balance)}\n"
+            f"💳 Balance After Purchase: {format_price(remaining_after)}"
         )
     else:
         shortfall = total - wallet_balance
         balance_section = (
-            f"👛 Wallet: {format_price(wallet_balance)}\n"
+            f"👛 Wallet Balance: {format_price(wallet_balance)}\n"
             f"⚠️ Short: {format_price(shortfall)}"
         )
 
@@ -6414,9 +6450,11 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
         f"🛒 Purchase Summary\n"
         f"\n"
         f"📦 {product_name}\n"
-        f"🔢 Qty: {quantity} × {format_price(product_price)}\n"
+        f"\n"
+        f"💰 Unit Price: {format_price(product_price)}\n"
+        f"🔢 Quantity: {quantity}\n"
         f"{discount_line}"
-        f"💰 Total: {format_price(total)}\n"
+        f"💵 Total: {format_price(total)}\n"
         f"\n"
         f"{balance_section}"
     )
@@ -6425,22 +6463,12 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
         keyboard = [
             [InlineKeyboardButton("✅ Confirm Purchase",
                                   callback_data=f"confirm_purchase_{product_id}_{quantity}")],
+            [InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}")],
         ]
-        if not coupon_code:
-            keyboard.append([InlineKeyboardButton("🎟 Apply Coupon", callback_data="apply_coupon")])
-        else:
-            keyboard.append([InlineKeyboardButton("🗑 Remove Coupon", callback_data="remove_coupon")])
-        keyboard.append([
-            InlineKeyboardButton("◀ Back", callback_data=f"buy_{product_id}"),
-            InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
-        ])
     else:
         keyboard = [
             [InlineKeyboardButton("💰 Top Up Wallet", callback_data="topup")],
-            [
-                InlineKeyboardButton("◀ Back", callback_data=f"buy_{product_id}"),
-                InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
-            ],
+            [InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}")],
         ]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -7237,28 +7265,20 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel the purchase process."""
+    """Cancel the purchase process — silently return to the product listing."""
     query = update.callback_query
     await query.answer()
 
-    from utils import create_main_menu_keyboard
-
     # Clear purchase data
-    context.user_data.pop('purchase_product_id', None)
-    context.user_data.pop('purchase_product_name', None)
-    context.user_data.pop('purchase_product_price', None)
-    context.user_data.pop('purchase_product_stock', None)
-    context.user_data.pop('purchase_product_type', None)
-    context.user_data.pop('purchase_quantity', None)
+    for _k in ('purchase_product_id', 'purchase_product_name', 'purchase_product_price',
+               'purchase_product_stock', 'purchase_product_type', 'purchase_quantity',
+               'purchase_coupon_id', 'purchase_coupon_code', 'purchase_coupon_discount'):
+        context.user_data.pop(_k, None)
 
-    try:
-        await query.edit_message_text(
-            "❌ Purchase cancelled.",
-            reply_markup=create_main_menu_keyboard(user_id=update.effective_user.id)
-        )
-    except BadRequest as e:
-        if "Message is not modified" not in str(e):
-            raise
+    # Silently navigate back to the product listing by re-using its render
+    # — no "Purchase cancelled" message, no new message sent.
+    from handlers.user_handlers import back_to_products_callback
+    await back_to_products_callback(update, context)
 
     return ConversationHandler.END
 
