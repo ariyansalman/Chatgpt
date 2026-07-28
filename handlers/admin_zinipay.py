@@ -3,6 +3,7 @@
 Covers every user-configurable field:
   • API Key
   • bKash / Nagad / Rocket / Upay merchant numbers
+  • Per-provider enable / disable (⚪ Not Configured when no wallet number)
   • Default provider highlighted on the payment screen
   • USD → BDT exchange rate (per-gateway override or use global)
   • Auto-rate toggle (refresh from the global exchange-rate API)
@@ -31,6 +32,7 @@ from telegram.error import BadRequest
 from database import get_db_session
 from database.models import PaymentGatewayConfig
 from utils.permissions import has_permission
+from utils.bot_config import cfg
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,14 @@ _FIELD_LABELS = {
 }
 
 VALID_PROVIDERS = ("bkash", "nagad", "rocket", "upay")
+
+# Provider display info: (emoji, display_name)
+_PROVIDER_INFO = {
+    "bkash":  ("💙", "bKash"),
+    "nagad":  ("🧡", "Nagad"),
+    "rocket": ("💜", "Rocket"),
+    "upay":   ("🔵", "Upay"),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +103,29 @@ def _load_cfg() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Per-provider active state (stored in bot_config, not in DB schema)
+# ---------------------------------------------------------------------------
+
+def _provider_is_active(provider: str) -> bool:
+    """Return True if the provider is enabled by admin (default: True)."""
+    return cfg.get_str(f"zinipay_prov_{provider}_active", "1") == "1"
+
+
+def _set_provider_active(provider: str, active: bool) -> None:
+    """Enable or disable a specific provider."""
+    cfg.set(f"zinipay_prov_{provider}_active", "1" if active else "0")
+
+
+def _provider_status(provider: str, wallet_number: str) -> str:
+    """Return a status badge string for a provider."""
+    if not wallet_number:
+        return "⚪ Not Configured"
+    if _provider_is_active(provider):
+        return "✅ Enabled"
+    return "🔴 Disabled"
+
+
+# ---------------------------------------------------------------------------
 # View helpers
 # ---------------------------------------------------------------------------
 
@@ -116,15 +149,25 @@ def _summary(cfg: dict) -> str:
     if cfg["auto_rate"]:
         rate_display += " (auto-refresh ✅)"
     instr_preview = cfg["instructions"][:60] + "…" if len(cfg["instructions"]) > 60 else (cfg["instructions"] or "❌ <i>not set</i>")
+
+    # Build per-provider status lines
+    provider_lines = ""
+    for prov in VALID_PROVIDERS:
+        emoji, name = _PROVIDER_INFO[prov]
+        wallet = cfg[prov]
+        status_badge = _provider_status(prov, wallet)
+        wallet_display = _num(wallet) if wallet else ""
+        if wallet:
+            provider_lines += f"  {emoji} {name}: {status_badge}  ({wallet[:12]}{'…' if len(wallet) > 12 else ''})\n"
+        else:
+            provider_lines += f"  {emoji} {name}: {status_badge}\n"
+
     return (
         "🇧🇩 <b>ZiniPay Configuration</b>\n\n"
         f"<b>Status:</b> {status}\n"
         f"<b>API Key:</b> {_mask(cfg['api_key'])}\n\n"
-        "<b>Wallet Numbers:</b>\n"
-        f"  📱 bKash:  {_num(cfg['bkash'])}\n"
-        f"  📱 Nagad:  {_num(cfg['nagad'])}\n"
-        f"  📱 Rocket: {_num(cfg['rocket'])}\n"
-        f"  📱 Upay:   {_num(cfg['upay'])}\n\n"
+        "<b>Providers:</b>\n"
+        f"{provider_lines}\n"
         f"<b>Default Provider:</b> {cfg['default_provider'].title()}\n"
         f"<b>Exchange Rate:</b> {rate_display}\n"
         f"<b>Instructions:</b> {instr_preview}\n\n"
@@ -135,16 +178,32 @@ def _summary(cfg: dict) -> str:
 def _keyboard(cfg: dict) -> InlineKeyboardMarkup:
     toggle_label = "🚫 Disable" if cfg["enabled"] else "✅ Enable"
     auto_label = "⏹ Disable Auto-Rate" if cfg["auto_rate"] else "🔄 Enable Auto-Rate"
+
+    # Build per-provider rows: wallet edit + enable/disable toggle
+    provider_rows = []
+    for prov in VALID_PROVIDERS:
+        emoji, name = _PROVIDER_INFO[prov]
+        wallet = cfg[prov]
+        edit_field = f"admin_zinipay_edit_{prov}"
+
+        if not wallet:
+            # Not configured — show edit button + ⚪ indicator (no toggle)
+            provider_rows.append([
+                InlineKeyboardButton(f"📱 {name}: ⚪ Not Configured", callback_data=f"admin_zinipay_provinfo_{prov}"),
+                InlineKeyboardButton("✏️ Set", callback_data=edit_field),
+            ])
+        else:
+            is_active = _provider_is_active(prov)
+            status_icon = "✅" if is_active else "🔴"
+            toggle_cb = f"admin_zinipay_toggle_prov_{prov}"
+            provider_rows.append([
+                InlineKeyboardButton(f"{emoji} {name}: {status_icon}", callback_data=toggle_cb),
+                InlineKeyboardButton("✏️ Wallet", callback_data=edit_field),
+            ])
+
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔑 API Key",            callback_data="admin_zinipay_edit_apikey")],
-        [
-            InlineKeyboardButton("📱 bKash",   callback_data="admin_zinipay_edit_bkash"),
-            InlineKeyboardButton("📱 Nagad",   callback_data="admin_zinipay_edit_nagad"),
-        ],
-        [
-            InlineKeyboardButton("📱 Rocket",  callback_data="admin_zinipay_edit_rocket"),
-            InlineKeyboardButton("📱 Upay",    callback_data="admin_zinipay_edit_upay"),
-        ],
+        *provider_rows,
         [InlineKeyboardButton("🏦 Default Provider",   callback_data="admin_zinipay_provider_menu")],
         [InlineKeyboardButton("💱 Exchange Rate",       callback_data="admin_zinipay_edit_rate")],
         [InlineKeyboardButton(auto_label,               callback_data="admin_zinipay_toggle_autorate")],
@@ -167,10 +226,10 @@ async def admin_zinipay_view(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer("⛔ Access denied.", show_alert=True)
         return
 
-    cfg = _load_cfg()
+    config = _load_cfg()
     try:
         await query.edit_message_text(
-            _summary(cfg), reply_markup=_keyboard(cfg), parse_mode="HTML"
+            _summary(config), reply_markup=_keyboard(config), parse_mode="HTML"
         )
     except BadRequest as e:
         if "Message is not modified" not in str(e):
@@ -187,13 +246,15 @@ async def admin_zinipay_toggle(update: Update, context: ContextTypes.DEFAULT_TYP
     if not has_permission(update.effective_user.id, "manage_payments"):
         return
 
-    cfg = _load_cfg()
-    # Refuse to enable without an API key AND at least one wallet number.
-    if not cfg["enabled"]:
+    config = _load_cfg()
+    # Refuse to enable without an API key AND at least one configured+active provider.
+    if not config["enabled"]:
         missing = []
-        if not cfg["api_key"]:
+        if not config["api_key"]:
             missing.append("API Key")
-        if not any([cfg["bkash"], cfg["nagad"], cfg["rocket"], cfg["upay"]]):
+        # Check if at least one provider has a wallet number
+        has_any_wallet = any([config["bkash"], config["nagad"], config["rocket"], config["upay"]])
+        if not has_any_wallet:
             missing.append("at least one wallet number")
         if missing:
             await query.answer(
@@ -208,6 +269,59 @@ async def admin_zinipay_toggle(update: Update, context: ContextTypes.DEFAULT_TYP
         session.commit()
 
     await admin_zinipay_view(update, context)
+
+
+# ---------------------------------------------------------------------------
+# Per-provider toggle
+# ---------------------------------------------------------------------------
+
+async def admin_zinipay_toggle_provider(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Toggle a single ZiniPay provider on or off (admin_zinipay_toggle_prov_{p})."""
+    query = update.callback_query
+    await query.answer()
+    if not has_permission(update.effective_user.id, "manage_payments"):
+        return
+
+    # Extract provider name from callback data
+    provider = query.data.replace("admin_zinipay_toggle_prov_", "")
+    if provider not in VALID_PROVIDERS:
+        await query.answer("⚠️ Unknown provider.", show_alert=True)
+        return
+
+    config = _load_cfg()
+    wallet = config.get(provider, "")
+
+    if not wallet:
+        await query.answer(
+            "⚠️ This provider is not configured yet. Set a wallet number first.",
+            show_alert=True,
+        )
+        return
+
+    # Toggle the active state
+    current = _provider_is_active(provider)
+    _set_provider_active(provider, not current)
+
+    emoji, name = _PROVIDER_INFO[provider]
+    new_status = "✅ Enabled" if not current else "🔴 Disabled"
+    await query.answer(f"{emoji} {name} is now {new_status}.", show_alert=False)
+    await admin_zinipay_view(update, context)
+
+
+# ---------------------------------------------------------------------------
+# Provider info popup (for unconfigured providers when tapped)
+# ---------------------------------------------------------------------------
+
+async def admin_zinipay_provider_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show info popup when admin taps an unconfigured provider."""
+    query = update.callback_query
+    provider = query.data.replace("admin_zinipay_provinfo_", "")
+    emoji, name = _PROVIDER_INFO.get(provider, ("📱", provider.title()))
+    await query.answer(
+        f"{emoji} {name}: This provider is not configured yet.\n"
+        "Tap ✏️ Set to add a wallet number.",
+        show_alert=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -238,11 +352,15 @@ async def admin_zinipay_provider_menu(update: Update, context: ContextTypes.DEFA
     if not has_permission(update.effective_user.id, "manage_payments"):
         return
 
-    cfg = _load_cfg()
-    current = cfg["default_provider"]
+    config = _load_cfg()
+    current = config["default_provider"]
     buttons = []
     for p in VALID_PROVIDERS:
-        label = f"{'✅ ' if p == current else ''}{p.title()}"
+        emoji, name = _PROVIDER_INFO[p]
+        wallet = config.get(p, "")
+        configured = "✅ " if p == current else ""
+        not_cfg = " (no wallet)" if not wallet else ""
+        label = f"{configured}{emoji} {name}{not_cfg}"
         buttons.append(InlineKeyboardButton(label, callback_data=f"admin_zinipay_setprovider_{p}"))
     keyboard = InlineKeyboardMarkup([
         buttons[:2], buttons[2:],
@@ -326,7 +444,7 @@ async def admin_zinipay_edit_bkash(update: Update, context: ContextTypes.DEFAULT
         return ConversationHandler.END
     return await _start_edit(
         query, context, "zinipay_bkash_number",
-        "📱 Send the <b>bKash merchant number</b> users should send money to.\n\n"
+        "💙 Send the <b>bKash merchant number</b> users should send money to.\n\n"
         "Example: <code>01712345678</code>\n\n"
         "Send <code>-</code> to clear (hides bKash from the payment screen).",
         ZINIPAY_EDIT_BKASH,
@@ -340,7 +458,7 @@ async def admin_zinipay_edit_nagad(update: Update, context: ContextTypes.DEFAULT
         return ConversationHandler.END
     return await _start_edit(
         query, context, "zinipay_nagad_number",
-        "📱 Send the <b>Nagad merchant number</b> users should send money to.\n\n"
+        "🧡 Send the <b>Nagad merchant number</b> users should send money to.\n\n"
         "Example: <code>01812345678</code>\n\n"
         "Send <code>-</code> to clear.",
         ZINIPAY_EDIT_NAGAD,
@@ -354,7 +472,7 @@ async def admin_zinipay_edit_rocket(update: Update, context: ContextTypes.DEFAUL
         return ConversationHandler.END
     return await _start_edit(
         query, context, "zinipay_rocket_number",
-        "📱 Send the <b>Rocket (DBBL) merchant number</b> users should send money to.\n\n"
+        "💜 Send the <b>Rocket (DBBL) merchant number</b> users should send money to.\n\n"
         "Example: <code>01912345678</code>\n\n"
         "Send <code>-</code> to clear.",
         ZINIPAY_EDIT_ROCKET,
@@ -368,7 +486,7 @@ async def admin_zinipay_edit_upay(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
     return await _start_edit(
         query, context, "zinipay_upay_number",
-        "📱 Send the <b>Upay merchant number</b> users should send money to.\n\n"
+        "🔵 Send the <b>Upay merchant number</b> users should send money to.\n\n"
         "Example: <code>01512345678</code>\n\n"
         "Send <code>-</code> to clear.",
         ZINIPAY_EDIT_UPAY,
@@ -476,13 +594,13 @@ async def admin_zinipay_receive_value(update: Update, context: ContextTypes.DEFA
     context.user_data.pop("zinipay_editing_field", None)
     label = _FIELD_LABELS.get(field, field)
     saved_text = "cleared." if clear else "saved."
-    cfg = _load_cfg()
+    config = _load_cfg()
     await update.message.reply_text(
         f"✅ <b>{label}</b> {saved_text}",
         parse_mode="HTML",
     )
     await update.message.reply_text(
-        _summary(cfg), reply_markup=_keyboard(cfg), parse_mode="HTML"
+        _summary(config), reply_markup=_keyboard(config), parse_mode="HTML"
     )
     return ConversationHandler.END
 

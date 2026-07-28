@@ -5,10 +5,12 @@ Extended from the original to support:
     PaymentGatewayConfig; env vars are used as fallback).
   - Viewing and resolving pending manual verifications (cases where the
     Bybit API could not automatically confirm a TXID).
+  - Editing per-network display names (e.g. TRC20 → USDT (TRC20)).
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -20,6 +22,7 @@ from database.models import (
     PaymentGatewayConfig, PendingManualVerification,
 )
 from utils.permissions import has_permission
+from utils.bot_config import cfg
 from services.bybit_pay import ALL_NETWORKS
 
 logger = logging.getLogger(__name__)
@@ -45,7 +48,8 @@ logger = logging.getLogger(__name__)
     BYBIT_EDIT_WALLET_OP,
     BYBIT_EDIT_WALLET_MATIC,
     BYBIT_EDIT_WALLET_SOL,
-) = range(19)
+    BYBIT_EDIT_NETNAME,         # NEW: edit per-network display name
+) = range(20)
 
 WALLET_FIELD_BY_NETWORK = {
     "TRC20": "bybit_wallet_trc20",
@@ -60,6 +64,51 @@ WALLET_FIELD_BY_NETWORK = {
     "MATIC": "bybit_wallet_matic",
     "SOL": "bybit_wallet_sol",
 }
+
+# ─── Default friendly display names for networks ──────────────────────────
+_DEFAULT_NET_DISPLAY: dict[str, str] = {
+    "TRC20":  "USDT (TRC20)",
+    "BEP20":  "USDT (BEP20)",
+    "ERC20":  "USDT (ERC20)",
+    "LTC":    "LTC (Litecoin)",
+    "AVAXC":  "USDT (Avalanche C)",
+    "TON":    "USDT (TON)",
+    "BASE":   "USDT (Base)",
+    "ARBONE": "USDT (Arbitrum)",
+    "OP":     "USDT (Optimism)",
+    "MATIC":  "USDT (Polygon)",
+    "SOL":    "USDT (Solana)",
+}
+
+# bot_config key for storing custom display names
+_NET_NAMES_CFG_KEY = "bybit_net_display_names"
+
+
+# ─── Network display name helpers ─────────────────────────────────────────
+
+def _load_net_names() -> dict[str, str]:
+    """Load all custom network display names from bot_config."""
+    raw = cfg.get_str(_NET_NAMES_CFG_KEY, "")
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_net_names(names: dict[str, str]) -> None:
+    """Persist all custom network display names to bot_config."""
+    cfg.set(_NET_NAMES_CFG_KEY, json.dumps(names))
+
+
+def _net_display_name(net: str) -> str:
+    """Return the admin-configured display name, or the default friendly name."""
+    custom = _load_net_names()
+    if net in custom and custom[net].strip():
+        return custom[net].strip()
+    return _DEFAULT_NET_DISPLAY.get(net, net)
 
 
 # ─── Config helpers ────────────────────────────────────────────────────────
@@ -143,17 +192,21 @@ async def _api_status_label() -> str:
 
 # ─── Keyboards ────────────────────────────────────────────────────────────
 
-def _detail_keyboard(cfg: dict, show_api: bool = False) -> InlineKeyboardMarkup:
-    toggle_label   = "🚫 Disable" if cfg["enabled"] else "✅ Enable"
+def _detail_keyboard(cfg_dict: dict, show_api: bool = False) -> InlineKeyboardMarkup:
+    toggle_label   = "🚫 Disable" if cfg_dict["enabled"] else "✅ Enable"
     api_vis_label  = "🙈 Hide API Credentials" if show_api else "👁 Show API Credentials"
     net_rows = []
     for net in ALL_NETWORKS:
-        enabled = net in cfg["allowed_networks"]
-        wallet = cfg["wallets"].get(net, "")
-        label = f"{'✅' if enabled else '⬜'} {net}" + (f" ({wallet[:10]}…)" if wallet else " ⚠️ no addr")
+        enabled = net in cfg_dict["allowed_networks"]
+        wallet = cfg_dict["wallets"].get(net, "")
+        display_name = _net_display_name(net)
+        label = f"{'✅' if enabled else '⬜'} {display_name}" + (
+            f" ({wallet[:10]}…)" if len(wallet) > 10 else (f" ({wallet})" if wallet else " ⚠️ no addr")
+        )
         net_rows.append([
             InlineKeyboardButton(label, callback_data=f"admin_bybit_toggle_net_{net}"),
             InlineKeyboardButton("✏️ Addr", callback_data=f"admin_bybit_edit_wallet_{net}"),
+            InlineKeyboardButton("🏷 Name", callback_data=f"admin_bybit_editname_{net}"),
         ])
     return InlineKeyboardMarkup([
         [
@@ -186,12 +239,13 @@ def _detail_keyboard(cfg: dict, show_api: bool = False) -> InlineKeyboardMarkup:
     ])
 
 
-def _summary_text(cfg: dict, api_status: str = "⚪ Not Configured", show_api: bool = False) -> str:
-    status = "✅ Enabled" if cfg["enabled"] else "🚫 Disabled"
-    networks_with = [n for n in cfg["allowed_networks"] if cfg["wallets"].get(n)]
+def _summary_text(cfg_dict: dict, api_status: str = "⚪ Not Configured", show_api: bool = False) -> str:
+    status = "✅ Enabled" if cfg_dict["enabled"] else "🚫 Disabled"
+    networks_with = [n for n in cfg_dict["allowed_networks"] if cfg_dict["wallets"].get(n)]
     wallets_line = "\n".join(
-        f"  {n}: <code>{cfg['wallets'][n][:24]}…</code>" if len(cfg["wallets"].get(n, "")) > 24
-        else f"  {n}: <code>{cfg['wallets'].get(n) or '(not set)'}</code>"
+        f"  {_net_display_name(n)}: <code>{cfg_dict['wallets'][n][:24]}…</code>"
+        if len(cfg_dict["wallets"].get(n, "")) > 24
+        else f"  {_net_display_name(n)}: <code>{cfg_dict['wallets'].get(n) or '(not set)'}</code>"
         for n in ALL_NETWORKS
     )
     if show_api:
@@ -205,26 +259,28 @@ def _summary_text(cfg: dict, api_status: str = "⚪ Not Configured", show_api: b
         )
     else:
         api_creds = (
-            f"API Key: {cfg['api_key_masked']}\n"
-            if cfg["has_db_api_key"]
+            f"API Key: {cfg_dict['api_key_masked']}\n"
+            if cfg_dict["has_db_api_key"]
             else "API Key: (not set in DB — using env var)\n"
-            if cfg["has_db_api_key"] is False and not cfg["api_key_masked"].startswith("(")
+            if cfg_dict["has_db_api_key"] is False and not cfg_dict["api_key_masked"].startswith("(")
             else "API Key: (not set)\n"
         )
+    active_display = ", ".join(_net_display_name(n) for n in networks_with) or "(none)"
     return (
         "💙 <b>Bybit Pay</b>\n\n"
         f"Status:     {status}\n"
         f"API Status: {api_status}\n"
-        f"Bybit UID:  <code>{cfg['uid'] or '(not set)'}</code>\n"
+        f"Bybit UID:  <code>{cfg_dict['uid'] or '(not set)'}</code>\n"
         f"{api_creds}"
         f"Deposit addresses:\n{wallets_line}\n"
-        f"Active networks: {', '.join(networks_with) or '(none)'}\n"
-        f"Min amount: ${cfg['min_amount']:.2f}\n"
-        f"Max amount: {('$' + format(cfg['max_amount'], '.2f')) if cfg['max_amount'] else 'No limit'}\n"
-        f"Order expiry: {cfg['order_expiry_minutes']} minutes\n"
-        f"Bonus: {cfg['bonus_percent']:.2f}%\n\n"
+        f"Active networks: {active_display}\n"
+        f"Min amount: ${cfg_dict['min_amount']:.2f}\n"
+        f"Max amount: {('$' + format(cfg_dict['max_amount'], '.2f')) if cfg_dict['max_amount'] else 'No limit'}\n"
+        f"Order expiry: {cfg_dict['order_expiry_minutes']} minutes\n"
+        f"Bonus: {cfg_dict['bonus_percent']:.2f}%\n\n"
         "Verified via Bybit V5 API (GET /v5/asset/deposit/query-*) — READ-ONLY.\n\n"
-        "🔑 Set API Key/Secret via the buttons below (DB) or via env vars."
+        "🔑 Set API Key/Secret via the buttons below (DB) or via env vars.\n"
+        "🏷 Tap the Name button next to any network to rename its display label."
     )
 
 
@@ -238,12 +294,12 @@ async def admin_bybit_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     show_api = context.user_data.get("bybit_show_api", False)
-    cfg = _get_config_dict()
+    cfg_dict = _get_config_dict()
     status = await _api_status_label()
     try:
         await query.edit_message_text(
-            _summary_text(cfg, status, show_api=show_api),
-            reply_markup=_detail_keyboard(cfg, show_api=show_api),
+            _summary_text(cfg_dict, status, show_api=show_api),
+            reply_markup=_detail_keyboard(cfg_dict, show_api=show_api),
             parse_mode="HTML",
         )
     except BadRequest as e:
@@ -258,11 +314,11 @@ async def admin_bybit_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer("⛔ Access denied.", show_alert=True)
         return
 
-    cfg = _get_config_dict()
-    if not cfg["enabled"]:
+    cfg_dict = _get_config_dict()
+    if not cfg_dict["enabled"]:
         from services.bybit_pay import BybitPayService
         svc = BybitPayService()
-        if not cfg["uid"] and not any(cfg["wallets"].values()):
+        if not cfg_dict["uid"] and not any(cfg_dict["wallets"].values()):
             await query.answer("⚠️ Set a Bybit UID or at least one deposit address before enabling.", show_alert=True)
             return
         if not svc.is_configured():
@@ -337,13 +393,13 @@ async def admin_bybit_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer(f"🔄 Connection refresh: {status_msg}", show_alert=False)
 
     show_api = context.user_data.get("bybit_show_api", False)
-    cfg = _get_config_dict()
+    cfg_dict = _get_config_dict()
     src = "DB" if svc.credentials_source == "db" else "env var"
     full_status = (f"✅ Connected ({src})" if ok else f"❌ {msg} (source: {src})")
     try:
         await query.edit_message_text(
-            _summary_text(cfg, full_status, show_api=show_api),
-            reply_markup=_detail_keyboard(cfg, show_api=show_api),
+            _summary_text(cfg_dict, full_status, show_api=show_api),
+            reply_markup=_detail_keyboard(cfg_dict, show_api=show_api),
             parse_mode="HTML",
         )
     except BadRequest as e:
@@ -373,6 +429,7 @@ async def admin_bybit_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        from database.models import BybitPayTransaction
         with get_db_session() as session:
             rows = (
                 session.query(BybitPayTransaction)
@@ -522,8 +579,8 @@ async def admin_bybit_edit_uid_value(update: Update, context: ContextTypes.DEFAU
         row = _get_or_create_config(session)
         row.bybit_uid = value[:64]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -537,8 +594,8 @@ async def admin_bybit_edit_wallet_trc20_value(update: Update, context: ContextTy
         row = _get_or_create_config(session)
         row.bybit_wallet_trc20 = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -552,8 +609,8 @@ async def admin_bybit_edit_wallet_bep20_value(update: Update, context: ContextTy
         row = _get_or_create_config(session)
         row.bybit_wallet_bep20 = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -567,8 +624,8 @@ async def admin_bybit_edit_wallet_ton_value(update: Update, context: ContextType
         row = _get_or_create_config(session)
         row.bybit_wallet_ton = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -582,8 +639,8 @@ async def admin_bybit_edit_wallet_base_value(update: Update, context: ContextTyp
         row = _get_or_create_config(session)
         row.bybit_wallet_base = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -597,8 +654,8 @@ async def admin_bybit_edit_wallet_arb_value(update: Update, context: ContextType
         row = _get_or_create_config(session)
         row.bybit_wallet_arb = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -612,8 +669,8 @@ async def admin_bybit_edit_wallet_op_value(update: Update, context: ContextTypes
         row = _get_or_create_config(session)
         row.bybit_wallet_op = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -627,8 +684,8 @@ async def admin_bybit_edit_wallet_matic_value(update: Update, context: ContextTy
         row = _get_or_create_config(session)
         row.bybit_wallet_matic = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -642,8 +699,8 @@ async def admin_bybit_edit_wallet_sol_value(update: Update, context: ContextType
         row = _get_or_create_config(session)
         row.bybit_wallet_sol = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -657,8 +714,8 @@ async def admin_bybit_edit_wallet_avaxc_value(update: Update, context: ContextTy
         row = _get_or_create_config(session)
         row.bybit_wallet_avaxc = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -672,8 +729,8 @@ async def admin_bybit_edit_wallet_ltc_value(update: Update, context: ContextType
         row = _get_or_create_config(session)
         row.bybit_wallet_ltc = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -687,8 +744,8 @@ async def admin_bybit_edit_wallet_erc20_value(update: Update, context: ContextTy
         row = _get_or_create_config(session)
         row.bybit_wallet_erc20 = "" if value.lower() == "clear" else value[:255]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -708,8 +765,8 @@ async def admin_bybit_edit_min_value(update: Update, context: ContextTypes.DEFAU
         row = _get_or_create_config(session)
         row.bybit_min_amount = value
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -729,8 +786,8 @@ async def admin_bybit_edit_max_value(update: Update, context: ContextTypes.DEFAU
         row = _get_or_create_config(session)
         row.bybit_max_amount = value if value > 0 else None
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -750,8 +807,8 @@ async def admin_bybit_edit_expiry_value(update: Update, context: ContextTypes.DE
         row = _get_or_create_config(session)
         row.bybit_order_expiry_minutes = value
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -771,8 +828,8 @@ async def admin_bybit_edit_bonus_value(update: Update, context: ContextTypes.DEF
         row = _get_or_create_config(session)
         row.bybit_bonus_percent = value
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -789,8 +846,8 @@ async def admin_bybit_edit_instructions_value(update: Update, context: ContextTy
         row = _get_or_create_config(session)
         row.bybit_instructions = "" if value.lower() == "default" else value[:2000]
         session.commit()
-    cfg = _get_config_dict()
-    await update.message.reply_text(_summary_text(cfg, _quick_status_label()), reply_markup=_detail_keyboard(cfg), parse_mode="HTML")
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(_summary_text(cfg_dict, _quick_status_label()), reply_markup=_detail_keyboard(cfg_dict), parse_mode="HTML")
     return ConversationHandler.END
 
 
@@ -820,12 +877,12 @@ async def admin_bybit_edit_apikey_value(update: Update, context: ContextTypes.DE
         row = _get_or_create_config(session)
         row.bybit_api_key = None if value.lower() == "clear" else value
         session.commit()
-    cfg = _get_config_dict()
+    cfg_dict = _get_config_dict()
     action = "cleared" if value.lower() == "clear" else "saved"
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text=f"✅ API Key {action}.\n\n" + _summary_text(cfg, _quick_status_label()),
-        reply_markup=_detail_keyboard(cfg),
+        text=f"✅ API Key {action}.\n\n" + _summary_text(cfg_dict, _quick_status_label()),
+        reply_markup=_detail_keyboard(cfg_dict),
         parse_mode="HTML",
     )
     return ConversationHandler.END
@@ -855,18 +912,100 @@ async def admin_bybit_edit_apisecret_value(update: Update, context: ContextTypes
         row = _get_or_create_config(session)
         row.bybit_api_secret = None if value.lower() == "clear" else value
         session.commit()
-    cfg = _get_config_dict()
+    cfg_dict = _get_config_dict()
     action = "cleared" if value.lower() == "clear" else "saved"
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text=f"✅ API Secret {action}.\n\n" + _summary_text(cfg, _quick_status_label()),
-        reply_markup=_detail_keyboard(cfg),
+        text=f"✅ API Secret {action}.\n\n" + _summary_text(cfg_dict, _quick_status_label()),
+        reply_markup=_detail_keyboard(cfg_dict),
+        parse_mode="HTML",
+    )
+    return ConversationHandler.END
+
+
+# ─── Network display name editor (NEW) ────────────────────────────────────
+
+async def admin_bybit_editname_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Entry: start editing a network's display name (admin_bybit_editname_{NET})."""
+    query = update.callback_query
+    await query.answer()
+    if not has_permission(update.effective_user.id, "manage_payments"):
+        return ConversationHandler.END
+
+    net = query.data.replace("admin_bybit_editname_", "").upper()
+    if net not in ALL_NETWORKS:
+        await query.answer("⚠️ Unknown network.", show_alert=True)
+        return ConversationHandler.END
+
+    current_name = _net_display_name(net)
+    default_name = _DEFAULT_NET_DISPLAY.get(net, net)
+    context.user_data["bybit_editing_netname"] = net
+
+    try:
+        await query.edit_message_text(
+            f"🏷 <b>Edit Network Display Name</b>\n\n"
+            f"Network code: <code>{net}</code>\n"
+            f"Current name: <b>{current_name}</b>\n"
+            f"Default name: {default_name}\n\n"
+            f"Send the new display name for this network.\n"
+            f"Example: <code>USDT (TRC20)</code>\n\n"
+            f"Send <code>default</code> to reset to the default name.\n"
+            f"The internal network code (<code>{net}</code>) is never changed.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("❌ Cancel", callback_data="admin_bybit_view")
+            ]]),
+            parse_mode="HTML",
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+    return BYBIT_EDIT_NETNAME
+
+
+async def admin_bybit_editname_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Receive new network display name and save it."""
+    value = (update.message.text or "").strip()
+    net = context.user_data.pop("bybit_editing_netname", "")
+
+    if not net:
+        await update.message.reply_text("❌ Session expired. Please try again.")
+        return ConversationHandler.END
+
+    if not value:
+        await update.message.reply_text("❌ Name cannot be empty. Send the display name:")
+        context.user_data["bybit_editing_netname"] = net
+        return BYBIT_EDIT_NETNAME
+
+    names = _load_net_names()
+
+    if value.lower() == "default":
+        # Reset to default — remove custom entry
+        names.pop(net, None)
+        _save_net_names(names)
+        saved_name = _DEFAULT_NET_DISPLAY.get(net, net)
+        await update.message.reply_text(
+            f"✅ Network <code>{net}</code> reset to default name: <b>{saved_name}</b>",
+            parse_mode="HTML",
+        )
+    else:
+        names[net] = value[:80]
+        _save_net_names(names)
+        await update.message.reply_text(
+            f"✅ Network <code>{net}</code> renamed to: <b>{value[:80]}</b>",
+            parse_mode="HTML",
+        )
+
+    cfg_dict = _get_config_dict()
+    await update.message.reply_text(
+        _summary_text(cfg_dict, _quick_status_label()),
+        reply_markup=_detail_keyboard(cfg_dict),
         parse_mode="HTML",
     )
     return ConversationHandler.END
 
 
 async def admin_bybit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("bybit_editing_netname", None)
     await admin_bybit_view(update, context)
     return ConversationHandler.END
 
@@ -896,6 +1035,8 @@ def build_bybit_edit_conv():
             CallbackQueryHandler(admin_bybit_edit_instructions_start, pattern="^admin_bybit_edit_instructions$"),
             CallbackQueryHandler(admin_bybit_edit_apikey_start, pattern="^admin_bybit_edit_apikey$"),
             CallbackQueryHandler(admin_bybit_edit_apisecret_start, pattern="^admin_bybit_edit_apisecret$"),
+            # NEW: edit network display name
+            CallbackQueryHandler(admin_bybit_editname_start, pattern=r"^admin_bybit_editname_[A-Z0-9]+$"),
         ],
         states={
             BYBIT_EDIT_UID: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_bybit_edit_uid_value)],
@@ -917,6 +1058,8 @@ def build_bybit_edit_conv():
             BYBIT_EDIT_INSTRUCTIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_bybit_edit_instructions_value)],
             BYBIT_EDIT_API_KEY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_bybit_edit_apikey_value)],
             BYBIT_EDIT_API_SECRET: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_bybit_edit_apisecret_value)],
+            # NEW: network name editing state
+            BYBIT_EDIT_NETNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_bybit_editname_value)],
         },
         fallbacks=[
             CallbackQueryHandler(admin_bybit_cancel, pattern="^admin_bybit_view$"),

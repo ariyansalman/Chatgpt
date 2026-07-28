@@ -1857,6 +1857,10 @@ def main():
                                                   pattern="^admin_zinipay_provider_menu$"))
     application.add_handler(CallbackQueryHandler(admin_zinipay.admin_zinipay_set_provider,
                                                   pattern="^admin_zinipay_setprovider_"))
+    application.add_handler(CallbackQueryHandler(admin_zinipay.admin_zinipay_toggle_provider,
+                                                  pattern="^admin_zinipay_toggle_prov_"))
+    application.add_handler(CallbackQueryHandler(admin_zinipay.admin_zinipay_provider_info,
+                                                  pattern="^admin_zinipay_provinfo_"))
     application.add_handler(admin_zinipay.build_zinipay_edit_conv())
 
     # ─── Admin Payment Gateway: Binance Pay ─────────────────────────────
