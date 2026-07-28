@@ -143,6 +143,7 @@ def _detail_keyboard(cfg: dict) -> InlineKeyboardMarkup:
         ],
         [InlineKeyboardButton("📋 Pending Verifications", callback_data="admin_binance_pending")],
         [InlineKeyboardButton("🧪 Test Binance API", callback_data="admin_binance_test")],
+        [InlineKeyboardButton("💳 Wallet Manager", callback_data="gww:list:binance_pay")],
         [InlineKeyboardButton(toggle_label, callback_data="admin_binance_toggle")],
         [InlineKeyboardButton("🔙 Back", callback_data="admin_gateways")],
     ])

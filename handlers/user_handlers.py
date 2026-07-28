@@ -583,15 +583,10 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
     ``allow_pagination`` — whether to include ⬅️ Previous / ➡️ Next buttons.
     ``show_stock`` — whether to show the stock line beneath each product.
 
-    Two-line marketplace format per button:
-        🟢 Product Name • $Price   (available, no badge)
-        📦 Stock: N Left
-
-        ⭐ Product Name • $Price   (available, with badge — badge emoji leads)
-        📦 Stock: N Left
-
-        ❌ Product Name • $Price   (out of stock)
-        Out of Stock
+    Single-line full-width format per button:
+        🟢 Product Name • $Price • 📦 N Left   (available, no badge)
+        🆕 Product Name • $Price • 📦 N Left   (available, with badge)
+        ❌ Product Name • $Price • Out of Stock  (out of stock)
     """
     keyboard = []
     for r in rows:
@@ -603,22 +598,20 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
 
         # Leading icon: first badge emoji for available+badged, otherwise 🟢/❌
         if available:
-            leading    = (badge_label.split()[0] + " ") if badge_label else "🟢 "
-            stock_line = f"📦 Stock: {stock} Left" if show_stock else ""
+            leading      = (badge_label.split()[0] + " ") if badge_label else "🟢 "
+            stock_suffix = f" • 📦 {stock} Left" if show_stock else ""
         else:
-            leading    = "❌ "
-            stock_line = "Out of Stock" if show_stock else ""
+            leading      = "❌ "
+            stock_suffix = " • Out of Stock" if show_stock else ""
 
-        price_suffix = f" • {price}"
-        hard_budget  = 64 - len(leading) - len(price_suffix)
-        if hard_budget < 4:
-            hard_budget = 4
-        display_name = _shorten_product_name(raw_name, budget=min(26, hard_budget))
-        if len(display_name) > hard_budget:
-            display_name = display_name[:max(1, hard_budget - 1)].rstrip() + "…"
+        price_part  = f" • {price}"
+        overhead    = len(leading) + len(price_part) + len(stock_suffix)
+        name_budget = max(4, 64 - overhead)
+        display_name = raw_name
+        if len(display_name) > name_budget:
+            display_name = display_name[:max(1, name_budget - 1)].rstrip() + "…"
 
-        line1 = f"{leading}{display_name}{price_suffix}"
-        label = f"{line1}\n{stock_line}" if stock_line else line1
+        label = f"{leading}{display_name}{price_part}{stock_suffix}"
         keyboard.append([InlineKeyboardButton(label, callback_data=f"product_{r['id']}")])
 
     # Pagination row — only shown when there is more than one page

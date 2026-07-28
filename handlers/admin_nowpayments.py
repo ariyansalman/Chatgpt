@@ -51,6 +51,7 @@ def _detail_keyboard(cfg: dict) -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("🔑 API Key", callback_data="admin_nowpayments_edit_apikey")],
         [InlineKeyboardButton("🔒 IPN Secret", callback_data="admin_nowpayments_edit_ipnsecret")],
+        [InlineKeyboardButton("💳 Wallet Manager", callback_data="gww:list:nowpayments")],
         [InlineKeyboardButton(toggle_label, callback_data="admin_nowpayments_toggle")],
         [InlineKeyboardButton("🔙 Back", callback_data="admin_gateways")],
     ]

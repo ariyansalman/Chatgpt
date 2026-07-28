@@ -24,6 +24,7 @@ def _detail_keyboard(cfg: dict) -> InlineKeyboardMarkup:
             InlineKeyboardButton(f"🔽 Min: {cfg['min_stars']} ⭐", callback_data="admin_stars_edit_min"),
             InlineKeyboardButton(f"🔼 Max: {cfg['max_stars']} ⭐", callback_data="admin_stars_edit_max"),
         ],
+        [InlineKeyboardButton("💳 Wallet Manager", callback_data="gww:list:stars")],
         [InlineKeyboardButton(toggle_label, callback_data="admin_stars_toggle")],
         [InlineKeyboardButton("🔙 Back", callback_data="admin_settings")],
     ]

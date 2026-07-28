@@ -2,7 +2,7 @@
 ru, zh, fr, de, ar, id — driven entirely by i18n.SUPPORTED_LANGUAGES /
 LANGUAGE_NAMES / LANGUAGE_FLAGS, so no per-language branching lives here)."""
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 from i18n import t, SUPPORTED_LANGUAGES, LANGUAGE_NAMES, LANGUAGE_FLAGS
 from .helpers import is_admin
 from .button_colors import (
@@ -271,10 +271,22 @@ def create_language_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup(keyboard)
 
 
-def create_refer_keyboard(lang: str):
-    """Refer & Earn keyboard — compact 3-button layout."""
+def create_refer_keyboard(lang: str, referral_link: str = ""):
+    """Refer & Earn keyboard — compact 3-button layout.
+
+    Uses CopyTextButton for native clipboard copy (no new message sent).
+    Falls back to callback_data for clients that pre-date Bot API 7.x.
+    """
+    if referral_link:
+        copy_btn = InlineKeyboardButton(
+            "📋 Copy Link",
+            copy_text=CopyTextButton(text=referral_link),
+        )
+    else:
+        copy_btn = InlineKeyboardButton("📋 Copy Link", callback_data="copy_ref_link")
+
     keyboard = [
-        [InlineKeyboardButton("📋 Copy Link", callback_data="copy_ref_link")],
+        [copy_btn],
         [InlineKeyboardButton("📜 Referral History", callback_data="rd:comm")],
         [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ]
@@ -763,6 +775,7 @@ def create_admin_gateways_menu_keyboard(status: dict):
         f"{bybit_on} 💙 Bybit Pay", callback_data="admin_bybit_view"
     )])
     keyboard.append([InlineKeyboardButton("💰 Deposit Settings", callback_data="admin_deposit_view")])
+    keyboard.append([InlineKeyboardButton("⚙️ Payment Settings", callback_data="ps:view")])
     keyboard.append([InlineKeyboardButton("🗑 Delete/Disable All", callback_data="admin_gw_disable_all_confirm")])
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="acc:root")])
     return InlineKeyboardMarkup(keyboard)
@@ -809,6 +822,7 @@ def create_admin_gateway_detail_keyboard(gateway_key: str, is_enabled: bool, mod
         [[InlineKeyboardButton(mode_toggle_label, callback_data=f"admin_gw_mode_toggle_{gateway_key}")]]
         + field_rows
         + [
+            [InlineKeyboardButton("💳 Wallet Manager", callback_data=f"gww:list:{gateway_key}")],
             [InlineKeyboardButton(toggle_label, callback_data=f"admin_gw_toggle_{gateway_key}")],
             [InlineKeyboardButton("🔙 Back", callback_data="admin_gateways")],
         ]

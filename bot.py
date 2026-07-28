@@ -1908,7 +1908,58 @@ def main():
                                                   pattern="^admin_bybit_test$"))
     application.add_handler(CallbackQueryHandler(admin_bybit.admin_bybit_pending,
                                                   pattern="^admin_bybit_pending$"))
+    application.add_handler(CallbackQueryHandler(admin_bybit.admin_bybit_refresh,
+                                                  pattern="^admin_bybit_refresh$"))
+    application.add_handler(CallbackQueryHandler(admin_bybit.admin_bybit_toggle_api_show,
+                                                  pattern="^admin_bybit_toggle_api_show$"))
+    application.add_handler(CallbackQueryHandler(admin_bybit.admin_bybit_logs,
+                                                  pattern="^admin_bybit_logs$"))
     application.add_handler(admin_bybit.build_bybit_edit_conv())
+
+    # ─── Admin: Payment Settings (global deposit controls) ───────────────
+    # Callback namespace: ps: — Minimum/Maximum Deposit, Exchange Rate,
+    # Auto Exchange Rate, Deposit Expiry, Pending Timeout, Auto Cancel,
+    # Max Pending, Payment Instructions, Gateway Status, Maintenance Mode.
+    # All values stored in bot_config; payment logic NOT modified.
+    from handlers import admin_payment_settings as _ps
+    _ps.register_handlers(application)
+
+    # ─── Admin: Mobile Banking Manager (bKash / Nagad / Rocket / Upay) ───
+    # Callback namespace: mb: — Add/Edit/Delete/Copy/Toggle/Default numbers.
+    # Numbers stored in bot_config as JSON; no DB schema changes.
+    # Payment logic in payment_handlers.py / services/ is NOT modified.
+    from handlers import admin_mobile_banking as _mb
+    _mb.register_handlers(application)
+
+    # ─── Admin: Gateway Wallet Manager (all gateways) ────────────────────
+    # Callback namespace: gww: — Add/Edit/Delete/Copy/Default/Toggle wallets.
+    # Wallets are stored in bot_config as JSON; no DB schema changes.
+    from handlers import admin_gateway_wallets as _gww
+    application.add_handler(_gww.build_gww_add_conv())
+    application.add_handler(_gww.build_gww_edit_conv())
+    application.add_handler(CallbackQueryHandler(
+        _gww.gww_list,          pattern=r"^gww:list:[a-z_]+$"))
+    application.add_handler(CallbackQueryHandler(
+        _gww.gww_view,          pattern=r"^gww:view:[a-z_]+:\d+$"))
+    application.add_handler(CallbackQueryHandler(
+        _gww.gww_toggle,        pattern=r"^gww:tog:[a-z_]+:\d+$"))
+    application.add_handler(CallbackQueryHandler(
+        _gww.gww_set_default,   pattern=r"^gww:def:[a-z_]+:\d+$"))
+    application.add_handler(CallbackQueryHandler(
+        _gww.gww_copy_fallback, pattern=r"^gww:copy:[a-z_]+:\d+$"))
+    application.add_handler(CallbackQueryHandler(
+        _gww.gww_delete_confirm, pattern=r"^gww:del:[a-z_]+:\d+$"))
+    application.add_handler(CallbackQueryHandler(
+        _gww.gww_delete_execute, pattern=r"^gww:delok:[a-z_]+:\d+$"))
+
+    # ─── Admin: Crypto Network Manager (all gateways) ────────────────────
+    # Callback namespace: gcn: — Add/Rename/EditAddr/Delete/Copy/Default/
+    #   Toggle/QR/MinDeposit/MaxDeposit/Priority/AutoVerify networks.
+    # Networks are stored in bot_config as JSON; no DB schema changes.
+    # Payment processing and APIs are NOT modified.
+    from handlers import admin_crypto_networks as _gcn
+    _gcn.register_handlers(application)
+
     # Admin approve/reject/verify-again for Bybit Pay manual verifications
     application.add_handler(CallbackQueryHandler(
         payment_handlers.admin_approve_bybit_verification,
@@ -3176,6 +3227,12 @@ def main():
     # ── V41: API Key & Integration Manager ───────────────────────────────────
     from handlers.admin_api_manager import register_handlers as _aaim_reg
     _aaim_reg(application)
+
+    # ── Security Center & Deposit Monitoring ──────────────────────────────────
+    from handlers.admin_security_center import register_handlers as _asc_reg
+    _asc_reg(application)
+    from handlers.admin_deposit_monitoring import register_handlers as _adm_reg
+    _adm_reg(application)
 
     # ── V41: Seed built-in integrations + schedule health checks ─────────────
     from services.api_integration_service import (

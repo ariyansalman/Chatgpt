@@ -117,6 +117,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
         ("💳 Payment Settings",    "admin_gateways"),
         ("🏦 Manual Payments",     "admin_payment_methods"),
         ("🧾 Pending Deposits",    "pd:list:0:desc"),
+        ("📊 Deposit Monitor",     "adm:menu"),
         ("👛 Wallets",             "acc:sec:wallets"),
         ("🌍 Multi-Currency",      "amcw:menu"),
         ("🔄 Exchange Rates",      "aerm:menu"),
@@ -196,6 +197,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
     # "Integrations Health" to make clear it's the read-only check; "API
     # Keys" is the actual key-management screen).
     "security": [[
+        ("🛡️ Security Center",     "asc:menu"),
         ("🔍 Fraud Detection",     "fds:home"),
         ("🛡 Anti-Spam",           "aasm:menu"),
         ("📝 Audit Logs",          "acc:sec:audit"),
@@ -1073,6 +1075,12 @@ async def _route_section_action(section: str, action: str, rest: list[str],
         if section == "dlv":
             from handlers import admin_delivery_queue as m
             await m.route(action, rest, update, context); return
+        if section == "asc":
+            from handlers import admin_security_center as m
+            await m.asc_dispatch(update, context); return
+        if section == "adm":
+            from handlers import admin_deposit_monitoring as m
+            await m.adm_dispatch(update, context); return
         if section == "bak":
             from handlers import admin_backups as m
             await m.route(action, rest, update, context); return

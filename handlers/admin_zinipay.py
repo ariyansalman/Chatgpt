@@ -149,6 +149,7 @@ def _keyboard(cfg: dict) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("💱 Exchange Rate",       callback_data="admin_zinipay_edit_rate")],
         [InlineKeyboardButton(auto_label,               callback_data="admin_zinipay_toggle_autorate")],
         [InlineKeyboardButton("📋 Instructions",        callback_data="admin_zinipay_edit_instructions")],
+        [InlineKeyboardButton("💳 Wallet Manager",      callback_data="gww:list:zinipay")],
         [InlineKeyboardButton(toggle_label,             callback_data="admin_zinipay_toggle")],
         [InlineKeyboardButton("🔙 Back",                callback_data="admin_gateways")],
     ])

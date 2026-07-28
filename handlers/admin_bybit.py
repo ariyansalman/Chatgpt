@@ -143,8 +143,9 @@ async def _api_status_label() -> str:
 
 # ─── Keyboards ────────────────────────────────────────────────────────────
 
-def _detail_keyboard(cfg: dict) -> InlineKeyboardMarkup:
-    toggle_label = "🚫 Disable" if cfg["enabled"] else "✅ Enable"
+def _detail_keyboard(cfg: dict, show_api: bool = False) -> InlineKeyboardMarkup:
+    toggle_label   = "🚫 Disable" if cfg["enabled"] else "✅ Enable"
+    api_vis_label  = "🙈 Hide API Credentials" if show_api else "👁 Show API Credentials"
     net_rows = []
     for net in ALL_NETWORKS:
         enabled = net in cfg["allowed_networks"]
@@ -152,44 +153,70 @@ def _detail_keyboard(cfg: dict) -> InlineKeyboardMarkup:
         label = f"{'✅' if enabled else '⬜'} {net}" + (f" ({wallet[:10]}…)" if wallet else " ⚠️ no addr")
         net_rows.append([
             InlineKeyboardButton(label, callback_data=f"admin_bybit_toggle_net_{net}"),
-            InlineKeyboardButton(f"✏️ Addr", callback_data=f"admin_bybit_edit_wallet_{net}"),
+            InlineKeyboardButton("✏️ Addr", callback_data=f"admin_bybit_edit_wallet_{net}"),
         ])
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🆔 Bybit UID", callback_data="admin_bybit_edit_uid")],
+        [
+            InlineKeyboardButton("🆔 Edit UID",      callback_data="admin_bybit_edit_uid"),
+            InlineKeyboardButton("🔑 Edit API Key",  callback_data="admin_bybit_edit_apikey"),
+        ],
+        [
+            InlineKeyboardButton("🔒 Edit API Secret", callback_data="admin_bybit_edit_apisecret"),
+            InlineKeyboardButton(api_vis_label,         callback_data="admin_bybit_toggle_api_show"),
+        ],
         *net_rows,
         [
-            InlineKeyboardButton("💵 Min Amount", callback_data="admin_bybit_edit_min"),
-            InlineKeyboardButton("💰 Max Amount", callback_data="admin_bybit_edit_max"),
+            InlineKeyboardButton("💵 Min Amount",  callback_data="admin_bybit_edit_min"),
+            InlineKeyboardButton("💰 Max Amount",  callback_data="admin_bybit_edit_max"),
         ],
         [InlineKeyboardButton("⏱ Order Expiry (min)", callback_data="admin_bybit_edit_expiry")],
-        [InlineKeyboardButton("🎁 Bonus %", callback_data="admin_bybit_edit_bonus")],
+        [InlineKeyboardButton("🎁 Bonus %",             callback_data="admin_bybit_edit_bonus")],
         [InlineKeyboardButton("📝 Payment Instructions", callback_data="admin_bybit_edit_instructions")],
         [
-            InlineKeyboardButton("🔑 API Key", callback_data="admin_bybit_edit_apikey"),
-            InlineKeyboardButton("🔒 API Secret", callback_data="admin_bybit_edit_apisecret"),
+            InlineKeyboardButton("🧪 Test API",          callback_data="admin_bybit_test"),
+            InlineKeyboardButton("🔄 Refresh Connection", callback_data="admin_bybit_refresh"),
         ],
-        [InlineKeyboardButton("📋 Pending Verifications", callback_data="admin_bybit_pending")],
-        [InlineKeyboardButton("🧪 Test Bybit API", callback_data="admin_bybit_test")],
-        [InlineKeyboardButton(toggle_label, callback_data="admin_bybit_toggle")],
-        [InlineKeyboardButton("🔙 Back", callback_data="admin_gateways")],
+        [
+            InlineKeyboardButton("📋 Pending Verifications", callback_data="admin_bybit_pending"),
+            InlineKeyboardButton("📜 Payment Logs",          callback_data="admin_bybit_logs"),
+        ],
+        [InlineKeyboardButton("💳 Wallet Manager", callback_data="gww:list:bybit_pay")],
+        [InlineKeyboardButton(toggle_label,         callback_data="admin_bybit_toggle")],
+        [InlineKeyboardButton("🔙 Back",            callback_data="admin_gateways")],
     ])
 
 
-def _summary_text(cfg: dict, api_status: str = "⚪ Not Configured") -> str:
+def _summary_text(cfg: dict, api_status: str = "⚪ Not Configured", show_api: bool = False) -> str:
     status = "✅ Enabled" if cfg["enabled"] else "🚫 Disabled"
     networks_with = [n for n in cfg["allowed_networks"] if cfg["wallets"].get(n)]
-    key_line = f"API Key: {cfg['api_key_masked']}\n" if cfg["has_db_api_key"] else ""
     wallets_line = "\n".join(
         f"  {n}: <code>{cfg['wallets'][n][:24]}…</code>" if len(cfg["wallets"].get(n, "")) > 24
         else f"  {n}: <code>{cfg['wallets'].get(n) or '(not set)'}</code>"
         for n in ALL_NETWORKS
     )
+    if show_api:
+        with get_db_session() as _s:
+            _row = _get_or_create_config(_s)
+            _key = _row.bybit_api_key or "(not set)"
+            _sec = _row.bybit_api_secret or "(not set)"
+        api_creds = (
+            f"API Key:    <code>{_key}</code>\n"
+            f"API Secret: <code>{_sec}</code>\n"
+        )
+    else:
+        api_creds = (
+            f"API Key: {cfg['api_key_masked']}\n"
+            if cfg["has_db_api_key"]
+            else "API Key: (not set in DB — using env var)\n"
+            if cfg["has_db_api_key"] is False and not cfg["api_key_masked"].startswith("(")
+            else "API Key: (not set)\n"
+        )
     return (
         "💙 <b>Bybit Pay</b>\n\n"
-        f"Status: {status}\n"
+        f"Status:     {status}\n"
         f"API Status: {api_status}\n"
-        f"Bybit UID: <code>{cfg['uid'] or '(not set)'}</code>\n"
-        f"{key_line}"
+        f"Bybit UID:  <code>{cfg['uid'] or '(not set)'}</code>\n"
+        f"{api_creds}"
         f"Deposit addresses:\n{wallets_line}\n"
         f"Active networks: {', '.join(networks_with) or '(none)'}\n"
         f"Min amount: ${cfg['min_amount']:.2f}\n"
@@ -210,12 +237,13 @@ async def admin_bybit_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("⛔ Access denied.", show_alert=True)
         return
 
+    show_api = context.user_data.get("bybit_show_api", False)
     cfg = _get_config_dict()
     status = await _api_status_label()
     try:
         await query.edit_message_text(
-            _summary_text(cfg, status),
-            reply_markup=_detail_keyboard(cfg),
+            _summary_text(cfg, status, show_api=show_api),
+            reply_markup=_detail_keyboard(cfg, show_api=show_api),
             parse_mode="HTML",
         )
     except BadRequest as e:
@@ -292,6 +320,105 @@ async def admin_bybit_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ok, msg = await asyncio.to_thread(svc.test_connection)
     await query.answer(f"{'✅' if ok else '❌'} {msg}", show_alert=True)
     await admin_bybit_view(update, context)
+
+
+async def admin_bybit_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """🔄 Refresh Connection — live re-test then redraw the detail view."""
+    query = update.callback_query
+    await query.answer("🔄 Refreshing…")
+    if not has_permission(update.effective_user.id, "manage_payments"):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+
+    from services.bybit_pay import BybitPayService
+    svc = BybitPayService()
+    ok, msg = await asyncio.to_thread(svc.test_connection)
+    status_msg = f"✅ {msg}" if ok else f"❌ {msg}"
+    await query.answer(f"🔄 Connection refresh: {status_msg}", show_alert=False)
+
+    show_api = context.user_data.get("bybit_show_api", False)
+    cfg = _get_config_dict()
+    src = "DB" if svc.credentials_source == "db" else "env var"
+    full_status = (f"✅ Connected ({src})" if ok else f"❌ {msg} (source: {src})")
+    try:
+        await query.edit_message_text(
+            _summary_text(cfg, full_status, show_api=show_api),
+            reply_markup=_detail_keyboard(cfg, show_api=show_api),
+            parse_mode="HTML",
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+
+
+async def admin_bybit_toggle_api_show(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """👁 / 🙈 Toggle visibility of API Key / Secret in the detail view."""
+    query = update.callback_query
+    await query.answer()
+    if not has_permission(update.effective_user.id, "manage_payments"):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+
+    current = context.user_data.get("bybit_show_api", False)
+    context.user_data["bybit_show_api"] = not current
+    await admin_bybit_view(update, context)
+
+
+async def admin_bybit_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """📜 Show the 20 most recent verified Bybit Pay transactions."""
+    query = update.callback_query
+    await query.answer()
+    if not has_permission(update.effective_user.id, "manage_payments"):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+
+    try:
+        with get_db_session() as session:
+            rows = (
+                session.query(BybitPayTransaction)
+                .order_by(BybitPayTransaction.verified_at.desc())
+                .limit(20)
+                .all()
+            )
+            if not rows:
+                try:
+                    await query.edit_message_text(
+                        "📜 <b>Bybit Pay — Payment Logs</b>\n\nNo verified transactions yet.",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("🔙 Back", callback_data="admin_bybit_view")
+                        ]]),
+                        parse_mode="HTML",
+                    )
+                except BadRequest:
+                    pass
+                return
+
+            lines = ["📜 <b>Bybit Pay — Payment Logs</b> (last 20)\n"]
+            for tx in rows:
+                ts = tx.verified_at.strftime("%m-%d %H:%M") if tx.verified_at else "?"
+                net = f"/{tx.network}" if tx.network else ""
+                txid_short = (tx.transaction_id or "")[:16] + "…"
+                lines.append(
+                    f"<b>#{tx.id}</b> [{ts}] "
+                    f"{tx.payment_type}{net} "
+                    f"{tx.received_amount} {tx.currency} "
+                    f"— <code>{txid_short}</code>"
+                )
+    except Exception as exc:
+        logger.error("admin_bybit_logs error: %s", exc)
+        lines = ["📜 <b>Bybit Pay — Payment Logs</b>\n\n❌ Error loading logs."]
+
+    try:
+        await query.edit_message_text(
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Back", callback_data="admin_bybit_view")
+            ]]),
+            parse_mode="HTML",
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
 
 
 # ─── Pending verifications view ────────────────────────────────────────────

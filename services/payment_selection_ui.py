@@ -173,8 +173,7 @@ def build_crypto_networks_screen(gateways: Optional[Sequence[dict]]) -> Tuple[st
     crypto_sorted = sorted(crypto, key=lambda g: order.get(g["key"], len(order)))
 
     rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in crypto_sorted]
-    rows.append([InlineKeyboardButton("🔙 Back", callback_data="topup_menu_back")])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
 
     text = "₿ <b>Crypto Networks</b>\n\nSelect your preferred network."
     return text, InlineKeyboardMarkup(rows)
@@ -252,8 +251,7 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
         if key not in used_keys:
             rows.append([_btn(gw)])
 
-    rows.append([InlineKeyboardButton("🔙 Back", callback_data="topup_menu_back")])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
 
     text = "🇧🇩 <b>Mobile Banking</b>\n\nSelect your preferred provider."
     return text, InlineKeyboardMarkup(rows)

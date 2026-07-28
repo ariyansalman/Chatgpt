@@ -62,20 +62,21 @@ async def refer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     pct_str = _fmt_pct(_commission_pct())
     text = (
-        "👥 <b>Referral Program</b>\n\n"
+        "👥 <b>Referral Program</b>\n"
+        "Invite friends and earn commission on every eligible completed purchase made through your referral link.\n\n"
         f"💰 <b>Commission Rate:</b> {pct_str}\n\n"
         "📊 <b>Statistics</b>\n"
         f"👥 Total Referrals: <b>{count}</b>\n"
         f"💵 Total Earnings: <b>${earned:.2f}</b>\n\n"
-        "🔗 <b>Referral Link</b>\n"
+        "🔗 <b>Your Referral Link</b>\n"
         f"<code>{link}</code>\n\n"
-        "Commission is credited automatically after every eligible completed order."
+        "ℹ️ Commission is credited automatically after every eligible completed order."
     )
 
     try:
         await query.edit_message_text(
             text,
-            reply_markup=create_refer_keyboard(lang),
+            reply_markup=create_refer_keyboard(lang, link),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -176,19 +177,14 @@ async def process_referral_reward(
 
 
 async def copy_ref_link_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send the referral link as a copyable message (copy_ref_link)."""
+    """Show a popup confirmation for Copy Link (copy_ref_link).
+
+    The referral link is already displayed as a <code> block in the message
+    (tap-to-copy on all Telegram clients). This handler shows a popup to
+    confirm the action without sending any new chat message.
+    """
     query = update.callback_query
-    await query.answer()
-    telegram_id = update.effective_user.id
-    bot_username = (await context.bot.get_me()).username
-    link = f"https://t.me/{bot_username}?start=ref_{telegram_id}"
-    try:
-        await query.message.reply_text(
-            f"🔗 <b>Your Referral Link</b>\n\n<code>{link}</code>",
-            parse_mode="HTML",
-        )
-    except Exception:
-        pass
+    await query.answer("✅ Referral link copied.", show_alert=True)
 
 
 # ─── Admin: referral settings ───────────────────────────────────────────────
