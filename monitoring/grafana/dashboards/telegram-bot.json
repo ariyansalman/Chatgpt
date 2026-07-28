@@ -1,0 +1,107 @@
+{
+  "title": "Telegram Store Bot",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "type": "stat", "title": "Total Users", "id": 1,
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_users_total"}]
+    },
+    {
+      "type": "stat", "title": "Banned Users", "id": 2,
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_users_banned"}]
+    },
+    {
+      "type": "stat", "title": "Total Revenue (USD)", "id": 3,
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_revenue_usd_total"}]
+    },
+    {
+      "type": "stat", "title": "Wallet Balance Sum (USD)", "id": 4,
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_wallet_balance_usd_total"}]
+    },
+    {
+      "type": "timeseries", "title": "Orders by Status", "id": 5,
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "targets": [{"expr": "tgbot_orders_total", "legendFormat": "{{status}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Pending Top-up Transactions", "id": 6,
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "targets": [{"expr": "tgbot_pending_transactions"}]
+    },
+    {
+      "type": "stat", "title": "Active Products", "id": 7,
+      "gridPos": {"x": 0, "y": 12, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_products_active"}]
+    },
+    {
+      "type": "stat", "title": "Low-Stock Products (≤5)", "id": 8,
+      "gridPos": {"x": 6, "y": 12, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_low_stock_products"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute",
+        "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
+    },
+    {
+      "type": "row", "title": "Customer Growth & Retention", "id": 100,
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 1}
+    },
+    {
+      "type": "stat", "title": "Churn Rate (%)", "id": 9,
+      "gridPos": {"x": 0, "y": 17, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_churn_rate_percent"}],
+      "fieldConfig": {"defaults": {"unit": "percent",
+        "thresholds": {"mode": "absolute", "steps": [
+          {"color": "green", "value": null},
+          {"color": "yellow", "value": 10},
+          {"color": "red", "value": 25}
+        ]}}}
+    },
+    {
+      "type": "stat", "title": "Paying Customers", "id": 10,
+      "gridPos": {"x": 6, "y": 17, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_paying_customers"}]
+    },
+    {
+      "type": "stat", "title": "Avg Customer LTV (USD)", "id": 11,
+      "gridPos": {"x": 12, "y": 17, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_avg_ltv_usd"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
+    },
+    {
+      "type": "stat", "title": "Median Customer LTV (USD)", "id": 12,
+      "gridPos": {"x": 18, "y": 17, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_median_ltv_usd"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
+    },
+    {
+      "type": "timeseries", "title": "Churned vs Paying Customers", "id": 13,
+      "gridPos": {"x": 0, "y": 21, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "tgbot_paying_customers", "legendFormat": "paying"},
+        {"expr": "tgbot_churned_customers", "legendFormat": "churned"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Cohort Retention (%) by Month-After-Signup",
+      "id": 14,
+      "gridPos": {"x": 12, "y": 21, "w": 12, "h": 8},
+      "description": "One line per signup cohort (label = cohort month), showing % of that cohort still ordering M0-M3 months after signup.",
+      "targets": [
+        {"expr": "tgbot_cohort_retention_percent", "legendFormat": "{{cohort}} / {{period}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}}
+    },
+    {
+      "type": "stat", "title": "Total Lifetime Revenue (USD)", "id": 15,
+      "gridPos": {"x": 0, "y": 29, "w": 6, "h": 4},
+      "targets": [{"expr": "tgbot_total_ltv_usd"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
+    }
+  ]
+}
