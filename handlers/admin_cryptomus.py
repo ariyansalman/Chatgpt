@@ -51,7 +51,6 @@ def _detail_keyboard(cfg: dict) -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("🆔 Merchant UUID", callback_data="admin_cryptomus_edit_merchantuuid")],
         [InlineKeyboardButton("🔑 API Key", callback_data="admin_cryptomus_edit_apikey")],
-        [InlineKeyboardButton("💳 Wallet Manager", callback_data="gww:list:cryptomus")],
         [InlineKeyboardButton(toggle_label, callback_data="admin_cryptomus_toggle")],
         [InlineKeyboardButton("🔙 Back", callback_data="admin_settings")],
     ]

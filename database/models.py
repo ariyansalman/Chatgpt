@@ -641,19 +641,6 @@ class PaymentGatewayConfig(Base):
     # Free-form payment instructions shown below the wallet numbers.
     zinipay_instructions     = Column(Text, nullable=True)
 
-    # Per-provider payment instructions (override zinipay_instructions for a
-    # specific provider — NULL means fall back to the global instructions above).
-    zinipay_bkash_instructions  = Column(Text, nullable=True)
-    zinipay_nagad_instructions  = Column(Text, nullable=True)
-    zinipay_rocket_instructions = Column(Text, nullable=True)
-    zinipay_upay_instructions   = Column(Text, nullable=True)
-
-    # Deposit bonus settings for ZiniPay / Mobile Banking.
-    zinipay_bonus_percent     = Column(Float,   nullable=True, default=0.0)
-    zinipay_bonus_enabled     = Column(Boolean, nullable=False, default=False)
-    zinipay_bonus_min_deposit = Column(Float,   nullable=True)   # NULL = no minimum
-    zinipay_bonus_max_amount  = Column(Float,   nullable=True)   # NULL = no cap
-
     # Binance Pay (gateway="binance_pay" — see services/binance_pay.py).
     # NOTE: the actual BINANCE_API_KEY / BINANCE_API_SECRET are READ from
     # environment variables ONLY (config/settings.py) — never stored here,

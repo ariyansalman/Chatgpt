@@ -2380,12 +2380,6 @@ async def _finish_zinipay_payment(
         default_provider = (pgc.zinipay_default_provider or "bkash").lower() if pgc else "bkash"
         custom_rate = pgc.zinipay_usd_to_bdt_rate if pgc else None
         instructions_text = (pgc.zinipay_instructions or "").strip() if pgc else ""
-        # Load per-provider instructions (added in the ZiniPay v2 upgrade).
-        # Falls back to the global instructions_text if not set.
-        _prov_instrs = {}
-        for _p in ("bkash", "nagad", "rocket", "upay"):
-            _col = f"zinipay_{_p}_instructions"
-            _prov_instrs[_p] = (getattr(pgc, _col, None) or "").strip() if pgc else ""
 
     # Exchange rate: use per-gateway override if set, otherwise global Settings rate.
     if custom_rate and custom_rate > 0:
@@ -2506,14 +2500,11 @@ async def _finish_zinipay_payment(
         tx_id = transaction.id
 
     amount_str = f"৳{bdt_amount:.2f}"
-    # Use per-provider instructions if set; fall back to global instructions.
-    _final_instructions = _prov_instrs.get(provider or "", "") or instructions_text or None
     message = pui.mobile_money_invoice(
         provider_label=PROVIDER_LABEL.get(provider, "Mobile Banking"),
         provider_emoji=PROVIDER_EMOJI[provider],
         amount=amount_str, send_to=send_to,
         deposit_id=tx_id, expires_at="30 Minutes",
-        instruction=_final_instructions,
     )
     # Only Submit + Cancel — amount/number remain copyable through native controls.
     keyboard = pui.invoice_keyboard(
@@ -6272,7 +6263,7 @@ async def buy_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 Price: {format_price(product_price)}\n"
         f"📦 Available Stock: {available}\n"
         f"\n"
-        f"Select Quantity:"
+        f"Choose the quantity you'd like to purchase."
     )
 
     # Build dynamic preset keyboard from quantity_presets service (already
@@ -6315,7 +6306,8 @@ async def qty_custom_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         product_id = context.user_data.get('purchase_product_id', 0)
 
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}"),
+        InlineKeyboardButton("⬅ Back to Product", callback_data=f"product_{product_id}"),
+        InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
     ]])
 
     try:
@@ -6404,13 +6396,13 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
 
     if has_sufficient_balance:
         balance_section = (
-            f"👛 Wallet Balance: {format_price(wallet_balance)}\n"
-            f"💳 Balance After Purchase: {format_price(remaining_after)}"
+            f"👛 Wallet: {format_price(wallet_balance)}\n"
+            f"💳 After: {format_price(remaining_after)}"
         )
     else:
         shortfall = total - wallet_balance
         balance_section = (
-            f"👛 Wallet Balance: {format_price(wallet_balance)}\n"
+            f"👛 Wallet: {format_price(wallet_balance)}\n"
             f"⚠️ Short: {format_price(shortfall)}"
         )
 
@@ -6422,11 +6414,9 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
         f"🛒 Purchase Summary\n"
         f"\n"
         f"📦 {product_name}\n"
-        f"\n"
-        f"💰 Unit Price: {format_price(product_price)}\n"
-        f"🔢 Quantity: {quantity}\n"
+        f"🔢 Qty: {quantity} × {format_price(product_price)}\n"
         f"{discount_line}"
-        f"💵 Total: {format_price(total)}\n"
+        f"💰 Total: {format_price(total)}\n"
         f"\n"
         f"{balance_section}"
     )
@@ -6435,12 +6425,22 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
         keyboard = [
             [InlineKeyboardButton("✅ Confirm Purchase",
                                   callback_data=f"confirm_purchase_{product_id}_{quantity}")],
-            [InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}")],
         ]
+        if not coupon_code:
+            keyboard.append([InlineKeyboardButton("🎟 Apply Coupon", callback_data="apply_coupon")])
+        else:
+            keyboard.append([InlineKeyboardButton("🗑 Remove Coupon", callback_data="remove_coupon")])
+        keyboard.append([
+            InlineKeyboardButton("◀ Back", callback_data=f"buy_{product_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
+        ])
     else:
         keyboard = [
             [InlineKeyboardButton("💰 Top Up Wallet", callback_data="topup")],
-            [InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}")],
+            [
+                InlineKeyboardButton("◀ Back", callback_data=f"buy_{product_id}"),
+                InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
+            ],
         ]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -7237,20 +7237,28 @@ async def confirm_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel the purchase process — silently return to the product listing."""
+    """Cancel the purchase process."""
     query = update.callback_query
     await query.answer()
 
-    # Clear purchase data
-    for _k in ('purchase_product_id', 'purchase_product_name', 'purchase_product_price',
-               'purchase_product_stock', 'purchase_product_type', 'purchase_quantity',
-               'purchase_coupon_id', 'purchase_coupon_code', 'purchase_coupon_discount'):
-        context.user_data.pop(_k, None)
+    from utils import create_main_menu_keyboard
 
-    # Silently navigate back to the product listing by re-using its render
-    # — no "Purchase cancelled" message, no new message sent.
-    from handlers.user_handlers import back_to_products_callback
-    await back_to_products_callback(update, context)
+    # Clear purchase data
+    context.user_data.pop('purchase_product_id', None)
+    context.user_data.pop('purchase_product_name', None)
+    context.user_data.pop('purchase_product_price', None)
+    context.user_data.pop('purchase_product_stock', None)
+    context.user_data.pop('purchase_product_type', None)
+    context.user_data.pop('purchase_quantity', None)
+
+    try:
+        await query.edit_message_text(
+            "❌ Purchase cancelled.",
+            reply_markup=create_main_menu_keyboard(user_id=update.effective_user.id)
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
 
     return ConversationHandler.END
 

@@ -124,20 +124,10 @@ def _get_pending_withdrawals(limit: int = 20) -> list:
 # User-facing: Commission History
 # ─────────────────────────────────────────────────────────────────────────────
 
-_RD_PAGE_SIZE = 10
-
-
-def _fmt_order_id(order_id, created_at=None) -> str:
-    """Format a numeric order ID as ORD-YYYYMMDD-NNNNNN."""
-    if not order_id:
-        return "—"
-    date_str = created_at.strftime("%Y%m%d") if created_at else "00000000"
-    return f"ORD-{date_str}-{int(order_id):06d}"
-
-
-async def _render_commissions(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
-    """Shared renderer for rd_commissions and rd_commissions_page."""
+async def rd_commissions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show commission history (rd:comm)."""
     query = update.callback_query
+    await query.answer()
     tid = update.effective_user.id
 
     with get_db_session() as s:
@@ -147,71 +137,40 @@ async def _render_commissions(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         user_id = user.id
 
-    rows = []
-    total = 0
+    lines = ["💰 <b>Commission History</b>\n"]
+    try:
+        from sqlalchemy import text
+        with get_db_session() as s:
+            rows = s.execute(text(
+                "SELECT commission_amount, status, created_at "
+                "FROM referral_commissions WHERE referrer_id = :uid "
+                "ORDER BY created_at DESC LIMIT 20"
+            ), {"uid": user_id}).fetchall()
+            if rows:
+                for r in rows:
+                    icon = {"pending": "⏳", "available": "✅", "withdrawn": "📤"}.get(r[1], "•")
+                    dt = r[2].strftime("%b %d") if r[2] else ""
+                    lines.append(f"{icon} ${r[0]:.4f} — {r[1]}  <i>{dt}</i>")
+            else:
+                lines.append("No commissions yet.")
+    except Exception:
+        lines.append("Commission tracking not yet active.")
+
+    # Legacy referral rewards
     try:
         from database.models import ReferralReward
         with get_db_session() as s:
-            base_q = s.query(ReferralReward).filter_by(referrer_id=user_id)
-            total = base_q.count()
-            rewards = (
-                base_q
-                .order_by(ReferralReward.created_at.desc())
-                .offset(page * _RD_PAGE_SIZE)
-                .limit(_RD_PAGE_SIZE)
-                .all()
-            )
-            rows = [(float(r.amount), r.order_id, r.created_at) for r in rewards]
+            rewards = s.query(ReferralReward).filter_by(referrer_id=user_id).limit(10).all()
+            if rewards:
+                lines.append("\n<b>Legacy Referral Bonuses</b>")
+                for r in rewards:
+                    dt = r.created_at.strftime("%b %d") if r.created_at else ""
+                    lines.append(f"✅ ${r.amount:.2f}  <i>{dt}</i>")
     except Exception:
-        logger.exception("_render_commissions: failed to query ReferralReward")
+        pass
 
-    total_pages = max(1, -(-total // _RD_PAGE_SIZE))  # ceiling division
-
-    if not rows:
-        body = "No commission history found."
-    else:
-        lines = []
-        for amt, order_id, created_at in rows:
-            order_label = _fmt_order_id(order_id, created_at)
-            when = created_at.strftime("%Y-%m-%d %H:%M") if created_at else "?"
-            lines.append(
-                f"🟢 <b>+${amt:.2f}</b>\n"
-                f"Order: {order_label}\n"
-                f"{when}"
-            )
-        body = "\n\n".join(lines)
-
-    kb_rows: list[list[InlineKeyboardButton]] = []
-    nav_row: list[InlineKeyboardButton] = []
-    if page > 0:
-        nav_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"rd:comm:p:{page - 1}"))
-    if page < total_pages - 1:
-        nav_row.append(InlineKeyboardButton("➡️ Next", callback_data=f"rd:comm:p:{page + 1}"))
-    if nav_row:
-        kb_rows.append(nav_row)
-    kb_rows.append([InlineKeyboardButton("⬅️ Back", callback_data="refer")])
-
-    page_indicator = f" <i>({page + 1}/{total_pages})</i>" if total_pages > 1 else ""
-    title = f"💰 <b>Commission History</b>{page_indicator}"
-    await _safe_edit(query, f"{title}\n\n{body}", InlineKeyboardMarkup(kb_rows))
-
-
-async def rd_commissions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show commission history page 0 (rd:comm)."""
-    query = update.callback_query
-    await query.answer()
-    await _render_commissions(update, context, page=0)
-
-
-async def rd_commissions_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle commission history pagination (rd:comm:p:<page>)."""
-    query = update.callback_query
-    await query.answer()
-    try:
-        page = int(query.data.rsplit(":", 1)[-1])
-    except (ValueError, IndexError):
-        page = 0
-    await _render_commissions(update, context, page=page)
+    kb = [[InlineKeyboardButton("🔙 Back", callback_data="refer")]]
+    await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(kb))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -262,16 +262,6 @@ def _apply_pending_migrations():
         ("zinipay_usd_to_bdt_rate",  "FLOAT",        "NULL"),
         ("zinipay_auto_rate",        "BOOLEAN",      "FALSE"),
         ("zinipay_instructions",     "TEXT",         "NULL"),
-        # Per-provider payment instructions
-        ("zinipay_bkash_instructions",  "TEXT",    "NULL"),
-        ("zinipay_nagad_instructions",  "TEXT",    "NULL"),
-        ("zinipay_rocket_instructions", "TEXT",    "NULL"),
-        ("zinipay_upay_instructions",   "TEXT",    "NULL"),
-        # Deposit bonus settings
-        ("zinipay_bonus_percent",     "FLOAT",   "0.0"),
-        ("zinipay_bonus_enabled",     "BOOLEAN", "FALSE"),
-        ("zinipay_bonus_min_deposit", "FLOAT",   "NULL"),
-        ("zinipay_bonus_max_amount",  "FLOAT",   "NULL"),
     ]
     for col, ctype, default in cols:
         _run(col,
@@ -1855,15 +1845,19 @@ def main():
                                                   pattern="^admin_nowpayments_toggle$"))
     application.add_handler(admin_nowpayments.build_nowpayments_edit_conv())
 
-    # ─── Admin Payment Gateway: ZiniPay / Mobile Banking ────────────────
-    # Registers all ZiniPay admin handlers including:
-    #   • main view / toggle / provider management
-    #   • per-provider instructions (zpi:)
-    #   • exchange rate panel (zper:)
-    #   • bonus settings (zpb:)
-    #   • all field edit conversations
+    # ─── Admin Payment Gateway: ZiniPay (bKash/Nagad/Rocket) ────────────
     from handlers import admin_zinipay
-    admin_zinipay.register_all_handlers(application)
+    application.add_handler(CallbackQueryHandler(admin_zinipay.admin_zinipay_view,
+                                                  pattern="^admin_zinipay_view$"))
+    application.add_handler(CallbackQueryHandler(admin_zinipay.admin_zinipay_toggle,
+                                                  pattern="^admin_zinipay_toggle$"))
+    application.add_handler(CallbackQueryHandler(admin_zinipay.admin_zinipay_toggle_autorate,
+                                                  pattern="^admin_zinipay_toggle_autorate$"))
+    application.add_handler(CallbackQueryHandler(admin_zinipay.admin_zinipay_provider_menu,
+                                                  pattern="^admin_zinipay_provider_menu$"))
+    application.add_handler(CallbackQueryHandler(admin_zinipay.admin_zinipay_set_provider,
+                                                  pattern="^admin_zinipay_setprovider_"))
+    application.add_handler(admin_zinipay.build_zinipay_edit_conv())
 
     # ─── Admin Payment Gateway: Binance Pay ─────────────────────────────
     # HMAC API transaction-history verification — see services/binance_pay.py
@@ -1881,8 +1875,6 @@ def main():
     application.add_handler(CallbackQueryHandler(admin_binance.admin_binance_pending,
                                                   pattern="^admin_binance_pending$"))
     application.add_handler(admin_binance.build_binance_edit_conv())
-    # New Binance Pay handlers: Refresh, Payment Logs (paginated), Bonus quick-select
-    admin_binance.register_extra_handlers(application)
     # Admin approve/reject/verify-again for Binance Pay manual verifications
     application.add_handler(CallbackQueryHandler(
         payment_handlers.admin_approve_binance_verification,
@@ -1916,60 +1908,7 @@ def main():
                                                   pattern="^admin_bybit_test$"))
     application.add_handler(CallbackQueryHandler(admin_bybit.admin_bybit_pending,
                                                   pattern="^admin_bybit_pending$"))
-    application.add_handler(CallbackQueryHandler(admin_bybit.admin_bybit_refresh,
-                                                  pattern="^admin_bybit_refresh$"))
-    application.add_handler(CallbackQueryHandler(admin_bybit.admin_bybit_toggle_api_show,
-                                                  pattern="^admin_bybit_toggle_api_show$"))
-    application.add_handler(CallbackQueryHandler(admin_bybit.admin_bybit_logs,
-                                                  pattern="^admin_bybit_logs$"))
     application.add_handler(admin_bybit.build_bybit_edit_conv())
-    # New Bybit Pay handlers: Address Manager, Bonus quick-select, Logs pagination
-    admin_bybit.register_extra_handlers(application)
-
-    # ─── Admin: Payment Settings (global deposit controls) ───────────────
-    # Callback namespace: ps: — Minimum/Maximum Deposit, Exchange Rate,
-    # Auto Exchange Rate, Deposit Expiry, Pending Timeout, Auto Cancel,
-    # Max Pending, Payment Instructions, Gateway Status, Maintenance Mode.
-    # All values stored in bot_config; payment logic NOT modified.
-    from handlers import admin_payment_settings as _ps
-    _ps.register_handlers(application)
-
-    # ─── Admin: Mobile Banking Manager (bKash / Nagad / Rocket / Upay) ───
-    # Callback namespace: mb: — Add/Edit/Delete/Copy/Toggle/Default numbers.
-    # Numbers stored in bot_config as JSON; no DB schema changes.
-    # Payment logic in payment_handlers.py / services/ is NOT modified.
-    from handlers import admin_mobile_banking as _mb
-    _mb.register_handlers(application)
-
-    # ─── Admin: Gateway Wallet Manager (all gateways) ────────────────────
-    # Callback namespace: gww: — Add/Edit/Delete/Copy/Default/Toggle wallets.
-    # Wallets are stored in bot_config as JSON; no DB schema changes.
-    from handlers import admin_gateway_wallets as _gww
-    application.add_handler(_gww.build_gww_add_conv())
-    application.add_handler(_gww.build_gww_edit_conv())
-    application.add_handler(CallbackQueryHandler(
-        _gww.gww_list,          pattern=r"^gww:list:[a-z_]+$"))
-    application.add_handler(CallbackQueryHandler(
-        _gww.gww_view,          pattern=r"^gww:view:[a-z_]+:\d+$"))
-    application.add_handler(CallbackQueryHandler(
-        _gww.gww_toggle,        pattern=r"^gww:tog:[a-z_]+:\d+$"))
-    application.add_handler(CallbackQueryHandler(
-        _gww.gww_set_default,   pattern=r"^gww:def:[a-z_]+:\d+$"))
-    application.add_handler(CallbackQueryHandler(
-        _gww.gww_copy_fallback, pattern=r"^gww:copy:[a-z_]+:\d+$"))
-    application.add_handler(CallbackQueryHandler(
-        _gww.gww_delete_confirm, pattern=r"^gww:del:[a-z_]+:\d+$"))
-    application.add_handler(CallbackQueryHandler(
-        _gww.gww_delete_execute, pattern=r"^gww:delok:[a-z_]+:\d+$"))
-
-    # ─── Admin: Crypto Network Manager (all gateways) ────────────────────
-    # Callback namespace: gcn: — Add/Rename/EditAddr/Delete/Copy/Default/
-    #   Toggle/QR/MinDeposit/MaxDeposit/Priority/AutoVerify networks.
-    # Networks are stored in bot_config as JSON; no DB schema changes.
-    # Payment processing and APIs are NOT modified.
-    from handlers import admin_crypto_networks as _gcn
-    _gcn.register_handlers(application)
-
     # Admin approve/reject/verify-again for Bybit Pay manual verifications
     application.add_handler(CallbackQueryHandler(
         payment_handlers.admin_approve_bybit_verification,
@@ -2883,14 +2822,12 @@ def main():
     # Leaderboard have been removed; Commission History is now reached from
     # the essential referral screen — see handlers/referral_handlers.py.)
     from handlers.referral_dashboard import (
-        rd_commissions, rd_commissions_page,
+        rd_commissions,
         rd_admin_menu, rd_admin_toggle_lifetime,
         rd_admin_withdrawals_list, rd_admin_approve_withdrawal, rd_admin_reject_withdrawal,
         build_rd_admin_convs,
     )
     application.add_handler(CallbackQueryHandler(rd_commissions,              pattern=r"^rd:comm$"))
-    application.add_handler(CallbackQueryHandler(rd_commissions_page,         pattern=r"^rd:comm:p:\d+$"))
-    application.add_handler(CallbackQueryHandler(referral_handlers.copy_ref_link_callback, pattern=r"^copy_ref_link$"))
     application.add_handler(CallbackQueryHandler(rd_admin_menu,               pattern=r"^rd:admin$"))
     application.add_handler(CallbackQueryHandler(rd_admin_toggle_lifetime,    pattern=r"^rd:adm:toggle_lifetime$"))
     application.add_handler(CallbackQueryHandler(rd_admin_withdrawals_list,   pattern=r"^rd:adm:withdrawals$"))
@@ -3237,12 +3174,6 @@ def main():
     # ── V41: API Key & Integration Manager ───────────────────────────────────
     from handlers.admin_api_manager import register_handlers as _aaim_reg
     _aaim_reg(application)
-
-    # ── Security Center & Deposit Monitoring ──────────────────────────────────
-    from handlers.admin_security_center import register_handlers as _asc_reg
-    _asc_reg(application)
-    from handlers.admin_deposit_monitoring import register_handlers as _adm_reg
-    _adm_reg(application)
 
     # ── V41: Seed built-in integrations + schedule health checks ─────────────
     from services.api_integration_service import (

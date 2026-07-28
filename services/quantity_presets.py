@@ -116,34 +116,46 @@ def build_keyboard(product: Product,
                    product_id: Optional[int] = None) -> "InlineKeyboardMarkup":
     """Return the standardized quantity-selector keyboard.
 
-    Numeric presets fire ``qty_preset_<product_id>_<qty>``; the purchase
-    handler needs no changes. A ``✏️ Custom Quantity`` button
-    (``qty_custom_<product_id>``) always follows, then a final row with
-    ``⬅️ Back``.
-
-    Preset ladder: [1, 2, 3, 4, 5, 10, 15, 20] — any entry exceeding the
-    effective stock upper-bound is hidden. Displayed 4 per row.
+    Numeric presets fire ``qty_preset_<product_id>_<qty>``; the "Max"
+    button fires the same callback with the true upper bound as the
+    quantity, so the purchase handler needs no changes. A
+    ``✏️ Custom Quantity`` button (``qty_custom_<product_id>``) always
+    follows, then a final row with ``⬅ Back to Product`` and
+    ``❌ Cancel``.
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup  # lazy import
 
     pid = product_id or product.id
-    _lo, hi = _effective_bounds(product, available=available)
-
-    _PRESETS = [1, 2, 3, 4, 5, 10, 15, 20]
-    kept = [q for q in _PRESETS if q <= hi]
+    lo, hi = _effective_bounds(product, available=available)
+    kept, show_max = _tiered_display(lo, hi)
 
     buttons = [
         InlineKeyboardButton(str(q), callback_data=f"qty_preset_{pid}_{q}")
         for q in kept
     ]
+    if show_max:
+        buttons.append(InlineKeyboardButton("Max", callback_data=f"qty_preset_{pid}_{hi}"))
 
-    row_size = 4
+    # Row width matches the standardized tier layout:
+    #   Stock 1–4   -> 2 per row
+    #   Stock 5–9   -> 3 per row (yields "1 2 3" / "5 Max")
+    #   Stock 10+   -> 4 per row (yields "1 2 3 5" / "10 15 20 Max", etc.)
+    if hi <= 4:
+        row_size = 2
+    elif hi <= 9:
+        row_size = 3
+    else:
+        row_size = 4
+
     kb: list[list[InlineKeyboardButton]] = []
     for i in range(0, len(buttons), row_size):
         kb.append(buttons[i:i + row_size])
 
-    kb.append([InlineKeyboardButton("✍️ Custom Quantity", callback_data=f"qty_custom_{pid}")])
-    kb.append([InlineKeyboardButton("⬅️ Back", callback_data="back_to_products")])
+    kb.append([InlineKeyboardButton("✏️ Custom Quantity", callback_data=f"qty_custom_{pid}")])
+    kb.append([
+        InlineKeyboardButton("⬅ Back to Product", callback_data=f"product_{pid}"),
+        InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
+    ])
     return InlineKeyboardMarkup(kb)
 
 

@@ -62,21 +62,22 @@ async def refer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     pct_str = _fmt_pct(_commission_pct())
     text = (
-        "👥 <b>Referral Program</b>\n"
-        "Invite friends and earn commission on every eligible completed purchase made through your referral link.\n\n"
-        f"💰 <b>Commission Rate:</b> {pct_str}\n\n"
-        "📊 <b>Statistics</b>\n"
+        "👥 <b>Referral Program</b>\n\n"
+        f"Earn <b>{pct_str} commission</b> on every successful purchase made through your referral link.\n\n"
+        "━━━━━━━━━━━━━━\n\n"
+        "📊 <b>Statistics</b>\n\n"
         f"👥 Total Referrals: <b>{count}</b>\n"
-        f"💵 Total Earnings: <b>${earned:.2f}</b>\n\n"
+        f"💰 Total Earnings: <b>${earned:.2f}</b>\n\n"
         "🔗 <b>Your Referral Link</b>\n"
         f"<code>{link}</code>\n\n"
-        "ℹ️ Commission is credited automatically after every eligible completed order."
+        "━━━━━━━━━━━━━━\n\n"
+        "Commission is credited automatically after every completed eligible order."
     )
 
     try:
         await query.edit_message_text(
             text,
-            reply_markup=create_refer_keyboard(lang, link),
+            reply_markup=create_refer_keyboard(lang),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -174,17 +175,6 @@ async def process_referral_reward(
             }))
         except Exception:
             pass
-
-
-async def copy_ref_link_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show a popup confirmation for Copy Link (copy_ref_link).
-
-    The referral link is already displayed as a <code> block in the message
-    (tap-to-copy on all Telegram clients). This handler shows a popup to
-    confirm the action without sending any new chat message.
-    """
-    query = update.callback_query
-    await query.answer("✅ Referral link copied.", show_alert=True)
 
 
 # ─── Admin: referral settings ───────────────────────────────────────────────

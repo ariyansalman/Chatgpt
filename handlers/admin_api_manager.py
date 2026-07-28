@@ -20,10 +20,6 @@ aim:settings:toggle:KEY       — Toggle bool config key
 aim:retry:ID                  — Retry connection now
 aim:rotate_ask:ID             — API key rotate confirmation
 aim:rotate_ok:ID              — Clear/reset API key
-aim:show_key:ID               — Temporarily reveal API key for this session
-aim:hide_key:ID               — Re-mask the API key
-aim:show_secret:ID            — Temporarily reveal API secret for this session
-aim:hide_secret:ID            — Re-mask the API secret
 
 ConversationHandler entries:
   aim:add                     — Add new integration wizard
@@ -255,10 +251,6 @@ async def aim_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception:
         return
 
-    # Check whether admin has temporarily revealed keys this session
-    key_revealed    = context.user_data.get(f"aim_key_shown:{iid}", False) if context else False
-    secret_revealed = context.user_data.get(f"aim_sec_shown:{iid}", False) if context else False
-
     with get_db_session() as session:
         integ = session.query(ApiIntegration).filter_by(id=iid).first()
         if not integ:
@@ -267,31 +259,17 @@ async def aim_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         last_check = integ.last_check_at.strftime("%Y-%m-%d %H:%M") if integ.last_check_at else "Never"
         last_ok = integ.last_success_at.strftime("%Y-%m-%d %H:%M") if integ.last_success_at else "Never"
         last_err = integ.last_error_at.strftime("%Y-%m-%d %H:%M") if integ.last_error_at else "Never"
-
-        # Show/Hide toggle — key
-        if key_revealed and integ.api_key_masked:
-            key_display = f"<code>{integ.api_key_masked}</code>"
-            key_toggle_btn = InlineKeyboardButton("🙈 Hide Key", callback_data=f"aim:hide_key:{iid}")
-        else:
-            key_display = f"<code>{ais.mask_for_display(integ.api_key_hint)}</code>"
-            key_toggle_btn = InlineKeyboardButton("👁 Show Key", callback_data=f"aim:show_key:{iid}")
-
-        # Show/Hide toggle — secret
-        if secret_revealed and integ.api_secret_masked:
-            secret_display = f"<code>{integ.api_secret_masked}</code>"
-            secret_toggle_btn = InlineKeyboardButton("🙈 Hide Secret", callback_data=f"aim:hide_secret:{iid}")
-        else:
-            secret_display = f"<code>{ais.mask_for_display(integ.api_secret_hint)}</code>"
-            secret_toggle_btn = InlineKeyboardButton("👁 Show Secret", callback_data=f"aim:show_secret:{iid}")
-
+        # Display only hints — NEVER the actual key
+        key_display = ais.mask_for_display(integ.api_key_hint)
+        secret_display = ais.mask_for_display(integ.api_secret_hint)
         text = (
             f"🔑 <b>{integ.name}</b>\n\n"
             f"Provider: {integ.provider}\n"
             f"Type: {integ.api_type}\n"
             f"Status: {integ.status.title()}\n"
             f"Connection: {_conn_status_line(integ)}\n"
-            f"API Key: {key_display}\n"
-            f"API Secret: {secret_display}\n"
+            f"API Key: <code>{key_display}</code>\n"
+            f"API Secret: <code>{secret_display}</code>\n"
             f"Base URL: {integ.base_url or '—'}\n"
             f"Webhook URL: {integ.webhook_url or '—'}\n"
             f"Version: {integ.version or '—'}\n"
@@ -308,12 +286,12 @@ async def aim_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     kb_rows = [
         [InlineKeyboardButton("🧪 Test Now", callback_data=f"aim:test:{iid}"),
          InlineKeyboardButton("📋 Logs", callback_data=f"aim:logs:{iid}:0")],
-        [key_toggle_btn, secret_toggle_btn],
         [InlineKeyboardButton("✏️ Edit", callback_data=f"aim:edit:{iid}"),
          InlineKeyboardButton("🔑 Set Key", callback_data=f"aim:set_key:{iid}")],
         [InlineKeyboardButton("🔒 Set Secret", callback_data=f"aim:set_secret:{iid}")],
     ]
     if not integ.is_built_in:
+        # Status toggles — only for non-built-in or if admin wants to override
         kb_rows.append([
             InlineKeyboardButton("🟢 Enable",  callback_data=f"aim:enable:{iid}"),
             InlineKeyboardButton("🟡 Maint.",  callback_data=f"aim:maintenance:{iid}"),
@@ -544,72 +522,6 @@ async def aim_del_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 # ─── rotate key ───────────────────────────────────────────────────────────────
-
-# ─── show / hide API key ──────────────────────────────────────────────────────
-
-async def aim_show_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Temporarily reveal the API key for this integration (stored in session user_data)."""
-    q = update.callback_query
-    await q.answer()
-    if not _require_admin(update.effective_user.id):
-        await _deny(update)
-        return
-    try:
-        iid = int(q.data.split(":")[-1])
-    except Exception:
-        return
-    context.user_data[f"aim_key_shown:{iid}"] = True
-    log_admin_action(update.effective_user.id, "aim.show_key", details=f"id={iid}")
-    await aim_view(with_data(update, f"aim:view:{iid}"), context)
-
-
-async def aim_hide_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Re-mask the API key display."""
-    q = update.callback_query
-    await q.answer()
-    if not _require_admin(update.effective_user.id):
-        await _deny(update)
-        return
-    try:
-        iid = int(q.data.split(":")[-1])
-    except Exception:
-        return
-    context.user_data.pop(f"aim_key_shown:{iid}", None)
-    await aim_view(with_data(update, f"aim:view:{iid}"), context)
-
-
-async def aim_show_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Temporarily reveal the API secret for this integration."""
-    q = update.callback_query
-    await q.answer()
-    if not _require_admin(update.effective_user.id):
-        await _deny(update)
-        return
-    try:
-        iid = int(q.data.split(":")[-1])
-    except Exception:
-        return
-    context.user_data[f"aim_sec_shown:{iid}"] = True
-    log_admin_action(update.effective_user.id, "aim.show_secret", details=f"id={iid}")
-    await aim_view(with_data(update, f"aim:view:{iid}"), context)
-
-
-async def aim_hide_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Re-mask the API secret display."""
-    q = update.callback_query
-    await q.answer()
-    if not _require_admin(update.effective_user.id):
-        await _deny(update)
-        return
-    try:
-        iid = int(q.data.split(":")[-1])
-    except Exception:
-        return
-    context.user_data.pop(f"aim_sec_shown:{iid}", None)
-    await aim_view(with_data(update, f"aim:view:{iid}"), context)
-
-
-# ─── rotate API key ───────────────────────────────────────────────────────────
 
 async def aim_rotate_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
@@ -1034,14 +946,6 @@ async def aim_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return await aim_del_ask(update, context)
     if data.startswith("aim:del_ok:"):
         return await aim_del_ok(update, context)
-    if data.startswith("aim:show_key:"):
-        return await aim_show_key(update, context)
-    if data.startswith("aim:hide_key:"):
-        return await aim_hide_key(update, context)
-    if data.startswith("aim:show_secret:"):
-        return await aim_show_secret(update, context)
-    if data.startswith("aim:hide_secret:"):
-        return await aim_hide_secret(update, context)
     if data.startswith("aim:rotate_ask:"):
         return await aim_rotate_ask(update, context)
     if data.startswith("aim:rotate_ok:"):

@@ -25,7 +25,6 @@ def _cfg():
 def _kb(c):
     return InlineKeyboardMarkup([[InlineKeyboardButton("🆔 Merchant ID",callback_data="admin_heleket_edit_merchant")],
         [InlineKeyboardButton("🔑 Payment API Key",callback_data="admin_heleket_edit_key")],
-        [InlineKeyboardButton("💳 Wallet Manager",callback_data="gww:list:heleket")],
         [InlineKeyboardButton("🚫 Disable" if c["enabled"] else "✅ Enable",callback_data="admin_heleket_toggle")],
         [InlineKeyboardButton("🔙 Back",callback_data="admin_settings")]])
 

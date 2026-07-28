@@ -602,12 +602,11 @@ def binance_pay_invoice(
     return "\n".join(lines)
 
 
-def binance_pay_keyboard(*, submit_cb: str, cancel_cb: str = "cancel",
-                         back_cb: str = "topup_menu_back") -> InlineKeyboardMarkup:
+def binance_pay_keyboard(*, submit_cb: str, cancel_cb: str = "cancel") -> InlineKeyboardMarkup:
     """The Binance Pay invoice actions, in the user-facing order."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🧾 Submit Order ID", callback_data=submit_cb)],
-        [InlineKeyboardButton("⬅️ Back", callback_data=back_cb)],
+        [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
     ])
 
 
@@ -645,13 +644,12 @@ def bybit_pay_invoice(
     return "\n".join(lines)
 
 
-def bybit_pay_keyboard(*, submit_cb: str, cancel_cb: str = "cancel",
-                       back_cb: str = "topup_menu_back") -> InlineKeyboardMarkup:
-    """The Bybit Pay invoice actions — Submit Order ID + Back only.
+def bybit_pay_keyboard(*, submit_cb: str, cancel_cb: str = "cancel") -> InlineKeyboardMarkup:
+    """The Bybit Pay invoice actions — Submit Order ID + Cancel only.
     Amount and UID remain copyable through native copy controls."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🧾 Submit Order ID", callback_data=submit_cb)],
-        [InlineKeyboardButton("⬅️ Back", callback_data=back_cb)],
+        [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
     ])
 
 
