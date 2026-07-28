@@ -108,7 +108,7 @@ async def support_center_callback(update: Update, context: ContextTypes.DEFAULT_
 
     text = (
         "🎧 <b>Support Center</b>\n\n"
-        "Open a ticket and our team will reply here in the bot."
+        "Need help? Open a support ticket and our team will reply here."
     )
     await safe_edit_message_text(query, 
         text,

@@ -63,15 +63,13 @@ async def refer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pct_str = _fmt_pct(_commission_pct())
     text = (
         "👥 <b>Referral Program</b>\n\n"
-        f"Earn <b>{pct_str} commission</b> on every successful purchase made through your referral link.\n\n"
-        "━━━━━━━━━━━━━━\n\n"
-        "📊 <b>Statistics</b>\n\n"
+        f"💰 <b>Commission Rate:</b> {pct_str}\n\n"
+        "📊 <b>Statistics</b>\n"
         f"👥 Total Referrals: <b>{count}</b>\n"
-        f"💰 Total Earnings: <b>${earned:.2f}</b>\n\n"
-        "🔗 <b>Your Referral Link</b>\n"
+        f"💵 Total Earnings: <b>${earned:.2f}</b>\n\n"
+        "🔗 <b>Referral Link</b>\n"
         f"<code>{link}</code>\n\n"
-        "━━━━━━━━━━━━━━\n\n"
-        "Commission is credited automatically after every completed eligible order."
+        "Commission is credited automatically after every eligible completed order."
     )
 
     try:
@@ -175,6 +173,22 @@ async def process_referral_reward(
             }))
         except Exception:
             pass
+
+
+async def copy_ref_link_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send the referral link as a copyable message (copy_ref_link)."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    bot_username = (await context.bot.get_me()).username
+    link = f"https://t.me/{bot_username}?start=ref_{telegram_id}"
+    try:
+        await query.message.reply_text(
+            f"🔗 <b>Your Referral Link</b>\n\n<code>{link}</code>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
 
 
 # ─── Admin: referral settings ───────────────────────────────────────────────

@@ -61,19 +61,23 @@ LEADING_EMOJI_RE = re.compile(
 # ─────────────────────────────────────────────────────────────────────────────
 
 DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
+    # Row 1 — Products (full-width)
     {"key": "products", "label_key": "main_menu.products", "callback": "products",
-     "row": 1, "order": 0, "full_width": True, "emoji": "🛒"},
+     "row": 1, "order": 0, "full_width": True, "emoji": "🛍️"},
 
+    # Row 2 — Add Funds | Wallet
     {"key": "topup", "label_key": "main_menu.topup", "callback": "topup",
-     "row": 2, "order": 0, "emoji": "💰"},
+     "row": 2, "order": 0, "emoji": "💵"},
     {"key": "wallet", "label_key": "main_menu.wallet", "callback": "wallet",
      "row": 2, "order": 1, "emoji": "👛"},
 
+    # Row 3 — My Orders | Referrals
     {"key": "orders", "label_key": "main_menu.order_history", "callback": "order_history",
      "row": 3, "order": 0, "emoji": "📦"},
     {"key": "refer", "label_key": "main_menu.refer", "callback": "refer",
      "row": 3, "order": 1, "emoji": "👥"},
 
+    # Row 4 — Language | Support Center
     {"key": "language", "label_key": "language.menu_button", "callback": "language_menu",
      "row": 4, "order": 0, "emoji": "🌐"},
     {"key": "support", "label_key": "main_menu.support", "callback": "support_center",
@@ -87,8 +91,9 @@ DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
     # "ua:profile", unchanged), just reached via the /profile command
     # instead of a dedicated button, so it doesn't compete for space here.
 
+    # Row 5 — Admin Panel (full-width, admin-only)
     {"key": "admin", "label_key": "main_menu.admin_panel", "callback": "admin_menu",
-     "row": 5, "order": 0, "full_width": True, "admin_only": True, "emoji": "🛠"},
+     "row": 5, "order": 0, "full_width": True, "admin_only": True, "emoji": "🛠️"},
 ]
 
 

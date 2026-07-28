@@ -272,8 +272,9 @@ def create_language_keyboard(lang: str = "en"):
 
 
 def create_refer_keyboard(lang: str):
-    """Refer & Earn keyboard — clean, minimal marketplace layout."""
+    """Refer & Earn keyboard — compact 3-button layout."""
     keyboard = [
+        [InlineKeyboardButton("📋 Copy Link", callback_data="copy_ref_link")],
         [InlineKeyboardButton("📜 Referral History", callback_data="rd:comm")],
         [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ]
@@ -281,18 +282,22 @@ def create_refer_keyboard(lang: str):
 
 
 def create_support_center_keyboard(lang: str, support_username: str = ""):
-    """Support Center main keyboard — compact, ticket-focused (English-only)."""
+    """Support Center main keyboard — compact 2-column grid layout."""
     keyboard = [
-        [InlineKeyboardButton("🎫 Open Ticket", callback_data="sc_new")],
-        [InlineKeyboardButton("📂 My Tickets", callback_data="sc_list")],
-        [InlineKeyboardButton("❓ FAQ", callback_data="sc_page_faq")],
+        [
+            InlineKeyboardButton("🎫 Open Ticket", callback_data="sc_new"),
+            InlineKeyboardButton("📂 My Tickets",  callback_data="sc_list"),
+        ],
+        [
+            InlineKeyboardButton("❓ FAQ",          callback_data="sc_page_faq"),
+            InlineKeyboardButton("🏠 Main Menu",    callback_data="main_menu"),
+        ],
     ]
     if support_username:
         keyboard.append([InlineKeyboardButton(
             "📞 Chat with Support",
             url=f"https://t.me/{support_username}",
         )])
-    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -508,10 +513,7 @@ def create_product_detail_keyboard(
 def create_quantity_keyboard(product_id):
     """Create keyboard for the quantity input step."""
     keyboard = [
-        [
-            InlineKeyboardButton("⬅ Back to Product", callback_data=f"product_{product_id}"),
-            InlineKeyboardButton("❌ Cancel", callback_data="cancel_purchase"),
-        ]
+        [InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 

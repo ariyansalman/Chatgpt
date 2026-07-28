@@ -2822,12 +2822,14 @@ def main():
     # Leaderboard have been removed; Commission History is now reached from
     # the essential referral screen — see handlers/referral_handlers.py.)
     from handlers.referral_dashboard import (
-        rd_commissions,
+        rd_commissions, rd_commissions_page,
         rd_admin_menu, rd_admin_toggle_lifetime,
         rd_admin_withdrawals_list, rd_admin_approve_withdrawal, rd_admin_reject_withdrawal,
         build_rd_admin_convs,
     )
     application.add_handler(CallbackQueryHandler(rd_commissions,              pattern=r"^rd:comm$"))
+    application.add_handler(CallbackQueryHandler(rd_commissions_page,         pattern=r"^rd:comm:p:\d+$"))
+    application.add_handler(CallbackQueryHandler(referral_handlers.copy_ref_link_callback, pattern=r"^copy_ref_link$"))
     application.add_handler(CallbackQueryHandler(rd_admin_menu,               pattern=r"^rd:admin$"))
     application.add_handler(CallbackQueryHandler(rd_admin_toggle_lifetime,    pattern=r"^rd:adm:toggle_lifetime$"))
     application.add_handler(CallbackQueryHandler(rd_admin_withdrawals_list,   pattern=r"^rd:adm:withdrawals$"))

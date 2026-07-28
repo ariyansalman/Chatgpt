@@ -120,45 +120,23 @@ def _collect_dashboard_stats() -> dict:
 
 
 def _render_dashboard_text(stats: dict) -> str:
-    """Build the dashboard header shown above the admin menu.
+    """Compact premium dashboard header shown above the admin menu.
 
-    Layout, top to bottom:
-      1. ⚡ Admin Control Center (title)
-      2. 🔴 Action Required / 🟢 All Clear (section title, only shown items)
-      3. 📊 Overview (section title) — Users, Products, Orders, Sales
-
-    No divider lines — sections are separated by a blank line and a clean
-    section title, consistent "<emoji> Label: value" formatting throughout.
+    Layout:
+      ⚡ Admin Dashboard
+      👥 Users: N  📦 Products: N  🛒 Orders: N  💰 Sales: $N
+      🚨 Alerts: N • 📦 Low Stock: N
     """
-    failed_orders = stats.get("failed_orders", 0)
-    system_alerts = stats.get("system_alerts", 0)
-
-    # Action Required — only genuinely actionable items; each line is
-    # hidden automatically whenever its count is zero. Consistent
-    # "<emoji> Label: value" format, one space after the emoji.
-    alerts = []
-    if stats["pending_payments"]:
-        alerts.append(f"🔴 Pending Payments: <b>{stats['pending_payments']:,}</b>")
-    if stats["low_stock"]:
-        alerts.append(f"📦 Low Stock Products: <b>{stats['low_stock']:,}</b>")
-    if failed_orders:
-        alerts.append(f"⚠️ Failed Orders: <b>{failed_orders:,}</b>")
-    if system_alerts:
-        alerts.append(f"🚨 System Alerts: <b>{system_alerts:,}</b>")
-
-    if alerts:
-        attention_block = "🔴 <b>Action Required</b>\n" + "\n".join(alerts)
-    else:
-        attention_block = "🟢 <b>All Clear</b> — No pending actions"
+    alerts   = stats.get("system_alerts", 0)
+    low_stock = stats.get("low_stock", 0)
 
     return (
-        "⚡ <b>Admin Control Center</b>\n\n"
-        f"{attention_block}\n\n"
-        "📊 <b>Overview</b>\n"
-        f"👥 Users: <b>{stats['users']:,}</b>\n"
-        f"📦 Products: <b>{stats['products']:,}</b>\n"
-        f"🛒 Orders: <b>{stats['orders']:,}</b>\n"
-        f"💰 Sales: <b>{format_price(stats['total_sales'])}</b>"
+        "⚡ <b>Admin Dashboard</b>\n"
+        f"👥 Users: <b>{stats['users']:,}</b>  "
+        f"📦 Products: <b>{stats['products']:,}</b>  "
+        f"🛒 Orders: <b>{stats['orders']:,}</b>  "
+        f"💰 Sales: <b>{format_price(stats['total_sales'])}</b>\n"
+        f"🚨 Alerts: <b>{alerts}</b>  •  📦 Low Stock: <b>{low_stock}</b>"
     )
 
 

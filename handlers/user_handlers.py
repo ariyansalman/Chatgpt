@@ -102,37 +102,32 @@ def _product_price_for_user(product, telegram_id):
 def _build_home_message(lang: str, balance_str: str, total_orders: int = 0) -> str:
     """Compose the /start & Main Menu dashboard card.
 
-    Layout:
+    Compact premium layout:
       🛍️ Premium Digital Store
+      AI Subscriptions • Software • Digital Products
 
-      ✨ Premium AI subscriptions, software licenses, and digital products.
+      💰 Balance: $X.XX
+      📦 Orders: N
 
-      💳 Wallet Balance: $X.XX
-      📦 Total Orders: N
-
-    No "Choose an option below" filler line -- the menu buttons underneath
-    are self-explanatory. Title / description / footer remain configurable
-    from the Admin Panel via: home_title / home_subtitle / home_footer
-    (footer is blank by default; set one only if a store genuinely needs
-    it). Falls back to the defaults above when no custom value is set.
-    Wallet balance and total orders are always live values, loaded by the
-    caller.
+    Title and subtitle are joined on consecutive lines (no blank line
+    between them) for a tighter feel. Stats block is separated by one
+    blank line. Footer is blank by default — admins can set home_footer
+    in Bot Configuration if needed.
     """
     title    = cfg.get_str("home_title",    "").strip() or t("start.dashboard_title", lang)
-    subtitle = cfg.get_str("home_subtitle", "").strip() or t("start.dashboard_subtitle", lang) or "✨ Premium AI subscriptions, software licenses, and digital products."
+    subtitle = cfg.get_str("home_subtitle", "").strip() or t("start.dashboard_subtitle", lang)
     footer   = cfg.get_str("home_footer",   "").strip() or t("start.dashboard_footer", lang)
     wallet_label = t("start.dashboard_wallet_label", lang)
     orders_label = t("start.dashboard_orders_label", lang)
 
-    parts = [
-        title,
-        subtitle,
-        f"{wallet_label}: {balance_str}\n{orders_label}: {total_orders}",
-        footer,
-    ]
-    # Footer is blank by default now (no "Choose an option below." filler --
-    # a clean dashboard is self-explanatory). Drop any empty part instead of
-    # joining it in, so admins who clear a field never get a stray blank line.
+    # Title + subtitle on consecutive lines (compact header block)
+    header_parts = [p for p in [title, subtitle] if p and p.strip()]
+    header = "\n".join(header_parts)
+
+    stats = f"{wallet_label}: {balance_str}\n{orders_label}: {total_orders}"
+
+    parts = [header, stats, footer]
+    # Drop any empty part so admins who clear a field never get a stray blank line.
     return "\n\n".join(p for p in parts if p and p.strip())
 
 
@@ -582,60 +577,62 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
                                   allow_pagination=True, show_stock=True):
     """Build the flat catalog inline keyboard with optional pagination controls.
 
-    ``rows`` — list of dicts: id / name / price_display / stock.
+    ``rows`` — list of dicts: id / name / price_display / stock / badge.
     ``page`` — 0-based current page index.
     ``total_pages`` — total number of pages.
-    ``allow_pagination`` — whether to include ⬅ Previous / ➡ Next buttons.
-    ``show_stock`` — whether to append "• N left" / "• Out of Stock" to each label.
+    ``allow_pagination`` — whether to include ⬅️ Previous / ➡️ Next buttons.
+    ``show_stock`` — whether to show the stock line beneath each product.
 
-    Every row follows one standardized format so the catalog reads like a
-    clean, consistent marketplace list:
-        📦 Product Name • $Price • N left
-        ❌ Product Name • $Price • Out of Stock
-    The leading emoji reflects availability only (📦 in stock, ❌ sold out) --
-    no per-product custom emoji, so every row is visually consistent.
+    Two-line marketplace format per button:
+        🟢 Product Name • $Price   (available, no badge)
+        📦 Stock: N Left
+
+        ⭐ Product Name • $Price   (available, with badge — badge emoji leads)
+        📦 Stock: N Left
+
+        ❌ Product Name • $Price   (out of stock)
+        Out of Stock
     """
     keyboard = []
     for r in rows:
-        stock      = r.get("stock", 0)
-        available  = stock > 0
-        price      = r["price_display"]
-        raw_name   = (r["name"] or "").strip()
+        stock       = r.get("stock", 0)
+        available   = stock > 0
+        price       = r["price_display"]
+        raw_name    = (r["name"] or "").strip()
+        badge_label = r.get("badge", "")
 
-        # Compact display name — strip duration/generic words for readability
-        # Full name still shown on Product Details page (no DB change)
-        display_name = _shorten_product_name(raw_name, budget=26)
-
-        if show_stock:
-            stock_part = f"{stock} left" if available else "Out of Stock"
-            suffix = f" • {price} • {stock_part}"
+        # Leading icon: first badge emoji for available+badged, otherwise 🟢/❌
+        if available:
+            leading    = (badge_label.split()[0] + " ") if badge_label else "🟢 "
+            stock_line = f"📦 Stock: {stock} Left" if show_stock else ""
         else:
-            suffix = f" • {price}"
+            leading    = "❌ "
+            stock_line = "Out of Stock" if show_stock else ""
 
-        prefix = "📦 " if available else "❌ "
-        # Safety: trim display_name further if combined label exceeds 64 chars
-        hard_budget = 64 - len(prefix) - len(suffix)
+        price_suffix = f" • {price}"
+        hard_budget  = 64 - len(leading) - len(price_suffix)
         if hard_budget < 4:
             hard_budget = 4
+        display_name = _shorten_product_name(raw_name, budget=min(26, hard_budget))
         if len(display_name) > hard_budget:
             display_name = display_name[:max(1, hard_budget - 1)].rstrip() + "…"
 
-        label = f"{prefix}{display_name}{suffix}"
+        line1 = f"{leading}{display_name}{price_suffix}"
+        label = f"{line1}\n{stock_line}" if stock_line else line1
         keyboard.append([InlineKeyboardButton(label, callback_data=f"product_{r['id']}")])
 
     # Pagination row — only shown when there is more than one page
     if allow_pagination and total_pages > 1:
         nav_row = []
         if page > 0:
-            nav_row.append(InlineKeyboardButton("◀️ Previous",
+            nav_row.append(InlineKeyboardButton("⬅️ Previous",
                                                 callback_data=f"products_page_{page - 1}"))
         if page < total_pages - 1:
-            nav_row.append(InlineKeyboardButton("Next ▶️",
+            nav_row.append(InlineKeyboardButton("➡️ Next",
                                                 callback_data=f"products_page_{page + 1}"))
         if nav_row:
             keyboard.append(nav_row)
 
-    # Bottom utility row — Refresh removed; single, clean way back to the menu.
     keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
     return keyboard
@@ -662,7 +659,7 @@ async def render_all_products_catalog(query, context, telegram_id,
         ]])
         await _safe_edit_catalog(
             query,
-            "🛍️ <b>Products</b>\n┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n🔴 The product list is currently unavailable.",
+            "🛍️ <b>Products</b>\n\n🔴 The product list is currently unavailable.",
             kb,
         )
         return
@@ -673,14 +670,13 @@ async def render_all_products_catalog(query, context, telegram_id,
         ])
         await _safe_edit_catalog(
             query,
-            "🛍️ <b>Products</b>\n┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n🟡 The product list is currently under maintenance.\n"
-            "Please check back shortly.",
+            "🛍️ <b>Products</b>\n\n🟡 The product list is currently under maintenance.\nPlease check back shortly.",
             kb,
         )
         return
 
     # ── Read admin-configurable settings ─────────────────────────────────────
-    per_page       = max(1, min(50, cfg.get_int("products_per_page", 20)))
+    per_page       = max(1, min(10, cfg.get_int("products_per_page", 10)))
     allow_pag      = cfg.get_bool("product_list_allow_pagination", True)
     show_stock     = cfg.get_bool("product_list_show_stock", True)
     show_counter   = cfg.get_bool("product_list_show_counter", True)
@@ -689,26 +685,33 @@ async def render_all_products_catalog(query, context, telegram_id,
     def _load_active_products(_telegram_id):
         with get_db_session() as session:
             products = session.query(Product).filter(Product.is_active == True).all()
-            return [
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "emoji": p.product_emoji,
+            # Badge context — single DB call, used for leading icons in buttons
+            try:
+                from services.badges import build_context as _bctx, badges_for as _bfor
+                badge_ctx = _bctx()
+            except Exception:
+                badge_ctx = None
+            result = []
+            for p in products:
+                if badge_ctx:
+                    _b = _bfor(p, badge_ctx)
+                    badge = _b[0] if _b else ""
+                else:
+                    badge = ""
+                result.append({
+                    "id":            p.id,
+                    "name":          p.name,
+                    "emoji":         p.product_emoji,
                     "price_display": _product_price_for_user(p, _telegram_id),
-                    "sort_order": p.sort_order,
-                }
-                for p in products
-            ]
+                    "sort_order":    p.sort_order,
+                    "badge":         badge,
+                })
+            return result
 
     rows = await run_db(_load_active_products, telegram_id)
 
     if not rows:
-        text = (
-            "🛍️ <b>Products</b>\n"
-            "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
-            "📭 No products are currently available.\n\n"
-            "Please check back later."
-        )
+        text = "🛍️ <b>Products</b>\n\n📭 No products are currently available.\nPlease check back later."
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ])
@@ -740,14 +743,10 @@ async def render_all_products_catalog(query, context, telegram_id,
     start     = page * per_page
     page_rows = rows[start: start + per_page]
 
-    # ── Build header text (clean marketplace style: total count only,
-    #     no In Stock/Out of Stock breakdown, no "Select a product" filler --
-    #     the standardized buttons below are self-explanatory) ───────────────
-    header_lines = ["🛍️ <b>Products</b>", "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈"]
+    # ── Build header text ─────────────────────────────────────────────────────
+    header_lines = ["🛍️ <b>Products</b>"]
     if show_counter:
-        header_lines.append(f"📦 Total Products: <b>{total_count}</b>")
-    if allow_pag and total_pages > 1:
-        header_lines.append(f"📄 Page: {page + 1} / {total_pages}")
+        header_lines.append(f"📦 Products: <b>{total_count}</b>")
     text = "\n".join(header_lines)
 
     if notice:
@@ -963,26 +962,45 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
                 return False
             return prod.created_at >= _badge_ctx.new_cutoff
 
-        # Row label (standardized): "📦 Name • $Price • N left" / "❌ Name • $Price • Out of Stock"
-        # The leading emoji reflects availability only, matching the main
-        # flat-catalog renderer (build_all_products_keyboard) so every
-        # products screen in the bot reads the same way.
+        # Two-line marketplace format matching build_all_products_keyboard:
+        #   🟢/badge Name • $Price      (line 1)
+        #   📦 Stock: N Left            (line 2, available)
+        #   ❌ Name • $Price            (line 1, OOS)
+        #   Out of Stock                (line 2, OOS)
         def _row_label(prod):
-            new_badge  = "🆕 " if _is_new(prod) else ""
             available  = prod.stock_count > 0
-            status_emoji = "📦" if available else "❌"
             short_name = _shorten_product_name(prod.name or "", budget=24)
             try:
                 from services.pricing import get_flash_sale_for_display
                 fs = get_flash_sale_for_display(prod.id)
             except Exception:
                 fs = None
-            stock_part = f"{prod.stock_count} left" if available else "Out of Stock"
             if fs:
-                price_part = f"${fs['sale_price']:.2f}"
-                return f"{status_emoji} {new_badge}🔥 {short_name} • {price_part} (was {fs['original_price']:.2f}) • {stock_part}"
-            price_display = _product_price_for_user(prod, telegram_id)
-            return f"{status_emoji} {new_badge}{short_name} • {price_display} • {stock_part}"
+                price_display = f"${fs['sale_price']:.2f}"
+            else:
+                price_display = _product_price_for_user(prod, telegram_id)
+
+            if available:
+                # Determine leading icon: badge emoji > 🆕 > 🟢
+                if _is_new(prod):
+                    leading = "🆕 "
+                elif fs:
+                    leading = "🔥 "
+                else:
+                    # Check featured / best_seller badges from context
+                    try:
+                        from services.badges import badges_for as _bfor
+                        _bl = _bfor(prod, _badge_ctx) if _badge_ctx else []
+                        leading = (_bl[0].split()[0] + " ") if _bl else "🟢 "
+                    except Exception:
+                        leading = "🟢 "
+                stock_line = f"📦 Stock: {prod.stock_count} Left"
+            else:
+                leading    = "❌ "
+                stock_line = "Out of Stock"
+
+            line1 = f"{leading}{short_name} • {price_display}"
+            return f"{line1}\n{stock_line}"
 
         product_buttons = [
             [InlineKeyboardButton(_row_label(prod), callback_data=f"product_{prod.id}")]
@@ -1006,12 +1024,7 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
 
         total_count = len(products)
 
-        # Clean header: total count only, no In Stock/Out of Stock breakdown,
-        # no "Select a product below." filler -- the buttons speak for themselves.
-        header_lines = ["🛍️ <b>Products</b>", "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈",
-                         f"📦 Total Products: <b>{total_count}</b>"]
-        if page_info['total_pages'] > 1:
-            header_lines.append(f"📄 Page: {page_info['page'] + 1} / {page_info['total_pages']}")
+        header_lines = ["🛍️ <b>Products</b>", f"📦 Products: <b>{total_count}</b>"]
         text = "\n".join(header_lines)
 
         try:
@@ -1813,8 +1826,8 @@ async def order_history_callback(update: Update, context: ContextTypes.DEFAULT_T
 
         message = (
             "📦 <b>My Orders</b>\n\n"
-            f"Showing {range_start}–{range_end} of {total} Orders\n\n"
-            "Select an order below to view its details."
+            f"📊 Total Orders: {total}\n\n"
+            "Tap an order to view its details."
         )
 
         keyboard = []
