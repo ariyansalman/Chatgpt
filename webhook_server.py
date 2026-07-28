@@ -433,7 +433,7 @@ def heleket_webhook():
                     f"${amount_usd:.2f} {currency}\n\n"
                     "💳 <b>Payment Method</b>\n"
                     "Heleket\n\n"
-                    "👛 Your wallet has been updated successfully."
+                    "👛 Your wallet has been credited successfully."
                 )
                 _requests.post(
                     f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage",
@@ -441,7 +441,6 @@ def heleket_webhook():
                         'chat_id': user_telegram_id,
                         'text': _dep_text,
                         'parse_mode': 'HTML',
-                        'reply_markup': '{"inline_keyboard": [[{"text": "💳 Check Wallet", "callback_data": "wallet"}, {"text": "🛍️ Continue Shopping", "callback_data": "products"}]]}',
                     },
                     timeout=8,
                 )
@@ -522,7 +521,7 @@ def _credit_wallet_once(source: str, external_ref: str, transaction) -> Optional
                 f"${transaction.amount:.2f} USD\n\n"
                 "💳 <b>Payment Method</b>\n"
                 f"{_pm_label}\n\n"
-                "👛 Your wallet has been updated successfully."
+                "👛 Your wallet has been credited successfully."
             )
             _requests.post(
                 f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage",
@@ -530,7 +529,6 @@ def _credit_wallet_once(source: str, external_ref: str, transaction) -> Optional
                     'chat_id': user.telegram_id,
                     'text': _dep_text,
                     'parse_mode': 'HTML',
-                    'reply_markup': '{"inline_keyboard": [[{"text": "💳 Check Wallet", "callback_data": "wallet"}, {"text": "🛍️ Continue Shopping", "callback_data": "products"}]]}',
                 },
                 timeout=8,
             )

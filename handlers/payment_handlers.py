@@ -232,7 +232,7 @@ def _collect_topup_gateways():
         gateways.append({"key": "nagad", "label": "Nagad", "emoji": "🟠"})
     zinipay = ZiniPayService()
     if zinipay.enabled and zinipay.is_configured():
-        gateways.append({"key": "zinipay", "label": "BKash • Nagad • Rocket", "emoji": "🇧🇩"})
+        gateways.append({"key": "zinipay", "label": "bKash • Nagad • Rocket • Upay", "emoji": "🇧🇩"})
     stars_cfg = telegram_stars_service.get_config()
     if stars_cfg["enabled"]:
         gateways.append({"key": "stars", "label": "Telegram Stars", "emoji": "⭐"})
@@ -320,6 +320,7 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Fresh start — clear any leftover state from a previous attempt.
     context.user_data.pop('topup_amount', None)
     context.user_data.pop('topup_method', None)
+    context.user_data.pop('zinipay_provider', None)
 
     # If nothing is configured at all, skip straight to the same "no
     # payment methods available" message the method screen would show —
@@ -358,6 +359,7 @@ async def topup_amount_selected(update: Update, context: ContextTypes.DEFAULT_TY
 
     context.user_data['topup_amount'] = amount
     context.user_data.pop('topup_method', None)
+    context.user_data.pop('zinipay_provider', None)
 
     text, keyboard, is_empty = _build_topup_method_screen(amount=amount)
     try:
@@ -493,6 +495,7 @@ async def topup_back_to_wallet(update: Update, context: ContextTypes.DEFAULT_TYP
 
     context.user_data.pop('topup_amount', None)
     context.user_data.pop('topup_method', None)
+    context.user_data.pop('zinipay_provider', None)
 
     await wallet_menu(update, context)
     return ConversationHandler.END
@@ -511,6 +514,17 @@ async def topup_amount_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "Message is not modified" not in str(e):
             raise
     return AMOUNT
+
+
+@guarded_callback(fallback_state=ConversationHandler.END)
+async def topup_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Return to Main Menu without retaining payment-flow selections."""
+    context.user_data.pop('topup_amount', None)
+    context.user_data.pop('topup_method', None)
+    context.user_data.pop('zinipay_provider', None)
+    from handlers.user_handlers import main_menu_callback
+    await main_menu_callback(update, context)
+    return ConversationHandler.END
 
 
 def _amount_range_hint(gmin: float, gmax: float) -> str:
@@ -879,7 +893,7 @@ async def topup_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if amount >= nmin and (not nmax or amount <= nmax):
                 gateways.append({"key": "nagad", "label": "Nagad", "emoji": "🟠"})
         if ZiniPayService().enabled:
-            gateways.append({"key": "zinipay", "label": "BKash • Nagad • Rocket", "emoji": "🇧🇩"})
+            gateways.append({"key": "zinipay", "label": "bKash • Nagad • Rocket • Upay", "emoji": "🇧🇩"})
         stars_cfg = telegram_stars_service.get_config()
         if stars_cfg["enabled"]:
             stars_needed = telegram_stars_service.stars_for_usd(amount)
@@ -1679,7 +1693,7 @@ async def admin_manual_approve(update: Update, context: ContextTypes.DEFAULT_TYP
                 _render_notif("💰", "Deposit Approved", [
                     ("Deposit ID", _fmt_did(tx_id)),
                     ("Amount", _dep_amt_str),
-                    ("Method", _dep_method),
+                    ("Payment Method", _dep_method),
                     ("Customer", f"<code>{user_tg_id}</code>" if user_tg_id else "—"),
                 ], _ts()),
             ))
@@ -2378,13 +2392,14 @@ async def _finish_zinipay_payment(
     # Resolve which provider's number to show BEFORE creating the order, so
     # the choice can be persisted on the Transaction row itself.
     PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🧡", "rocket": "💜", "upay": "🔵"}
+    PROVIDER_LABEL = {"bkash": "bKash", "nagad": "Nagad", "rocket": "Rocket", "upay": "Upay"}
     numbers_by_provider = {
         "bkash": bkash_num, "nagad": nagad_num, "rocket": rocket_num, "upay": upay_num,
     }
     requested_provider = (provider or "").strip().lower() or None
     if requested_provider and numbers_by_provider.get(requested_provider):
         # The user explicitly picked this provider on the Mobile Money
-        # submenu (bKash / Nagad / Rocket) — always honor that choice over
+        # submenu (bKash / Nagad / Rocket / Upay) — always honor that choice over
         # the admin's configured default, as long as a number is set for it.
         provider = requested_provider
     else:
@@ -2434,12 +2449,13 @@ async def _finish_zinipay_payment(
 
             if pending_send_to:
                 message = pui.mobile_money_invoice(
-                    provider_label=pending_provider.title(), provider_emoji=pending_emoji,
+                    provider_label=PROVIDER_LABEL.get(pending_provider, "Mobile Banking"),
+                    provider_emoji=pending_emoji,
                     amount=_pending_amount, send_to=pending_send_to,
                     deposit_id=existing_pending.id,
                     instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
                 )
-                # Amount/number are tap-to-copy in the message; only Submit + Cancel + Back.
+                 # Amount/number remain copyable through native controls; only Submit + Cancel + Back.
                 keyboard = pui.invoice_keyboard(
                     submit_cb=f"zinipay_submit:{existing_pending.id}",
                     submit_label="🧾 Submit Transaction ID",
@@ -2485,11 +2501,12 @@ async def _finish_zinipay_payment(
 
     amount_str = f"৳{bdt_amount:.2f}"
     message = pui.mobile_money_invoice(
-        provider_label=provider.title(), provider_emoji=PROVIDER_EMOJI[provider],
+        provider_label=PROVIDER_LABEL.get(provider, "Mobile Banking"),
+        provider_emoji=PROVIDER_EMOJI[provider],
         amount=amount_str, send_to=send_to,
-        deposit_id=tx_id, expires_at="30 Mins",
+        deposit_id=tx_id, expires_at="30 Minutes",
     )
-    # Only Submit + Cancel — amount/number are tap-to-copy in the message body.
+    # Only Submit + Cancel — amount/number remain copyable through native controls.
     keyboard = pui.invoice_keyboard(
         submit_cb=f"zinipay_submit:{tx_id}", submit_label="🧾 Submit Transaction ID",
     )
@@ -4084,12 +4101,23 @@ async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT
 
     with get_db_session() as session:
         tx = session.query(Transaction).filter_by(id=tx_id).first()
-        if not tx or tx.user.telegram_id != update.effective_user.id:
+        if not tx:
+            text, keyboard, is_empty = _build_topup_method_screen(
+                amount=context.user_data.get('topup_amount')
+            )
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+            return ConversationHandler.END if is_empty else METHOD
+        if tx.user.telegram_id != update.effective_user.id:
             await safe_answer(query, "⛔ Not your deposit.", show_alert=True)
             return ConversationHandler.END
         if tx.status != TransactionStatus.PENDING:
             try:
-                await query.edit_message_text("This deposit is no longer pending.")
+                await query.edit_message_text(
+                    "This deposit is no longer pending.\n\n"
+                    "Choose a payment method to start a new deposit.",
+                    reply_markup=pui.payment_expired_keyboard(),
+                    parse_mode="HTML",
+                )
             except BadRequest as e:
                 if "Message is not modified" not in str(e):
                     raise
@@ -4182,7 +4210,7 @@ async def bybit_cancel_submit(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     tx_id = context.user_data.pop('bybit_tx_id', None)
-    resubmit_cb = f"bybit_submit:{tx_id}" if tx_id else None
+    resubmit_cb = await _active_resubmit_callback(tx_id, "bybit_submit")
     try:
         await query.edit_message_text(
             "❌ Cancelled. Your order is still pending — you can submit the Transaction ID again anytime before it expires.",
@@ -4700,6 +4728,21 @@ def _to_decimal_amount(value) -> Decimal:
         return Decimal("0")
 
 
+async def _active_resubmit_callback(tx_id: Optional[int], prefix: str) -> Optional[str]:
+    """Return a resubmit callback only while its deposit is still active."""
+    if not tx_id:
+        return None
+    with get_db_session() as session:
+        tx = session.query(Transaction).filter_by(id=tx_id).first()
+        if (
+            not tx
+            or tx.status != TransactionStatus.PENDING
+            or (tx.expires_at and datetime.utcnow() > tx.expires_at)
+        ):
+            return None
+    return f"{prefix}:{tx_id}"
+
+
 @guarded_callback(fallback_state=ConversationHandler.END)
 async def payment_method_bkash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle bKash payment method selection — ask for amount next."""
@@ -4753,7 +4796,7 @@ async def payment_method_zinipay(update: Update, context: ContextTypes.DEFAULT_T
     return await _ask_amount_for_gateway(update, context, "zinipay", "BKash • Nagad • Rocket", "🇧🇩")
 
 
-# ── Mobile Money (BD) submenu — bKash / Nagad / Rocket, each via its own
+# ── Mobile Money (BD) submenu — bKash / Nagad / Rocket / Upay, each via its own
 # callback_data (see services/payment_selection_ui.py build_mobile_money_screen).
 # These three thin wrappers are the fix for the "Nagad/Rocket loads bKash"
 # bug: each records EXACTLY which provider the user tapped in
@@ -4765,6 +4808,7 @@ _ZINIPAY_PROVIDER_DISPLAY = {
     "bkash": ("bKash", "🩷"),
     "nagad": ("Nagad", "🧡"),
     "rocket": ("Rocket", "💜"),
+    "upay": ("Upay", "🔵"),
 }
 
 
@@ -4790,6 +4834,12 @@ async def payment_method_zinipay_nagad(update: Update, context: ContextTypes.DEF
 async def payment_method_zinipay_rocket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Mobile Money submenu — "Rocket" tapped (routed via ZiniPay)."""
     return await _payment_method_zinipay_provider(update, context, "rocket")
+
+
+@guarded_callback(fallback_state=ConversationHandler.END)
+async def payment_method_zinipay_upay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mobile Money submenu — "Upay" tapped (routed via ZiniPay)."""
+    return await _payment_method_zinipay_provider(update, context, "upay")
 
 
 @guarded_callback(fallback_state=ConversationHandler.END)
@@ -7681,7 +7731,7 @@ async def _pmv_resolve(
                 amount=f"{expected_amount:.2f} {currency}",
                 order_id=tx_id,
                 extra=extra_rows,
-                note="🎉 Your wallet has been updated successfully.",
+                note="🎉 Your wallet has been credited successfully.",
             )
         await context.bot.send_message(
             chat_id=pmv.telegram_user_id,

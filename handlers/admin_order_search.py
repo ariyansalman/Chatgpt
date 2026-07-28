@@ -424,7 +424,7 @@ def _render_order_detail(order: Order, session) -> str:  # noqa: C901
         f"  • Unit Price: {format_price(items[0].price) if items else '—'}",
         f"  • Total Amount: <b>{format_price(order.total_amount)}</b>",
         f"  • Currency: {order.currency or '—'}",
-        f"  • Method: {pay_method}",
+        f"  • Payment Method: {pay_method}",
         f"  • Transaction ID: <code>{txid}</code>",
         f"  • Payment Time: {paid_at}",
         "",
@@ -726,7 +726,7 @@ def _render_deposit_detail(txn: Transaction, session) -> str:
     lines += [
         "💳 <b>Payment</b>",
         f"  • Amount: <b>{format_price(txn.amount)}</b>",
-        f"  • Method: {pay_method}",
+        f"  • Payment Method: {pay_method}",
     ]
     if txn.crypto_address:
         lines.append(f"  • Address: <code>{txn.crypto_address}</code>")

@@ -852,7 +852,7 @@ def main():
             payment_handlers.AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, payment_handlers.topup_amount)],
             payment_handlers.METHOD: [
                 # "Back to Menu" button on the payment-method selection screen.
-                CallbackQueryHandler(user_handlers.main_menu_callback, pattern="^main_menu$"),
+                CallbackQueryHandler(payment_handlers.topup_main_menu, pattern="^main_menu$"),
                 # Add Funds screen redesign — 🔗 Crypto Networks / 🇧🇩 Mobile
                 # Money (BD) submenus and their ⬅️ Back button. Pure UI
                 # navigation only; every gateway button inside these
@@ -893,17 +893,18 @@ def main():
                 # NOWPayments (crypto, admin-enabled via PaymentGatewayConfig —
                 # see services/nowpayments_payment.py and handlers/admin_nowpayments.py)
                 CallbackQueryHandler(payment_handlers.payment_method_nowpayments, pattern="^pay_nowpayments$"),
-                # ZiniPay (bKash/Nagad/Rocket, admin-enabled via PaymentGatewayConfig —
+                # ZiniPay (bKash/Nagad/Rocket/Upay, admin-enabled via PaymentGatewayConfig —
                 # see services/zinipay_payment.py and handlers/admin_zinipay.py)
                 # Mobile Money (BD) submenu — one distinct callback per
                 # provider button (see services/payment_selection_ui.py
-                # build_mobile_money_screen), so bKash/Nagad/Rocket each
+                # build_mobile_money_screen), so each provider
                 # load their own payment page instead of all three falling
                 # back to bKash.
                 CallbackQueryHandler(payment_handlers.payment_method_zinipay_bkash, pattern="^pay_zinipay_bkash$"),
                 CallbackQueryHandler(payment_handlers.payment_method_zinipay_nagad, pattern="^pay_zinipay_nagad$"),
                 CallbackQueryHandler(payment_handlers.payment_method_zinipay_rocket, pattern="^pay_zinipay_rocket$"),
-                # Generic entry point (combined "BKash • Nagad • Rocket" button
+                CallbackQueryHandler(payment_handlers.payment_method_zinipay_upay, pattern="^pay_zinipay_upay$"),
+                # Generic entry point (combined "bKash • Nagad • Rocket • Upay" button
                 # shown when no specific provider has been chosen yet).
                 CallbackQueryHandler(payment_handlers.payment_method_zinipay, pattern="^pay_zinipay$"),
                 # Binance Pay (admin-enabled via PaymentGatewayConfig — see

@@ -63,6 +63,7 @@ GATEWAYS: dict[str, Tuple[str, str]] = {
     "bkash":        ("bKash", "💗"),
     "nagad":        ("Nagad", "🧡"),
     "rocket":       ("Rocket", "💜"),
+    "upay":         ("Upay", "🔵"),
     "manual":       ("Manual Payment", "🧾"),
     "card":         ("Card Payment", "💳"),
     "stars":        ("Telegram Stars", "⭐"),
@@ -359,7 +360,7 @@ def user_payment_card(
 # ─────────────────────────────────────────────────────────────────────────
 
 # Dynamic "Payment Destination" label per gateway family (spec: Binance /
-# Bybit -> Pay ID, Crypto -> Wallet Address, bKash / Nagad / Rocket ->
+# Bybit -> Pay ID, Crypto -> Wallet Address, bKash / Nagad / Rocket / Upay ->
 # Send Money To). Anything not listed falls back to a sensible default so
 # a brand-new gateway never needs to touch this file to look right.
 _DESTINATION_LABELS: dict[str, str] = {
@@ -368,6 +369,7 @@ _DESTINATION_LABELS: dict[str, str] = {
     "bkash":       "Send Money To",
     "nagad":       "Send Money To",
     "rocket":      "Send Money To",
+    "upay":        "Send Money To",
     "zinipay":     "Send Money To",
 }
 
@@ -582,10 +584,10 @@ def binance_pay_invoice(
     """
     dep = _display_deposit_id(deposit_id, created_at)
     lines = ["🟡 <b>Binance Pay</b>", ""]
-    lines.append(f"💰 <b>Amount:</b> {copy_code(amount)} <i>(Tap to copy)</i>")
+    lines.append(f"💰 <b>Amount:</b> {copy_code(amount)}")
     lines.append(
         f"🆔 <b>Send To (Binance Pay ID):</b> "
-        f"{copy_code(pay_id)} <i>(Tap to copy)</i>"
+        f"{copy_code(pay_id)}"
     )
     if dep:
         lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(dep)}")
@@ -616,18 +618,18 @@ def bybit_pay_invoice(
 
     Matches the spec layout exactly:
         🟠 Bybit Pay
-        💰 Amount: 1.00 USDT (Tap to copy)
-        🆔 Send To (Bybit UID): 123456789 (Tap to copy)
+        💰 Amount: 1.00 USDT
+        🆔 Send To (Bybit UID): 123456789
         🧾 Deposit ID: DEP-YYYYMMDD-XXXXXX
         ⏳ Expires In: 30 Minutes
         📌 Instructions: Open Bybit App → Assets → Pay → Send…
     """
     dep = _display_deposit_id(deposit_id, created_at)
     lines = ["🟠 <b>Bybit Pay</b>", ""]
-    lines.append(f"💰 <b>Amount:</b> {copy_code(amount)} <i>(Tap to copy)</i>")
+    lines.append(f"💰 <b>Amount:</b> {copy_code(amount)}")
     lines.append(
         f"🆔 <b>Send To (Bybit UID):</b> "
-        f"{copy_code(pay_id)} <i>(Tap to copy)</i>"
+        f"{copy_code(pay_id)}"
     )
     if dep:
         lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(dep)}")
@@ -644,7 +646,7 @@ def bybit_pay_invoice(
 
 def bybit_pay_keyboard(*, submit_cb: str, cancel_cb: str = "cancel") -> InlineKeyboardMarkup:
     """The Bybit Pay invoice actions — Submit Order ID + Cancel only.
-    Amount and UID are tap-to-copy in the message body."""
+    Amount and UID remain copyable through native copy controls."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🧾 Submit Order ID", callback_data=submit_cb)],
         [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
@@ -688,9 +690,9 @@ def crypto_invoice(
 
         🟡 USDT Payment (BEP20)
 
-        💰 Amount: 1.00 USDT (Tap to copy)
+        💰 Amount: 1.00 USDT
         📥 Wallet Address:
-        0x8f3a…c92d1e (Tap to copy)
+        0x8f3a…c92d1e
         🧾 Deposit ID: DEP-YYYYMMDD-XXXXXX
         ⏳ Expires In: 30 Minutes
 
@@ -714,9 +716,9 @@ def crypto_invoice(
         "⚠️ Sending via the wrong network may result in permanent loss of funds."
     )
     lines = [f"{emoji} <b>{coin_label} Payment</b>", ""]
-    lines.append(f"💰 <b>Amount:</b> {copy_code(amount)} <i>(Tap to copy)</i>")
+    lines.append(f"💰 <b>Amount:</b> {copy_code(amount)}")
     lines.append("📥 <b>Wallet Address:</b>")
-    lines.append(f"{copy_code(wallet_address)} <i>(Tap to copy)</i>")
+    lines.append(f"{copy_code(wallet_address)}")
     if dep:
         lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(dep)}")
     if expires_at:
@@ -742,8 +744,8 @@ def mobile_money_invoice(
         "After successful payment, click the button below and submit your TrxID."
     )
     lines = [f"{provider_emoji} <b>{provider_label} Payment</b>", ""]
-    lines.append(f"💰 <b>Amount:</b> <code>{amount}</code> <i>(Tap to copy)</i>")
-    lines.append(f"📲 <b>Send Money To:</b> <code>{send_to}</code> <i>(Tap to copy)</i>")
+    lines.append(f"💰 <b>Amount:</b> <code>{amount}</code>")
+    lines.append(f"📲 <b>Send Money To:</b> <code>{send_to}</code>")
     if dep:
         lines.append(f"🧾 <b>Deposit ID:</b> <code>{dep}</code>")
     if expires_at:
@@ -1377,14 +1379,10 @@ def binance_deposit_success_card(
     return "\n".join(lines)
 
 
-def deposit_success_keyboard() -> InlineKeyboardMarkup:
-    """Standard keyboard shown after every successful deposit:
-    👛 Open Wallet · 📜 Deposit History · 🛍 Continue Shopping."""
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("👛 Open Wallet", callback_data="wallet")],
-        [InlineKeyboardButton("📜 Deposit History", callback_data="wallet_history"),
-         InlineKeyboardButton("🛍 Continue Shopping", callback_data="products")],
-    ])
+def deposit_success_keyboard() -> None:
+    """No inline keyboard is shown after a successful deposit.
+    The success message ends at the confirmation text."""
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────

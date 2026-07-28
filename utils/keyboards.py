@@ -250,7 +250,7 @@ def _get_display_languages() -> tuple:
 
 
 def create_language_keyboard(lang: str = "en"):
-    """Language picker keyboard — one button per admin-enabled language.
+    """Language picker keyboard — two buttons per row (compact grid layout).
 
     The caller's current language gets a ✅ prefix so the active choice is
     visible at a glance. Falls back to all SUPPORTED_LANGUAGES when no
@@ -258,13 +258,15 @@ def create_language_keyboard(lang: str = "en"):
     shows something.
     """
     display_langs = _get_display_languages()
-    keyboard = [
-        [InlineKeyboardButton(
+    buttons = [
+        InlineKeyboardButton(
             f"{'✅ ' if code == lang else ''}{LANGUAGE_FLAGS.get(code, '')} {LANGUAGE_NAMES.get(code, code)}",
             callback_data=f"set_lang_{code}",
-        )]
+        )
         for code in display_langs
     ]
+    # Pair buttons into 2-column rows; last row has 1 button if count is odd
+    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
     keyboard.append([InlineKeyboardButton(t("common.main_menu", lang), callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 

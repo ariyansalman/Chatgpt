@@ -39,6 +39,18 @@ _STATUS_EMOJI = {
     "rejected": "🚫",
 }
 
+# Colored circle indicator for the compact history row header.
+_STATUS_DOT = {
+    "completed": "🟢",
+    "pending": "🟡",
+    "awaiting_confirmation": "🟡",
+    "processing": "🔵",
+    "expired": "🔴",
+    "cancelled": "🔴",
+    "failed": "🔴",
+    "rejected": "🔴",
+}
+
 # Friendly, properly-capitalized status text — never the raw enum/db value.
 _STATUS_LABEL = {
     "completed": "Completed",
@@ -48,11 +60,18 @@ _STATUS_LABEL = {
     "cancelled": "Cancelled",
     "failed": "Failed",
     "rejected": "Rejected",
+    "processing": "Processing",
 }
+
+_PAGE_SIZE = 10
 
 
 def _status_emoji(status: str) -> str:
     return _STATUS_EMOJI.get((status or "").lower(), "🔹")
+
+
+def _status_dot(status: str) -> str:
+    return _STATUS_DOT.get((status or "").lower(), "🔹")
 
 
 def _status_label(status: str) -> str:
@@ -71,11 +90,11 @@ def _payment_method_display(payment_method, crypto_address: str | None = None) -
     return label
 
 
-def _totals(tg_id: int) -> tuple[float, float, float, list[Transaction]]:
+def _totals(tg_id: int) -> tuple[float, float, float]:
     with get_db_session() as s:
         u = s.query(User).filter(User.telegram_id == tg_id).first()
         if not u:
-            return 0.0, 0.0, 0.0, []
+            return 0.0, 0.0, 0.0
         bal = float(u.wallet_balance or 0)
         # Only completed deposit transactions count toward Total Deposited.
         total_dep = 0.0
@@ -93,21 +112,40 @@ def _totals(tg_id: int) -> tuple[float, float, float, list[Transaction]]:
             .filter(Order.user_id == u.id, Order.status == OrderStatus.COMPLETED)
             .all()
         )
-        history = (
-            s.query(Transaction)
-            .filter(Transaction.user_id == u.id)
+    return bal, total_dep, total_spent
+
+
+def _fetch_history_page(tg_id: int, page: int = 0) -> tuple[list, int]:
+    """Return (rows, total_count) for the requested page (0-indexed, _PAGE_SIZE per page).
+
+    Newest transactions first. Each row is a tuple of:
+      (deposit_id, amount, status_str, payment_method_label, created_at)
+    """
+    with get_db_session() as s:
+        u = s.query(User).filter(User.telegram_id == tg_id).first()
+        if not u:
+            return [], 0
+        base_q = s.query(Transaction).filter(Transaction.user_id == u.id)
+        total = base_q.count()
+        txns = (
+            base_q
             .order_by(Transaction.created_at.desc())
-            .limit(10)
+            .offset(page * _PAGE_SIZE)
+            .limit(_PAGE_SIZE)
             .all()
         )
-        # Detach: read attributes we need now. `deposit_id` is the
-        # human-readable DEP-YYYYMMDD-NNNNNN reference — the internal
-        # numeric primary key is never shown to the user.
         from services.payment_ui import format_deposit_id as _fmt_dep_id
-        hist = [(_fmt_dep_id(t.id, t.created_at), t.amount, t.status.value if t.status else "?",
-                 _payment_method_display(t.payment_method, t.crypto_address),
-                 t.created_at) for t in history]
-    return bal, total_dep, total_spent, hist
+        rows = [
+            (
+                _fmt_dep_id(t.id, t.created_at),
+                t.amount,
+                t.status.value if t.status else "?",
+                _payment_method_display(t.payment_method, t.crypto_address),
+                t.created_at,
+            )
+            for t in txns
+        ]
+    return rows, total
 
 
 @perf_track("wallet_handler")
@@ -117,7 +155,7 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer()
     tg_id = update.effective_user.id
     lang = get_user_language(tg_id)
-    bal, dep, spent, _ = _totals(tg_id)
+    bal, dep, spent = _totals(tg_id)
 
     # Premium marketplace wallet card — no dividers, clean spacing
     bal_str   = format_price_for_user(bal,   tg_id)
@@ -149,33 +187,67 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(text, reply_markup=kb, parse_mode="HTML")
 
 
-async def wallet_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _render_history(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
+    """Shared renderer for wallet_history and wallet_history_page."""
     q = update.callback_query
-    await q.answer()
     tg_id = update.effective_user.id
     lang = get_user_language(tg_id)
-    _, _, _, hist = _totals(tg_id)
-    if not hist:
+    rows, total = _fetch_history_page(tg_id, page)
+    total_pages = max(1, -(-total // _PAGE_SIZE))  # ceiling division
+
+    if not rows:
         body = t("common.no_transactions", lang)
     else:
         lines = []
-        for tid, amt, st, pm, ts in hist:
+        for dep_id, amt, st, pm, ts in rows:
+            dot   = _status_dot(st)
+            emoji = _status_emoji(st)
+            label = _status_label(st)
+            amt_fmt = format_price_for_user(amt, tg_id)
             when = ts.strftime("%Y-%m-%d %H:%M") if ts else "?"
-            lines.append(t(
-                "wallet.history_row", lang,
-                emoji=_status_emoji(st),
-                id=tid, amount=format_price_for_user(amt, tg_id), method=pm,
-                status=_status_label(st), when=when,
-            ))
+            lines.append(
+                f"{dot} <b>{dep_id}</b>\n"
+                f"💰 {amt_fmt} • 💳 {pm} • {emoji} {label}\n"
+                f"🕒 {when}"
+            )
         body = "\n\n".join(lines)
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Wallet", callback_data="wallet")]])
-    history_title = "📜 <b>Payment History</b>"
+
+    # Pagination row — only shown when more than one page exists
+    kb_rows: list[list[InlineKeyboardButton]] = []
+    nav_row: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"wallet_history_p_{page - 1}"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton("➡️ Next", callback_data=f"wallet_history_p_{page + 1}"))
+    if nav_row:
+        kb_rows.append(nav_row)
+    kb_rows.append([InlineKeyboardButton("⬅️ Back to Wallet", callback_data="wallet")])
+    kb = InlineKeyboardMarkup(kb_rows)
+
+    page_indicator = f" <i>({page + 1}/{total_pages})</i>" if total_pages > 1 else ""
+    title = f"📜 <b>Payment History</b>{page_indicator}"
     try:
-        await q.edit_message_text(f"{history_title}\n\n{body}",
-                                  reply_markup=kb, parse_mode="HTML")
+        await q.edit_message_text(f"{title}\n\n{body}", reply_markup=kb, parse_mode="HTML")
     except BadRequest as e:
         if "Message is not modified" not in str(e):
             raise
+
+
+async def wallet_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    await _render_history(update, context, page=0)
+
+
+async def wallet_history_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle pagination callbacks: wallet_history_p_<page>."""
+    q = update.callback_query
+    await q.answer()
+    try:
+        page = int(q.data.rsplit("_", 1)[-1])
+    except (ValueError, IndexError):
+        page = 0
+    await _render_history(update, context, page=page)
 
 
 async def wallet_currency_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -191,4 +263,5 @@ async def wallet_currency_toggle(update: Update, context: ContextTypes.DEFAULT_T
 def register_handlers(app):
     app.add_handler(CallbackQueryHandler(wallet_menu, pattern=r"^wallet$"))
     app.add_handler(CallbackQueryHandler(wallet_history, pattern=r"^wallet_history$"))
+    app.add_handler(CallbackQueryHandler(wallet_history_page, pattern=r"^wallet_history_p_\d+$"))
     app.add_handler(CallbackQueryHandler(wallet_currency_toggle, pattern=r"^wallet_currency_toggle$"))

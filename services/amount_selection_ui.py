@@ -70,15 +70,12 @@ def build_amount_selection_screen(
     the caller reads them from the existing admin-configured settings and
     passes them in; this module still never enforces or decides them.
     """
-    lines = [
-        "💳 <b>Add Funds</b>\n",
-        "Add funds to your wallet by selecting a preset amount or entering "
-        "a custom amount.\n",
-    ]
+    lines = ["💳 <b>Add Funds</b>", ""]
+    lines.append(f"💵 <b>Currency:</b> {currency}")
     if min_deposit is not None:
-        lines.append(f"• Minimum Deposit: ${min_deposit:.2f} {currency}")
-    lines.append(f"• Currency: {currency}")
-    lines.append("\nChoose an amount below.")
+        lines.append(f"📋 <b>Minimum Deposit:</b> ${min_deposit:.2f} {currency}")
+    lines.append("")
+    lines.append("Select a deposit amount:")
     text = "\n".join(lines)
 
     rows: list[list[InlineKeyboardButton]] = []

@@ -443,7 +443,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
                 f"🧾 Order ID: <code>{r.id}</code>",
                 f"👤 User ID: <code>{r.user_id}</code>",
                 f"💰 Total: <b>${r.total_amount:.2f}</b>",
-                f"💳 Method: {_safe_str(getattr(r, 'payment_method', None))}",
+                f"💳 Payment Method: {_safe_str(getattr(r, 'payment_method', None))}",
                 f"📦 Status: {st}",
                 f"📅 Created: {_dt(r.created_at)}",
             ]
@@ -490,7 +490,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
                 f"💳 Tx ID: <code>{r.id}</code>",
                 f"👤 User ID: <code>{r.user_id}</code>",
                 f"💰 Amount: <b>${r.amount:.2f}</b>",
-                f"💳 Method: {_safe_str(getattr(r, 'payment_method', None))}",
+                f"💳 Payment Method: {_safe_str(getattr(r, 'payment_method', None))}",
                 f"📊 Status: {st}",
                 f"🔑 TXID: <code>{getattr(r, 'txid', None) or '—'}</code>",
                 f"📝 Proof: {(getattr(r, 'proof', None) or '')[:60] or '—'}",

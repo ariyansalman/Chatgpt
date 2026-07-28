@@ -191,11 +191,12 @@ _MOBILE_MONEY_DISPLAY = {
     "bkash":  ("🩷", "bKash"),
     "nagad":  ("🧡", "Nagad"),
     "rocket": ("💜", "Rocket"),
+    "upay":   ("🔵", "Upay"),
 }
 
 
 def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, InlineKeyboardMarkup]:
-    """Render bKash / Nagad / Rocket as three distinct buttons.
+    """Render bKash / Nagad / Rocket / Upay as distinct buttons.
 
     bKash and Nagad each route to their own standalone gateway
     (``pay_bkash`` / ``pay_nagad``) when that gateway is configured, and
@@ -205,9 +206,9 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
     bkash/nagad/zinipay) still appears automatically, using its own
     label/emoji, after these three.
 
-    IMPORTANT: each of the three ZiniPay-backed buttons (bKash / Nagad /
-    Rocket) gets its OWN callback_data — ``pay_zinipay_bkash`` /
-    ``pay_zinipay_nagad`` / ``pay_zinipay_rocket`` — instead of all three
+    IMPORTANT: each ZiniPay-backed provider button gets its OWN callback_data
+    — ``pay_zinipay_bkash`` / ``pay_zinipay_nagad`` /
+    ``pay_zinipay_rocket`` / ``pay_zinipay_upay`` — instead of all providers
     sharing the plain ``pay_zinipay`` callback. Telegram has no notion of
     "which button in this row was tapped" beyond callback_data, so three
     buttons pointing at the same callback_data are indistinguishable to the
@@ -242,6 +243,9 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
         emoji, label = _MOBILE_MONEY_DISPLAY["rocket"]
         rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_rocket")])
         used_keys.add("zinipay")
+
+        emoji, label = _MOBILE_MONEY_DISPLAY["upay"]
+        rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_upay")])
 
     # Any future BD mobile-money gateway that isn't bkash/nagad/zinipay.
     for key, gw in by_key.items():

@@ -742,7 +742,7 @@ async def deposit_approve_execute(update: Update, context: ContextTypes.DEFAULT_
                         order_id=tx_id,
                         txn_id=txn_ref,
                         extra=[("💵", "Credited", f"${credited_usd:.2f}")],
-                        note="🎉 Your wallet has been updated successfully.",
+                        note="🎉 Your wallet has been credited successfully.",
                     )
                 ),
                 parse_mode="HTML",
@@ -764,7 +764,7 @@ async def deposit_approve_execute(update: Update, context: ContextTypes.DEFAULT_
             _render_notif("💰", "Deposit Approved", [
                 ("Deposit ID", format_deposit_id(tx_id)),
                 ("Amount", amount_str),
-                ("Method", method_label),
+                ("Payment Method", method_label),
                 ("Customer", f"<code>{user_tg_id}</code>" if user_tg_id else "—"),
                 ("Approved By", f"<code>{admin_tg_id}</code>"),
             ], _ts()),
@@ -919,7 +919,7 @@ async def deposit_reject_execute(update: Update, context: ContextTypes.DEFAULT_T
             _render_notif("❌", "Deposit Rejected", [
                 ("Deposit ID", format_deposit_id(tx_id)),
                 ("Amount", amount_str),
-                ("Method", method_label),
+                ("Payment Method", method_label),
                 ("Customer", f"<code>{user_tg_id}</code>" if user_tg_id else "—"),
                 ("Rejected By", f"<code>{admin_tg_id}</code>"),
             ], _ts()),
