@@ -2329,6 +2329,11 @@ class ScheduledBroadcast(Base):
     # Enterprise Broadcast Center (V44)
     custom_interval_hours = Column(Integer, nullable=True)   # hours between runs when recurrence_type="custom"
     media_group_ids       = Column(Text, nullable=True)      # JSON array of file_ids for media-group broadcasts
+    # Broadcast Analytics (V45) — soft-archive flag; column added by
+    # alembic/versions/20260913_broadcast_analytics.py. Was missing here,
+    # which made every ScheduledBroadcast.is_archived read/write in
+    # services/broadcast_analytics_service.py raise AttributeError.
+    is_archived     = Column(Boolean, nullable=False, default=False)
 
     # Relationships
     logs        = relationship("BroadcastLog", back_populates="broadcast",

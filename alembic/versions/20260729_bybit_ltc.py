@@ -1,7 +1,7 @@
 """bybit_ltc: add LTC (Litecoin) deposit address support to Bybit Pay gateway.
 
 Revision ID: 20260729_bybit_ltc
-Revises: 20260728_binance_expiry_default
+Revises: 20260728_globaldeliv
 
 Adds:
   - bybit_wallet_ltc column to payment_gateway_configs (LTC deposit address)
@@ -17,7 +17,7 @@ from alembic import op
 logger = logging.getLogger(__name__)
 
 revision = "20260729_bybit_ltc"
-down_revision = "20260728_binance_expiry_default"
+down_revision = "20260728_globaldeliv"
 branch_labels = None
 depends_on = None
 
