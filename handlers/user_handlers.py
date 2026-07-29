@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import re
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -534,70 +533,6 @@ async def _safe_edit_catalog(query, text, reply_markup):
             raise
 
 
-def _shorten_product_name(name: str, budget: int = 28) -> str:
-    """Produce a compact display name for catalog buttons.
-
-    Strips common duration tokens (e.g. "12 Months", "1 Year") and
-    generic nouns ("Account", "Access", "Subscription", "Package") so
-    the button stays tight and readable on mobile.  The full product
-    name is never modified in the database and still appears on the
-    Product Details page.
-
-    Examples:
-      "Gemini 12 Months Ready Account"  →  "Gemini Ready"
-      "ChatGPT Go"                      →  "ChatGPT Go"
-      "Canva Pro Annual Plan"            →  "Canva Pro"
-    """
-    # 1. Strip duration patterns  e.g. "12 Months", "3 Years", "1 Week"
-    result = re.sub(
-        r'\b\d+\s*(?:month|months|year|years|week|weeks|day|days)\b',
-        '', name, flags=re.IGNORECASE
-    )
-    # 2. Strip standalone time-period words
-    result = re.sub(
-        r'\b(?:annual|monthly|yearly|lifetime|forever|permanent)\b',
-        '', result, flags=re.IGNORECASE
-    )
-    # 3. Strip generic account/service nouns
-    result = re.sub(
-        r'\b(?:account|access|subscription|plan|pack|package|license|membership|trial|edition)\b',
-        '', result, flags=re.IGNORECASE
-    )
-    # 4. Collapse whitespace
-    result = re.sub(r'\s+', ' ', result).strip()
-    # 5. Fall back to original if stripping ate everything
-    if not result:
-        result = name.strip()
-    # 6. Hard truncate to budget with ellipsis
-    if len(result) > budget:
-        result = result[:max(1, budget - 1)].rstrip() + '…'
-    return result
-
-
-def _format_browser_row(emoji: str, name: str, price_display: str, stock: int,
-                         max_len: int = 64) -> str:
-    """Premium marketplace row label for the flat Product Browser:
-
-        "{emoji} {Product Name} — {price} (Stock: {stock})"
-
-    e.g. "✨ Gemini AI Pro 18m — $1.50 (Stock: 237)"
-
-    Only the product name is ever shortened (with a trailing "…") so the
-    emoji, price, and stock count always stay fully visible within
-    Telegram's ~64-character inline button label limit.
-    """
-    clean_emoji = (emoji or "✨").strip() or "✨"
-    suffix = f" — {price_display} (Stock: {stock})"
-    prefix = f"{clean_emoji} "
-    budget = max_len - len(prefix) - len(suffix)
-    if budget < 4:
-        budget = 4
-    clean_name = (name or "").strip()
-    if len(clean_name) > budget:
-        clean_name = clean_name[:max(1, budget - 1)].rstrip() + "…"
-    return f"{prefix}{clean_name}{suffix}"
-
-
 def build_all_products_keyboard(rows, page=0, total_pages=1,
                                   allow_pagination=True, show_stock=True):
     """Build the flat catalog inline keyboard with optional pagination controls.
@@ -610,16 +545,16 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
         always part of the premium row format regardless of this flag.
 
     One product per button, premium marketplace format:
-        {emoji} {Product Name} — ${price} (Stock: {stock})
-    Out-of-stock rows always show a ❌ leading icon instead of the
-    product's configured emoji, so availability stays scannable at a glance.
+        {emoji} {Product Name} • ${price} • Stock: {stock}
+    Out-of-stock rows always show a ❌ leading icon (via ``catalog_stock_emoji``)
+    instead of the product's configured emoji, and read "• Out of Stock" in
+    place of the stock count, so availability stays scannable at a glance.
     """
     keyboard = []
     for r in rows:
-        stock     = r.get("stock", 0)
-        available = stock > 0
-        emoji     = "❌" if not available else (r.get("emoji") or "✨")
-        label = _format_browser_row(emoji, r["name"], r["price_display"], stock)
+        stock = r.get("stock", 0)
+        emoji = catalog_stock_emoji(r.get("emoji"), stock)
+        label = format_product_button_text(emoji, r["name"], r["price_display"], stock)
         keyboard.append([InlineKeyboardButton(label, callback_data=f"product_{r['id']}")])
 
     # Pagination row — only shown when there is more than one page
@@ -661,7 +596,7 @@ async def render_all_products_catalog(query, context, telegram_id,
         ]])
         await _safe_edit_catalog(
             query,
-            "🛍️ <b>Products</b>\n\n🔴 The product list is currently unavailable.",
+            "🛍️ <b>Available Products</b>\n\n🔴 The product list is currently unavailable.",
             kb,
         )
         return
@@ -672,7 +607,7 @@ async def render_all_products_catalog(query, context, telegram_id,
         ])
         await _safe_edit_catalog(
             query,
-            "🛍️ <b>Products</b>\n\n🟡 The product list is currently under maintenance.\nPlease check back shortly.",
+            "🛍️ <b>Available Products</b>\n\n🟡 The product list is currently under maintenance.\nPlease check back shortly.",
             kb,
         )
         return
@@ -714,7 +649,7 @@ async def render_all_products_catalog(query, context, telegram_id,
     rows = await run_db(_load_active_products, telegram_id)
 
     if not rows:
-        text = "🛍️ <b>Products</b>\n\n📭 No products are currently available.\nPlease check back later."
+        text = "🛍️ <b>Available Products</b>\n\n📭 No products are currently available.\nPlease check back later."
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ])
@@ -754,7 +689,7 @@ async def render_all_products_catalog(query, context, telegram_id,
         context.user_data["products_current_page"] = page
 
     # ── Build header text ─────────────────────────────────────────────────────
-    header_lines = ["🛍️ <b>Products</b>"]
+    header_lines = ["🛍️ <b>Available Products</b>"]
     if show_counter:
         header_lines.append(f"📦 Products: <b>{total_count}</b>")
     text = "\n".join(header_lines)
@@ -965,29 +900,16 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
             if not products:
                 return []
 
-            # Build the "🆕 New" badge context once for this listing (avoids
-            # one DB query per product row) — window is admin-configurable
-            # via BotConfig (utils/bot_config.py -> "new_product_days").
-            try:
-                from services.badges import build_context, badges_for as _bfor
-                _badge_ctx = build_context()
-            except Exception:
-                _badge_ctx = None
-                _bfor = None
-
-            def _is_new(prod):
-                if not _badge_ctx or not getattr(prod, "created_at", None):
-                    return False
-                return prod.created_at >= _badge_ctx.new_cutoff
-
-            # Two-line marketplace format matching build_all_products_keyboard:
-            #   🟢/badge Name • $Price      (line 1)
-            #   📦 Stock: N Left            (line 2, available)
-            #   ❌ Name • $Price            (line 1, OOS)
-            #   Out of Stock                (line 2, OOS)
+            # Premium marketplace row format matching build_all_products_keyboard
+            # and the search results list:
+            #   {emoji} {Product Name} • ${price} • Stock: {stock}
+            #   {emoji} {Product Name} • ${price} • Out of Stock   (OOS)
+            # The product's configured emoji is used automatically; ❌
+            # overrides it whenever stock is 0. Names are shown in full and
+            # are only ever shortened (with a trailing "…") if the full
+            # label would otherwise exceed Telegram's button length limit.
             def _row_label(prod):
-                available  = prod.stock_count > 0
-                short_name = _shorten_product_name(prod.name or "", budget=24)
+                stock = prod.stock_count or 0
                 try:
                     from services.pricing import get_flash_sale_for_display
                     fs = get_flash_sale_for_display(prod.id)
@@ -998,26 +920,8 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
                 else:
                     price_display = _product_price_for_user(prod, _telegram_id)
 
-                if available:
-                    # Determine leading icon: badge emoji > 🆕 > 🟢
-                    if _is_new(prod):
-                        leading = "🆕 "
-                    elif fs:
-                        leading = "🔥 "
-                    else:
-                        # Check featured / best_seller badges from context
-                        try:
-                            _bl = _bfor(prod, _badge_ctx) if (_bfor and _badge_ctx) else []
-                            leading = (_bl[0].split()[0] + " ") if _bl else "🟢 "
-                        except Exception:
-                            leading = "🟢 "
-                    stock_line = f"📦 Stock: {prod.stock_count} Left"
-                else:
-                    leading    = "❌ "
-                    stock_line = "Out of Stock"
-
-                line1 = f"{leading}{short_name} • {price_display}"
-                return f"{line1}\n{stock_line}"
+                emoji = catalog_stock_emoji(prod.product_emoji, stock)
+                return format_product_button_text(emoji, prod.name or "", price_display, stock)
 
             return [{"id": prod.id, "label": _row_label(prod)} for prod in products]
 
@@ -1059,7 +963,7 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
 
     total_count = len(rows)
 
-    header_lines = ["🛍️ <b>Products</b>", f"📦 Products: <b>{total_count}</b>"]
+    header_lines = ["🛍️ <b>Available Products</b>", f"📦 Products: <b>{total_count}</b>"]
     text = "\n".join(header_lines)
 
     try:

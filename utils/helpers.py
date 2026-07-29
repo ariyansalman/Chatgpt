@@ -185,18 +185,22 @@ def catalog_stock_emoji(configured_emoji, available_stock: int) -> str:
 
 def format_product_button_text(emoji: str, name: str, price_display: str,
                                 stock: int, max_len: int = 64) -> str:
-    """Build one catalog/search row's inline button label:
+    """Build one premium-marketplace catalog/search row's inline button label:
 
-        "{emoji} {name} | {price} | 📦 {stock}"
+        "{emoji} {name} • {price} • Stock: {stock}"
+        "{emoji} {name} • {price} • Out of Stock"   (when stock <= 0)
 
-    Only ``name`` is ever shortened (with a trailing "…"), so emoji, price,
-    and stock always stay fully visible — Telegram inline button labels are
-    capped around 64 characters. Slicing happens on Python `str` code
-    points, which is safe for multi-byte/multilingual names (Bengali, etc.)
-    and won't corrupt characters, though very long combined-emoji sequences
-    in a name could in principle be split — an acceptable, rare trade-off.
+    Only ``name`` is ever shortened (with a trailing "…"), and only if the
+    full label would otherwise exceed Telegram's ~64-character inline
+    button limit — emoji, price, and stock/availability always stay fully
+    visible. Slicing happens on Python `str` code points, which is safe for
+    multi-byte/multilingual names (Bengali, etc.) and won't corrupt
+    characters, though very long combined-emoji sequences in a name could
+    in principle be split — an acceptable, rare trade-off.
     """
-    suffix = f" | {price_display} | 📦 {stock}"
+    available = stock is not None and stock > 0
+    availability = f"Stock: {stock}" if available else "Out of Stock"
+    suffix = f" • {price_display} • {availability}"
     prefix = f"{emoji} " if emoji else ""
     budget = max_len - len(prefix) - len(suffix)
     if budget < 4:
