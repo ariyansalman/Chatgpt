@@ -151,6 +151,11 @@ def build_payment_selection_screen(
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_back_to_amount")])
     rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
+    # Payment Method Selection — the user is actively creating a deposit
+    # here, so it gets a real, destructive Cancel alongside Back/Main Menu.
+    from services.payment_ui import with_deposit_cancel
+    keyboard = with_deposit_cancel(InlineKeyboardMarkup(rows))
+
     if amount is not None:
         text = (
             "💳 <b>Add Funds</b>\n\n"
@@ -160,7 +165,7 @@ def build_payment_selection_screen(
         )
     else:
         text = "💳 <b>Add Funds</b>\n\nSelect your preferred payment method."
-    return text, InlineKeyboardMarkup(rows)
+    return text, keyboard
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -175,8 +180,11 @@ def build_crypto_networks_screen(gateways: Optional[Sequence[dict]]) -> Tuple[st
     rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in crypto_sorted]
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
 
+    # Crypto Network Selection — the user is actively creating a deposit
+    # here, so it gets a real, destructive Cancel alongside Back.
+    from services.payment_ui import with_deposit_cancel
     text = "₿ <b>Crypto Networks</b>\n\nSelect your preferred network."
-    return text, InlineKeyboardMarkup(rows)
+    return text, with_deposit_cancel(InlineKeyboardMarkup(rows))
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -269,5 +277,8 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
 
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
 
+    # Mobile Banking Provider Selection — the user is actively creating a
+    # deposit here, so it gets a real, destructive Cancel alongside Back.
+    from services.payment_ui import with_deposit_cancel
     text = "🇧🇩 <b>Mobile Banking</b>\n\nSelect your preferred provider."
-    return text, InlineKeyboardMarkup(rows)
+    return text, with_deposit_cancel(InlineKeyboardMarkup(rows))

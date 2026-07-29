@@ -122,6 +122,24 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
      "Manual Payments: Require Screenshot by default",
      "Applied to newly created manual payment methods."),
 
+    # ── ZiniPay: per-provider enable/disable (Mobile Banking checkboxes) ────
+    # Independent of the wallet number columns on PaymentGatewayConfig — a
+    # provider can have a number saved and still be disabled (hidden from
+    # the customer deposit menu, cannot be selected), same relationship
+    # "bybit_allowed_networks" already has to the Bybit wallet columns.
+    ("zinipay_provider_bkash_enabled", "bool", True, "payments",
+     "ZiniPay: bKash Enabled",
+     "OFF hides bKash from the customer deposit menu even if a wallet number is saved."),
+    ("zinipay_provider_nagad_enabled", "bool", True, "payments",
+     "ZiniPay: Nagad Enabled",
+     "OFF hides Nagad from the customer deposit menu even if a wallet number is saved."),
+    ("zinipay_provider_rocket_enabled", "bool", True, "payments",
+     "ZiniPay: Rocket Enabled",
+     "OFF hides Rocket from the customer deposit menu even if a wallet number is saved."),
+    ("zinipay_provider_upay_enabled", "bool", True, "payments",
+     "ZiniPay: Upay Enabled",
+     "OFF hides Upay from the customer deposit menu even if a wallet number is saved."),
+
     # ── Delivery ────────────────────────────────────────────────────────────
     ("bulk_delivery_threshold", "int", 10, "inventory",
      "Bulk Delivery Threshold",

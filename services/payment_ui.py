@@ -171,6 +171,60 @@ def customer_display(username: Optional[str], telegram_id) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Real, destructive "❌ Cancel Deposit" — distinct from every "⬅️ Back" row
+# in this file. Back is pure navigation and never touches a pending
+# deposit (see handlers/payment_handlers.py). This button is the ONLY
+# action in the whole Add Funds flow that actually cancels the
+# in-progress deposit — see handlers/payment_handlers.py:deposit_cancel.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Callback-data for the shared, genuinely-destructive Cancel action shown
+# on every screen where the user is actively creating/completing a
+# deposit (amount picker, method/provider/network pickers, the invoice /
+# active payment page, and every Submit Transaction/Order ID prompt).
+DEPOSIT_CANCEL_CALLBACK = "deposit_cancel"
+
+
+def with_deposit_cancel(
+    keyboard: InlineKeyboardMarkup,
+    cancel_cb: str = DEPOSIT_CANCEL_CALLBACK,
+    label: str = "❌ Cancel Deposit",
+) -> InlineKeyboardMarkup:
+    """Append a real "❌ Cancel Deposit" row to an existing keyboard,
+    directly above its last row (conventionally a "⬅️ Back" / "🏠 Main
+    Menu" row) so Cancel always sits next to, never on top of, existing
+    navigation. This never removes, relabels, or repurposes any Back
+    button — Back keeps navigating exactly as before; only this row
+    actually cancels the deposit (see
+    handlers/payment_handlers.py:deposit_cancel).
+    """
+    rows = [list(r) for r in keyboard.inline_keyboard]
+    cancel_row = [InlineKeyboardButton(label, callback_data=cancel_cb)]
+    if rows:
+        rows.insert(len(rows) - 1, cancel_row)
+    else:
+        rows.append(cancel_row)
+    return InlineKeyboardMarkup(rows)
+
+
+def deposit_cancelled_card() -> str:
+    """The one shared confirmation shown after a real deposit cancel."""
+    return "✅ Deposit cancelled successfully."
+
+
+def deposit_cancelled_keyboard(
+    new_deposit_cb: str = "topup",
+    back_cb: str = "topup_back_to_wallet",
+) -> InlineKeyboardMarkup:
+    """Buttons shown under the "✅ Deposit cancelled successfully." card:
+    start a brand-new deposit immediately, or go back."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Create New Deposit", callback_data=new_deposit_cb)],
+        [InlineKeyboardButton("🔙 Back", callback_data=back_cb)],
+    ])
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Generic card renderer
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -500,7 +554,11 @@ def invoice_keyboard(
     if back_target:
         rows.append([InlineKeyboardButton("⬅️ Back", callback_data=back_target)])
 
-    return InlineKeyboardMarkup(rows)
+    keyboard = InlineKeyboardMarkup(rows)
+    # This is the Active Payment Page — the user is actively completing a
+    # deposit — so it always gets a real, destructive Cancel alongside its
+    # non-destructive Back row (see ``with_deposit_cancel``).
+    return with_deposit_cancel(keyboard)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -621,10 +679,11 @@ def binance_pay_invoice(
 def binance_pay_keyboard(*, submit_cb: str, cancel_cb: str = "cancel",
                          back_cb: str = "topup_menu_back") -> InlineKeyboardMarkup:
     """The Binance Pay invoice actions, in the user-facing order."""
-    return InlineKeyboardMarkup([
+    keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🧾 Submit Order ID", callback_data=submit_cb)],
         [InlineKeyboardButton("⬅️ Back", callback_data=back_cb)],
     ])
+    return with_deposit_cancel(keyboard)
 
 
 def bybit_pay_invoice(
@@ -663,12 +722,13 @@ def bybit_pay_invoice(
 
 def bybit_pay_keyboard(*, submit_cb: str, cancel_cb: str = "cancel",
                        back_cb: str = "topup_menu_back") -> InlineKeyboardMarkup:
-    """The Bybit Pay invoice actions — Submit Order ID + Back only.
-    Amount and UID remain copyable through native copy controls."""
-    return InlineKeyboardMarkup([
+    """The Bybit Pay invoice actions — Submit Order ID + Back, plus a real
+    Cancel. Amount and UID remain copyable through native copy controls."""
+    keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🧾 Submit Order ID", callback_data=submit_cb)],
         [InlineKeyboardButton("⬅️ Back", callback_data=back_cb)],
     ])
+    return with_deposit_cancel(keyboard)
 
 
 # Network-code → (coin label, full network name for instructions, invoice emoji)
@@ -1965,7 +2025,9 @@ def submit_txid_prompt(
             f"Please enter your {label} below.\n\n"
             f"💡 Example: <code>{example}</code>"
         )
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data=cancel_cb)]])
+    keyboard = with_deposit_cancel(
+        InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data=cancel_cb)]])
+    )
     return text, keyboard
 
 
@@ -1986,9 +2048,9 @@ def binance_order_id_prompt(
         f"💡 Example: {copy_code(example)}\n"
         "ℹ️ You'll find this in your Binance App → Pay → Transaction History."
     )
-    return text, InlineKeyboardMarkup([
+    return text, with_deposit_cancel(InlineKeyboardMarkup([
         [InlineKeyboardButton("⬅️ Back", callback_data=cancel_cb)],
-    ])
+    ]))
 
 
 def bybit_order_id_prompt(
@@ -2017,6 +2079,6 @@ def bybit_order_id_prompt(
         f"💡 Example: {copy_code(example)}\n"
         "ℹ️ You'll find this in your Bybit App → Assets → Pay → Transaction History."
     )
-    return text, InlineKeyboardMarkup([
+    return text, with_deposit_cancel(InlineKeyboardMarkup([
         [InlineKeyboardButton("⬅️ Back", callback_data=cancel_cb)],
-    ])
+    ]))

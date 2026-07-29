@@ -116,9 +116,23 @@ def provider_numbers() -> dict:
 
 def configured_providers(numbers: Optional[dict] = None) -> dict:
     """Return {provider: bool} — True only when a wallet number is set for
-    that provider. A provider with no wallet number is "Not Configured"."""
+    that provider AND the admin panel's per-provider checkbox is enabled
+    (``zinipay_provider_<name>_enabled`` in the generic BotConfig store,
+    default True — see handlers/admin_zinipay.py). A provider with no
+    wallet number, or one an admin has unchecked, is "Not Configured" /
+    hidden from the customer deposit menu and can't be selected."""
     numbers = numbers if numbers is not None else provider_numbers()
-    return {p: bool(numbers.get(p)) for p in PROVIDER_ORDER}
+    try:
+        from utils.bot_config import cfg
+        enabled = {
+            p: cfg.get_bool(f"zinipay_provider_{p}_enabled", True)
+            for p in PROVIDER_ORDER
+        }
+    except Exception:
+        # Config store unavailable — fail open to the pre-existing
+        # wallet-number-only behavior rather than hiding every provider.
+        enabled = {p: True for p in PROVIDER_ORDER}
+    return {p: bool(numbers.get(p)) and enabled[p] for p in PROVIDER_ORDER}
 
 
 def is_any_provider_configured(numbers: Optional[dict] = None) -> bool:

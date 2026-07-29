@@ -35,17 +35,28 @@ def create_cancel_keyboard():
     """Payment-flow-local override of ``utils.create_cancel_keyboard``.
 
     Every call site in THIS file only ever reaches this button while inside
-    (or just before) the Add Funds flow, where the shared "cancel"
-    callback_data now resolves to ``cancel_topup`` / ``cancel_payment_page``
-    — pure Back navigation to the Payment Method screen that never touches
-    a pending deposit (see ``_go_back_to_methods`` below). Shadowing the
-    imported name here means every existing call site keeps working
-    unmodified while showing the correct "⬅️ Back" label; it does not
-    affect ``utils.create_cancel_keyboard`` itself, which
+    (or just before) the Add Funds flow, where the dedicated
+    "back_payment_methods" callback_data resolves to ``cancel_topup`` /
+    ``cancel_payment_page`` — pure Back navigation to the Payment Method
+    screen that never touches a pending deposit (see
+    ``_go_back_to_methods`` below). This callback is intentionally its own
+    dedicated name, distinct from "cancel"/"cancel_*", so a Back tap can
+    never be routed to a real cancel handler. Shadowing the imported name
+    here means every existing call site keeps working unmodified while
+    showing the correct "⬅️ Back" label; it does not affect
+    ``utils.create_cancel_keyboard`` itself, which
     handlers/admin_conversations.py and handlers/dispute_handlers.py still
     use for their own, unrelated, genuinely-destructive Cancel actions.
+
+    Since every call site is inside the Add Funds flow, this also carries
+    a real, destructive "❌ Cancel Deposit" row (``deposit_cancel`` —
+    see ``services/payment_ui.py:with_deposit_cancel``) alongside the
+    unchanged "⬅️ Back" button, so the user always has a genuine way to
+    abandon the deposit here too, not just navigate.
     """
-    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="cancel")]])
+    return pui.with_deposit_cancel(
+        InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_payment_methods")]])
+    )
 
 
 def _plain_usd(amount: float) -> str:
@@ -746,7 +757,7 @@ async def payment_method_heleket(update: Update, context: ContextTypes.DEFAULT_T
     rows=[]
     for key, (_, _, label) in SUPPORTED_ASSETS.items():
         rows.append([InlineKeyboardButton(label, callback_data=f"heleket_asset:{key}")])
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="cancel")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="back_payment_methods")])
     try:
         await query.edit_message_text("🪙 Select coin and network:", reply_markup=InlineKeyboardMarkup(rows))
     except BadRequest as e:
@@ -1946,35 +1957,28 @@ async def payment_method_crypto(update: Update, context: ContextTypes.DEFAULT_TY
         ).first()
 
         if existing_pending:
-            # Show full payment details for the existing pending order
-            # Extract pay_url from crypto_address (format: "invoice_id|pay_url")
-            if existing_pending.crypto_address and "|" in existing_pending.crypto_address:
-                invoice_id, pay_url = existing_pending.crypto_address.split("|", 1)
-            else:
-                pay_url = existing_pending.crypto_address if existing_pending.crypto_address else "#"
-
+            # Show the ONE dedicated Pending Deposit notice (Continue / Cancel
+            # / Back) instead of the Payment Page itself — see
+            # pending_deposit_continue for what "Continue Deposit" re-opens.
+            # This keeps CryptoBot consistent with Binance Pay / Bybit Pay and
+            # avoids duplicating the "deposit in progress" warning inside the
+            # actual Payment Page.
             expires_str = (
                 _time_remaining(existing_pending.expires_at)
                 if existing_pending.expires_at else None
             )
-            _pending_amount = _plain_usd(existing_pending.amount)
-            message = pui.invoice_card(
-                method_label="CryptoBot", method_emoji="🤖",
-                amount=_pending_amount, deposit_id=existing_pending.id,
-                created_at=existing_pending.created_at, expires_at=expires_str,
-                instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
-            )
-            reply_markup = pui.invoice_keyboard(
-                amount_value=_pending_amount,
-                pay_url=pay_url, pay_url_label="💳 Pay with Any Crypto",
-                back_cb="topup_menu_back",
-            )
-
             try:
                 await query.edit_message_text(
-                    message,
-                    reply_markup=reply_markup,
-                    parse_mode='HTML'
+                    pui.pending_deposit_card(
+                        method_label="CryptoBot", method_emoji="🤖",
+                        amount=_plain_usd(existing_pending.amount),
+                        deposit_id=existing_pending.id, created_at=existing_pending.created_at,
+                        expires_at=expires_str,
+                    ),
+                    reply_markup=pui.pending_deposit_keyboard(
+                        continue_cb=f"pending_continue:{existing_pending.id}",
+                    ),
+                    parse_mode='HTML',
                 )
             except BadRequest as e:
                 if "Message is not modified" not in str(e):
@@ -2187,26 +2191,25 @@ async def _finish_gateway_automated_payment(
                 _time_remaining(existing_pending.expires_at)
                 if existing_pending.expires_at else None
             )
-            _pending_amount = _plain_usd(existing_pending.amount)
-            message = pui.invoice_card(
-                method_label=gateway_label, method_emoji="💳",
-                amount=_pending_amount, deposit_id=existing_pending.id,
-                expires_at=expires_str,
-                instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
-            )
             if not pay_url:
-                message += "\n\n⚠️ Payment link missing — contact support with your Deposit ID above."
                 logger.warning(
                     "Existing pending %s transaction #%s has no valid pay_url (crypto_address=%r)",
                     gateway_label, existing_pending.id, existing_pending.crypto_address,
                 )
-            keyboard = pui.invoice_keyboard(
-                amount_value=_pending_amount,
-                pay_url=pay_url, pay_url_label=pay_button_label,
-                back_cb="topup_menu_back",
-            )
+            # Show the ONE dedicated Pending Deposit notice (Continue / Cancel
+            # / Back) instead of the Payment Page itself, matching CryptoBot /
+            # Binance Pay / Bybit Pay — see pending_deposit_continue for what
+            # "Continue Deposit" re-opens.
             await update.message.reply_text(
-                message, reply_markup=keyboard, parse_mode='HTML',
+                pui.pending_deposit_card(
+                    method_label=gateway_label, method_emoji="💳",
+                    amount=_plain_usd(existing_pending.amount),
+                    deposit_id=existing_pending.id, expires_at=expires_str,
+                ),
+                reply_markup=pui.pending_deposit_keyboard(
+                    continue_cb=f"pending_continue:{existing_pending.id}",
+                ),
+                parse_mode='HTML',
             )
             return METHOD
 
@@ -2480,11 +2483,9 @@ async def _finish_zinipay_payment(
             status=TransactionStatus.PENDING,
         ).first()
         if existing_pending:
-            _pending_amount = _plain_usd(existing_pending.amount)
-
             # Load the provider this pending order was actually created
             # with (stored as "bdt:<amount>:<provider>" — see the Transaction
-            # created below) so the screen always reflects what the user is
+            # created below) so the notice always reflects what the user is
             # really supposed to pay to, never a generic combined label.
             # Legacy rows created before the provider was tracked
             # ("bdt:<amount>" only) fall back to whichever provider was just
@@ -2498,42 +2499,25 @@ async def _finish_zinipay_payment(
             if not pending_provider or not numbers_by_provider.get(pending_provider):
                 pending_provider = provider
 
-            pending_send_to = numbers_by_provider.get(pending_provider)
             pending_emoji = PROVIDER_EMOJI.get(pending_provider, "🇧🇩")
+            pending_label = PROVIDER_LABEL.get(pending_provider, "Mobile Banking")
 
-            if pending_send_to:
-                message = pui.mobile_money_invoice(
-                    provider_label=PROVIDER_LABEL.get(pending_provider, "Mobile Banking"),
-                    provider_emoji=pending_emoji,
-                    amount=_pending_amount, send_to=pending_send_to,
+            # Show the ONE dedicated Pending Deposit notice (Continue /
+            # Cancel / Back) instead of the Payment Page itself — see
+            # pending_deposit_continue for what "Continue Deposit" re-opens.
+            await update.message.reply_text(
+                pui.pending_deposit_card(
+                    method_label=pending_label, method_emoji=pending_emoji,
+                    amount=_plain_usd(existing_pending.amount),
                     deposit_id=existing_pending.id,
-                    instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
-                )
-                 # Amount/number remain copyable through native controls; only Submit + Cancel + Back.
-                keyboard = pui.invoice_keyboard(
-                    submit_cb=f"zinipay_submit:{existing_pending.id}",
-                    submit_label="🧾 Submit Transaction ID",
-                    back_cb="topup_menu_back",
-                )
-            else:
-                # No number configured for the resolved provider at all
-                # (e.g. admin removed it after the order was created) —
-                # still avoid the generic combined label; fall back to the
-                # amount-only card without inventing a payment number.
-                message = pui.invoice_card(
-                    method_label=f"{pending_provider.title()} Payment" if pending_provider else "Mobile Banking",
-                    method_emoji=pending_emoji,
-                    amount=_pending_amount,
-                    deposit_id=existing_pending.id,
-                    instruction="⚠️ You have a deposit in progress — continue it below, or cancel to start a new one.",
-                )
-                keyboard = pui.invoice_keyboard(
-                    submit_cb=f"zinipay_submit:{existing_pending.id}",
-                    submit_label="🧾 Submit Transaction ID",
-                    back_cb="topup_menu_back",
-                )
-
-            await update.message.reply_text(message, reply_markup=keyboard, parse_mode='HTML')
+                    expires_at=_time_remaining(existing_pending.expires_at)
+                    if existing_pending.expires_at else None,
+                ),
+                reply_markup=pui.pending_deposit_keyboard(
+                    continue_cb=f"pending_continue:{existing_pending.id}",
+                ),
+                parse_mode='HTML',
+            )
             return METHOD
 
         transaction = Transaction(
@@ -3131,7 +3115,7 @@ def _binance_currency_keyboard(tx_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(c, callback_data=f"binance_currency:{tx_id}:{c}")
         for c in svc.allowed_currencies
     ]
-    return InlineKeyboardMarkup([row, [InlineKeyboardButton("⬅️ Back", callback_data="cancel")]])
+    return InlineKeyboardMarkup([row, [InlineKeyboardButton("⬅️ Back", callback_data="back_payment_methods")]])
 
 
 async def _finish_binance_payment(update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -3852,7 +3836,7 @@ def _bybit_type_keyboard(tx_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔹 UID Transfer", callback_data=f"bybit_type:{tx_id}:uid")],
         [InlineKeyboardButton("🔹 On-chain Deposit", callback_data=f"bybit_type:{tx_id}:onchain")],
-        [InlineKeyboardButton("⬅️ Back", callback_data="cancel")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="back_payment_methods")],
     ])
 
 
@@ -3862,7 +3846,7 @@ def _bybit_network_keyboard(tx_id: int, svc: "BybitPayService") -> InlineKeyboar
         for net in svc.networks_with_wallets()
     ]
     rows.append([InlineKeyboardButton("🔙 Back", callback_data=f"bybit_back_type:{tx_id}")])
-    rows.append([InlineKeyboardButton("⬅️ Back to Payment Methods", callback_data="cancel")])
+    rows.append([InlineKeyboardButton("⬅️ Back to Payment Methods", callback_data="back_payment_methods")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -4235,10 +4219,11 @@ async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT
     """"▶️ Continue Deposit" tapped on the Pending Deposit notice.
 
     Purely re-renders the existing PENDING order's payment-instructions
-    screen (Binance Pay / Bybit Pay) — it never creates a new deposit and
-    never touches deposit/verification logic, only reads the already
-    existing Transaction row and hands its values to the same screen
-    renderers used at order-creation time."""
+    screen — CryptoBot, bKash / Nagad / Cryptomus / NOWPayments, ZiniPay
+    (Mobile Banking), Binance Pay, and Bybit Pay are all covered — it never
+    creates a new deposit and never touches deposit/verification logic,
+    only reads the already existing Transaction row and hands its values
+    to the same screen renderers used at order-creation time."""
     query = update.callback_query
     await safe_answer(query)
     try:
@@ -4273,8 +4258,110 @@ async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT
         method = tx.payment_method
         usd_amount = tx.amount
         crypto_address = tx.crypto_address
+        created_at = tx.created_at
+        expires_at = tx.expires_at
         locked_rate = tx.locked_crypto_rate
         locked_crypto_amount = tx.locked_crypto_amount
+
+    if method == PaymentMethod.CRYPTO_WALLET:
+        # CryptoBot: crypto_address stores "invoice_id|pay_url".
+        if crypto_address and "|" in crypto_address:
+            _invoice_id, pay_url = crypto_address.split("|", 1)
+        else:
+            pay_url = crypto_address or None
+        expires_str = _time_remaining(expires_at) if expires_at else None
+        _amount_str = _plain_usd(usd_amount)
+        message = pui.invoice_card(
+            method_label="CryptoBot", method_emoji="🤖",
+            amount=_amount_str, deposit_id=tx_id,
+            created_at=created_at, expires_at=expires_str,
+            instruction="👉 Tap below to pay with any supported cryptocurrency.",
+        )
+        reply_markup = pui.invoice_keyboard(
+            amount_value=_amount_str,
+            pay_url=pay_url, pay_url_label="💳 Pay with Any Crypto",
+        )
+        try:
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='HTML')
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
+        return ConversationHandler.END
+
+    if method in (PaymentMethod.BKASH, PaymentMethod.NAGAD, PaymentMethod.CRYPTOMUS, PaymentMethod.NOWPAYMENTS):
+        _gateway_meta = {
+            PaymentMethod.BKASH: ("bKash", "📱 Pay with bKash"),
+            PaymentMethod.NAGAD: ("Nagad", "🟠 Pay with Nagad"),
+            PaymentMethod.CRYPTOMUS: ("Cryptomus", "💠 Pay with Cryptomus"),
+            PaymentMethod.NOWPAYMENTS: ("NOWPayments", "🌐 Pay with NOWPayments"),
+        }
+        gateway_label, pay_button_label = _gateway_meta[method]
+        pay_url = _extract_pay_url(crypto_address)
+        expires_str = _time_remaining(expires_at) if expires_at else None
+        _amount_str = _plain_usd(usd_amount)
+        message = pui.invoice_card(
+            method_label=gateway_label, method_emoji="💳",
+            amount=_amount_str, deposit_id=tx_id, expires_at=expires_str,
+        )
+        if not pay_url:
+            message += "\n\n⚠️ Payment link missing — contact support with your Deposit ID above."
+        reply_markup = pui.invoice_keyboard(
+            amount_value=_amount_str,
+            pay_url=pay_url, pay_url_label=pay_button_label,
+        )
+        try:
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='HTML')
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
+        return ConversationHandler.END
+
+    if method == PaymentMethod.ZINIPAY:
+        from services.zinipay_payment import ZiniPayService
+        PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🧡", "rocket": "💜", "upay": "🔵"}
+        PROVIDER_LABEL = {"bkash": "bKash", "nagad": "Nagad", "rocket": "Rocket", "upay": "Upay"}
+        pending_provider = None
+        if crypto_address and crypto_address.startswith("bdt:"):
+            _parts = crypto_address.split(":")
+            if len(_parts) > 2 and _parts[2]:
+                pending_provider = _parts[2].strip().lower()
+        with get_db_session() as session:
+            from database.models import PaymentGatewayConfig as _PGC
+            pgc = session.query(_PGC).filter_by(gateway="zinipay").first()
+            numbers_by_provider = {
+                "bkash": (pgc.zinipay_bkash_number or "").strip() if pgc else "",
+                "nagad": (pgc.zinipay_nagad_number or "").strip() if pgc else "",
+                "rocket": (pgc.zinipay_rocket_number or "").strip() if pgc else "",
+                "upay": (pgc.zinipay_upay_number or "").strip() if pgc else "",
+            }
+        if not pending_provider or not numbers_by_provider.get(pending_provider):
+            pending_provider = next((p for p, n in numbers_by_provider.items() if n), pending_provider)
+        send_to = numbers_by_provider.get(pending_provider)
+        _bdt_amount = f"৳{usd_amount:.2f}"
+        expires_str = _time_remaining(expires_at) if expires_at else None
+        if send_to:
+            message = pui.mobile_money_invoice(
+                provider_label=PROVIDER_LABEL.get(pending_provider, "Mobile Banking"),
+                provider_emoji=PROVIDER_EMOJI.get(pending_provider, "🇧🇩"),
+                amount=_bdt_amount, send_to=send_to,
+                deposit_id=tx_id, expires_at=expires_str,
+            )
+        else:
+            message = pui.invoice_card(
+                method_label=PROVIDER_LABEL.get(pending_provider, "Mobile Banking"),
+                method_emoji=PROVIDER_EMOJI.get(pending_provider, "🇧🇩"),
+                amount=_bdt_amount, deposit_id=tx_id, expires_at=expires_str,
+            )
+            message += "\n\n⚠️ Payment number missing — contact support with your Deposit ID above."
+        keyboard = pui.invoice_keyboard(
+            submit_cb=f"zinipay_submit:{tx_id}", submit_label="🧾 Submit Transaction ID",
+        )
+        try:
+            await query.edit_message_text(message, reply_markup=keyboard, parse_mode='HTML')
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
+        return ConversationHandler.END
 
     if method == PaymentMethod.BINANCE_PAY:
         svc = BinancePayService()
@@ -5701,6 +5788,79 @@ _PAYMENT_SESSION_KEYS = (
     'manual_req_txid',
 )
 
+# Everything cleared by a REAL "❌ Cancel Deposit" tap (see ``deposit_cancel``
+# below) — every key in ``_PAYMENT_SESSION_KEYS`` above, PLUS ``topup_amount``.
+# Unlike Back, a genuine Cancel ends the whole deposit attempt, not just the
+# current mini-step within it, so the previously-picked amount must NOT
+# survive it — the next deposit starts clean from Step 1.
+_DEPOSIT_CANCEL_KEYS = _PAYMENT_SESSION_KEYS + ('topup_amount',)
+
+
+async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"❌ Cancel Deposit" tapped from ANY screen where the user is actively
+    creating or completing a deposit — Amount Selection, Payment Method
+    Selection, Crypto Networks, Mobile Banking, an active invoice/payment
+    page, or a Submit Transaction/Order ID prompt (see
+    ``services/payment_ui.py:with_deposit_cancel`` for every call site that
+    renders this button).
+
+    Unlike every "⬅️ Back" button in the payment flow — which is pure
+    navigation and never touches a pending deposit — this is a real,
+    destructive cancel:
+      • any still-PENDING deposit this user has is marked CANCELLED
+      • the entire in-progress deposit session (picked amount, method,
+        provider, any in-flight txid/proof capture) is cleared from
+        ``context.user_data`` — clearing the amount too (unlike a plain
+        Back) since the whole attempt is being abandoned, not just one
+        step of it
+      • cancelling frees the user to start a brand-new deposit immediately
+        — there is no lingering "pending deposit" lock left behind
+
+    Always shows the one shared "✅ Deposit cancelled successfully." card
+    with "💳 Create New Deposit" / "🔙 Back" — never silently drops back
+    into the flow the way Back does. Registered both inside every
+    deposit-related ConversationHandler (as a fallback, so it fires
+    regardless of which state the user is in) and standalone in bot.py,
+    the same dual-registration pattern already used by
+    ``cancel_pending_deposit`` / ``cancel_payment_page``.
+    """
+    query = update.callback_query
+    await safe_answer(query)
+
+    telegram_id = update.effective_user.id
+
+    def _cancel(_telegram_id):
+        with get_db_session() as session:
+            user = session.query(User).filter_by(telegram_id=_telegram_id).first()
+            if user:
+                _cancel_user_pending_transactions(session, user.id)
+
+    await run_db(_cancel, telegram_id)
+
+    for _key in _DEPOSIT_CANCEL_KEYS:
+        context.user_data.pop(_key, None)
+
+    text = pui.deposit_cancelled_card()
+    keyboard = pui.deposit_cancelled_keyboard()
+
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+    except Exception:
+        # If the original message can't be edited for any reason (e.g. it
+        # was already deleted), fall back to sending a fresh message so the
+        # confirmation is never silently lost.
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id, text=text, reply_markup=keyboard,
+                parse_mode="HTML")
+        except Exception:
+            logger.exception("Failed to show deposit-cancelled confirmation")
+
+    return ConversationHandler.END
+
 
 async def _redraw_as_payment_method_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Shared screen-drawing tail for both Back and (dedicated) Cancel:
@@ -5804,7 +5964,8 @@ async def _cancel_pending_deposit_and_go_back(update: Update, context: ContextTy
 
 
 async def cancel_topup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """"⬅️ Back" tapped from inside the top-up conversation.
+    """"⬅️ Back" tapped from inside the top-up conversation (callback_data
+    "back_payment_methods" — its own dedicated name, never "cancel"/"cancel_*").
 
     Pure navigation straight to the Payment Method screen — never cancels,
     modifies, or deletes any pending Transaction row. See
@@ -5820,7 +5981,9 @@ async def cancel_topup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel_payment_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """"⬅️ Back" tapped from a payment/invoice page (outside conversation).
+    """"⬅️ Back" tapped from a payment/invoice page (outside conversation),
+    callback_data "back_payment_methods" — its own dedicated name, never
+    "cancel"/"cancel_*".
 
     This button is shared by every gateway's payment-instructions page, so
     there's no single tx_id in the callback data — but unlike a real
@@ -5842,20 +6005,21 @@ async def cancel_payment_page(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def cancel_pending_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """"❌ Cancel Deposit" tapped on the Pending Deposit notice — the ONE
-    dedicated, explicit "Cancel Payment" action in the whole payment flow
-    (see ``services/payment_ui.py:pending_deposit_keyboard``).
+    """"❌ Cancel Deposit" tapped on the Pending Deposit notice (see
+    ``services/payment_ui.py:pending_deposit_keyboard``).
 
-    Unlike every Back button in the payment system, this really does
-    cancel the user's still-pending Transaction row(s); see
-    ``_cancel_pending_deposit_and_go_back``. Registered both inside the
-    top-up ConversationHandler and standalone in bot.py — same dual
-    registration as ``topup_back_to_methods`` — since the Pending Deposit
-    notice can be shown with or without an active conversation; the
-    return value is only consumed when a ConversationHandler is driving it.
+    Delegates to the shared ``deposit_cancel`` — the same real, destructive
+    cancel used by every other deposit screen (Amount Selection, Payment
+    Method Selection, Crypto Networks, Mobile Banking, the active
+    invoice/payment page, and every Submit Transaction/Order ID prompt) —
+    so tapping Cancel here shows the exact same "✅ Deposit cancelled
+    successfully." confirmation instead of a screen-specific behavior.
+    Registered both inside the top-up ConversationHandler and standalone
+    in bot.py — same dual registration as ``topup_back_to_methods`` —
+    since the Pending Deposit notice can be shown with or without an
+    active conversation.
     """
-    is_empty = await _cancel_pending_deposit_and_go_back(update, context)
-    return ConversationHandler.END if is_empty else METHOD
+    return await deposit_cancel(update, context)
 
 
 async def check_pending_payments(context: ContextTypes.DEFAULT_TYPE):

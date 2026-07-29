@@ -77,6 +77,7 @@ def _get_or_create(session) -> PaymentGatewayConfig:
 
 def _load_cfg() -> dict:
     from services.zinipay_payment import PROVIDER_ORDER, first_configured_provider
+    from utils.bot_config import cfg as bot_cfg
 
     with get_db_session() as session:
         row = _get_or_create(session)
@@ -89,6 +90,16 @@ def _load_cfg() -> dict:
         enabled = bool(row.is_enabled)
         stored_default = (row.zinipay_default_provider or "").lower()
 
+        # Per-provider checkbox — independent of the wallet number, same
+        # relationship "bybit_allowed_networks" has to the Bybit wallet
+        # columns. Stored in the generic BotConfig key/value store (no
+        # schema change), default True so existing installs are unaffected
+        # until an admin actually unchecks a provider.
+        provider_enabled = {
+            p: bot_cfg.get_bool(f"zinipay_provider_{p}_enabled", True)
+            for p in PROVIDER_ORDER
+        }
+
         # A provider only counts as the Default Provider while it's actually
         # configured — if the stored value is stale (its wallet number was
         # cleared), fall back to the first configured provider for display
@@ -99,11 +110,18 @@ def _load_cfg() -> dict:
         else:
             default_provider = first_configured_provider(numbers) or ""
 
-        configured = {p: bool(numbers[p]) for p in PROVIDER_ORDER}
+        has_number = {p: bool(numbers[p]) for p in PROVIDER_ORDER}
+        # "configured" (used elsewhere in this file / the default-provider
+        # picker) keeps its original meaning: has a wallet number saved.
+        configured = has_number
+        # "checked" is what the new Mobile Banking checkbox on the main
+        # page shows — the actual customer-visible state, matching
+        # services.zinipay_payment.configured_providers() exactly.
+        checked = {p: has_number[p] and provider_enabled[p] for p in PROVIDER_ORDER}
         status = {
-            p: ("enabled" if configured[p] and enabled else
-                "disabled" if configured[p] else
-                "not_configured")
+            p: ("not_configured" if not has_number[p] else
+                "disabled" if (not provider_enabled[p] or not enabled) else
+                "enabled")
             for p in PROVIDER_ORDER
         }
 
@@ -116,6 +134,8 @@ def _load_cfg() -> dict:
             "upay":              numbers["upay"],
             "numbers":           numbers,
             "configured":        configured,
+            "provider_enabled":  provider_enabled,
+            "checked":           checked,
             "status":            status,
             "default_provider":  default_provider,
             "rate":              row.zinipay_usd_to_bdt_rate,
@@ -161,10 +181,18 @@ def _summary(cfg: dict) -> str:
         rate_display += " (auto-refresh ✅)"
     instr_preview = cfg["instructions"][:60] + "…" if len(cfg["instructions"]) > 60 else (cfg["instructions"] or "❌ <i>not set</i>")
 
-    provider_lines = "\n".join(
-        f"  📱 {_PROVIDER_TITLE[p]}: {_num(cfg[p])} — {_STATUS_DISPLAY[cfg['status'][p]]}"
-        for p in ("bkash", "nagad", "rocket", "upay")
-    )
+    def _provider_line(p: str) -> str:
+        box = "☑" if cfg["checked"][p] else "☐"
+        title = _PROVIDER_TITLE[p]
+        if cfg["numbers"][p]:
+            value = f"<code>{cfg['numbers'][p]}</code>"
+            if not cfg["provider_enabled"][p]:
+                value += "  <i>(Disabled)</i>"
+        else:
+            value = "<i>Not Configured</i>"
+        return f"{box} {title:<7}{value}"
+
+    provider_lines = "\n".join(_provider_line(p) for p in ("bkash", "nagad", "rocket", "upay"))
     default_display = cfg["default_provider"].title() if cfg["default_provider"] else "❌ <i>none configured</i>"
 
     return (
@@ -173,28 +201,35 @@ def _summary(cfg: dict) -> str:
         f"<b>API Key:</b> {_mask(cfg['api_key'])}\n\n"
         "<b>Mobile Banking Providers:</b>\n"
         f"{provider_lines}\n\n"
+        "☑ Enabled — visible to customers, can receive deposits.\n"
+        "☐ Disabled — hidden from the customer deposit menu, cannot be selected.\n"
+        "Tap a provider below to instantly toggle it — no restart needed, "
+        "the status is saved right away and survives a bot restart.\n\n"
         f"<b>Default Provider:</b> {default_display}\n"
         f"<b>Exchange Rate:</b> {rate_display}\n"
         f"<b>Instructions:</b> {instr_preview}\n\n"
-        "⚠️ API Key and at least one wallet number must be set before enabling. "
-        "A provider with no wallet number is ⚪ Not Configured — it's hidden "
-        "from customers and can't be the Default Provider."
+        "⚠️ API Key and at least one wallet number must be set before enabling "
+        "the gateway. A provider with no wallet number is always Not Configured."
     )
 
 
 def _keyboard(cfg: dict) -> InlineKeyboardMarkup:
     toggle_label = "🚫 Disable" if cfg["enabled"] else "✅ Enable"
     auto_label = "⏹ Disable Auto-Rate" if cfg["auto_rate"] else "🔄 Enable Auto-Rate"
+
+    provider_rows = []
+    for p in ("bkash", "nagad", "rocket", "upay"):
+        box = "☑" if cfg["checked"][p] else "☐"
+        provider_rows.append([
+            InlineKeyboardButton(f"{box} {_PROVIDER_TITLE[p]}",
+                                  callback_data=f"admin_zinipay_toggle_provider_{p}"),
+            InlineKeyboardButton("✏️ Edit",
+                                  callback_data=f"admin_zinipay_edit_{p}"),
+        ])
+
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔑 API Key",            callback_data="admin_zinipay_edit_apikey")],
-        [
-            InlineKeyboardButton("📱 bKash",   callback_data="admin_zinipay_edit_bkash"),
-            InlineKeyboardButton("📱 Nagad",   callback_data="admin_zinipay_edit_nagad"),
-        ],
-        [
-            InlineKeyboardButton("📱 Rocket",  callback_data="admin_zinipay_edit_rocket"),
-            InlineKeyboardButton("📱 Upay",    callback_data="admin_zinipay_edit_upay"),
-        ],
+        [InlineKeyboardButton("🔑 API Key", callback_data="admin_zinipay_edit_apikey")],
+        *provider_rows,
         [InlineKeyboardButton("🏦 Default Provider",   callback_data="admin_zinipay_provider_menu")],
         [InlineKeyboardButton("💱 Exchange Rate",       callback_data="admin_zinipay_edit_rate")],
         [InlineKeyboardButton(auto_label,               callback_data="admin_zinipay_toggle_autorate")],
@@ -343,6 +378,50 @@ async def admin_zinipay_set_provider(update: Update, context: ContextTypes.DEFAU
         row.zinipay_default_provider = provider
         session.commit()
 
+    await admin_zinipay_view(update, context)
+
+
+async def admin_zinipay_toggle_provider(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Instantly enable/disable one Mobile Banking provider — the ☑/☐
+    checkbox on the main ZiniPay Configuration page. Independent of the
+    provider's wallet number (kept as-is either way) and independent of
+    the overall gateway toggle. Persisted immediately via the generic
+    BotConfig store (utils.bot_config.cfg) — no restart required, and the
+    state survives one because it's a normal DB-backed row, same as every
+    other admin-tunable toggle in this app."""
+    query = update.callback_query
+    if not has_permission(update.effective_user.id, "manage_payments"):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+
+    provider = query.data.replace("admin_zinipay_toggle_provider_", "")
+    if provider not in VALID_PROVIDERS:
+        await query.answer()
+        return
+
+    from utils.bot_config import cfg as bot_cfg
+
+    cfg = _load_cfg()
+    key = f"zinipay_provider_{provider}_enabled"
+    currently_enabled = cfg["provider_enabled"][provider]
+
+    # Turning ON a provider with no wallet number saved would just leave it
+    # checked but still hidden from customers (configured_providers() in
+    # services/zinipay_payment.py requires both) — catch that upfront with
+    # a clear message instead of a checkbox that silently does nothing.
+    if not currently_enabled and not cfg["numbers"][provider]:
+        await query.answer(
+            f"⚠️ {_PROVIDER_TITLE[provider]} has no wallet number set yet. "
+            "Tap ✏️ Edit to add one before enabling it.",
+            show_alert=True,
+        )
+        return
+
+    bot_cfg.set(key, not currently_enabled)
+    await query.answer(
+        f"{'☑' if not currently_enabled else '☐'} {_PROVIDER_TITLE[provider]} "
+        f"{'enabled' if not currently_enabled else 'disabled'}."
+    )
     await admin_zinipay_view(update, context)
 
 
