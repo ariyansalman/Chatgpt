@@ -581,6 +581,8 @@ def pending_deposit_card(
     method_label: str,
     method_emoji: str = "💳",
     amount: str,
+    network: Optional[str] = None,
+    secondary_amount: Optional[str] = None,
     deposit_id=None,
     created_at=None,
     expires_at: Optional[str] = None,
@@ -590,6 +592,21 @@ def pending_deposit_card(
     ``expires_at`` should already be a short, human phrase such as
     ``'12m 40s remaining'`` or ``'Expired'`` — this function only lays it
     out, it never computes durations itself.
+
+    ``network`` is only used by on-chain crypto network deposits (TRC20 /
+    BEP20 / ERC20 / LTC / ...): when given, an extra "🌐 Network" line is
+    rendered right after "Payment Method" so a crypto-network deposit
+    always shows which network the user actually selected — it is never
+    folded into ``method_label`` itself. Every other gateway simply
+    doesn't pass this and gets the exact same layout as before.
+
+    ``secondary_amount`` is only used by BDT mobile-money rails (bKash /
+    Nagad / Rocket via ZiniPay): when given, ``amount`` is labeled
+    "Wallet Credit" (the USD amount actually held/credited) and a second
+    "Amount to Send" line shows the BDT figure the user is expected to
+    pay — the same calculated BDT amount shown on the Payment Page itself,
+    never a re-derived or mismatched figure. Every other gateway keeps the
+    single generic "Amount" line unchanged.
     """
     lines = [
         "⚠️ <b>Pending Deposit</b>",
@@ -600,9 +617,24 @@ def pending_deposit_card(
         f"{method_emoji} <b>Payment Method</b>",
         f"<code>{method_label}</code>",
         "",
-        "💰 <b>Amount</b>",
-        f"<code>{amount}</code>",
     ]
+    if network:
+        lines.append("🌐 <b>Network</b>")
+        lines.append(f"<code>{network}</code>")
+        lines.append("")
+    if secondary_amount:
+        lines += [
+            "💰 <b>Wallet Credit</b>",
+            f"<code>{amount}</code>",
+            "",
+            "💸 <b>Amount to Send</b>",
+            f"<code>{secondary_amount}</code>",
+        ]
+    else:
+        lines += [
+            "💰 <b>Amount</b>",
+            f"<code>{amount}</code>",
+        ]
     dep = _display_deposit_id(deposit_id, created_at)
     if dep:
         lines.append("")
@@ -815,12 +847,21 @@ def mobile_money_invoice(
     *, provider_label: str, provider_emoji: str, amount: str, send_to: str,
     deposit_id=None, created_at=None, expires_at: Optional[str] = None,
     instruction: Optional[str] = None,
+    wallet_credit: Optional[str] = None, exchange_rate: Optional[str] = None,
 ) -> str:
     """bKash / Nagad / Rocket / Upay invoice — premium inline layout.
 
     Shows ONLY the provider that was actually selected — never all providers
     at once. Only the provider name, color emoji, and wallet number change
     between providers; layout and spacing are identical for every method.
+
+    ``amount`` is always the BDT figure to actually send (labeled
+    "Amount to Send" when ``wallet_credit`` is given, or plain "Amount"
+    otherwise, for backwards compatibility with any caller that hasn't
+    been updated to pass the USD breakdown yet). ``wallet_credit`` is the
+    USD amount the wallet will be credited with, and ``exchange_rate`` is
+    the human-readable rate line, e.g. ``"1 USD = ৳125.00"`` — both
+    optional so this stays a drop-in for older callers.
     """
     dep = _display_deposit_id(deposit_id, created_at)
     instr = instruction or (
@@ -828,7 +869,13 @@ def mobile_money_invoice(
         "After successful payment, click the button below and submit your TrxID."
     )
     lines = [f"{provider_emoji} <b>{provider_label} Payment</b>", ""]
-    lines.append(f"💰 <b>Amount:</b> <code>{amount}</code>")
+    if wallet_credit:
+        lines.append(f"👛 <b>Wallet Credit:</b> <code>{wallet_credit}</code>")
+        lines.append(f"💰 <b>Amount to Send:</b> <code>{amount}</code>")
+    else:
+        lines.append(f"💰 <b>Amount:</b> <code>{amount}</code>")
+    if exchange_rate:
+        lines.append(f"📊 <b>Exchange Rate:</b> <code>{exchange_rate}</code>")
     lines.append(f"📲 <b>Send Money To:</b> <code>{send_to}</code>")
     if dep:
         lines.append(f"🧾 <b>Deposit ID:</b> <code>{dep}</code>")

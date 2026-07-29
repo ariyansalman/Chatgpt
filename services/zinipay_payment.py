@@ -165,7 +165,47 @@ def provider_status(provider: str, *, enabled_overall: bool, numbers: Optional[d
     return "enabled" if enabled_overall else "disabled"
 
 
+def resolve_bdt_amount(usd_amount: float, crypto_address: Optional[str]):
+    """Single source of truth for "what BDT amount was this user quoted?"
+
+    ZiniPay (bKash / Nagad / Rocket / Upay) transactions always keep
+    Transaction.amount in USD (the wallet currency) and stash the BDT
+    figure + chosen provider the user was actually shown at order-creation
+    time in Transaction.crypto_address, formatted as
+    "bdt:<amount>:<provider>" (see handlers/payment_handlers.py,
+    _finish_zinipay_payment).
+
+    Every screen that re-displays an existing ZiniPay order (payment
+    instructions, pending-deposit notice, TXID prompt, verification
+    screens) MUST call this helper instead of re-deriving the BDT amount
+    itself, so bKash/Nagad/Rocket all show the exact figure the user
+    locked in — never the raw USD number with a ৳ symbol slapped on it,
+    and never a second, possibly different, recalculated figure.
+
+    Falls back to a fresh USD->BDT conversion only for legacy rows created
+    before the BDT amount was stored on crypto_address.
+
+    Returns (bdt_amount, provider_or_None).
+    """
+    provider = None
+    bdt_amount = 0.0
+    if crypto_address and crypto_address.startswith("bdt:"):
+        parts = crypto_address.split(":")
+        if len(parts) > 1 and parts[1]:
+            try:
+                bdt_amount = float(parts[1])
+            except ValueError:
+                bdt_amount = 0.0
+        if len(parts) > 2 and parts[2]:
+            provider = parts[2].strip().lower()
+    if bdt_amount <= 0:
+        from services.pricing import convert_currency
+        bdt_amount = convert_currency(usd_amount, "USD", "BDT")
+    return bdt_amount, provider
+
+
 class ZiniPayService:
+
     """Service for ZiniPay verify+confirm deposit flow.
 
     Usage (in handlers):

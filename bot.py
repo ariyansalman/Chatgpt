@@ -899,7 +899,16 @@ def main():
                 # "🏠 Main Menu" on the Amount Selection screen.
                 CallbackQueryHandler(payment_handlers.topup_main_menu, pattern="^main_menu$"),
             ],
-            payment_handlers.AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, payment_handlers.topup_amount)],
+            payment_handlers.AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, payment_handlers.topup_amount),
+                # "⬅️ Back" on the Custom Amount entry screen — returns to
+                # the Amount Selection screen (Step 1), same handler/target
+                # as the Payment Method screen's Back button. Without this,
+                # the tap wasn't matched by any state handler and fell
+                # through to the catch-all fallback below, which wrongly
+                # redrew the Payment Method screen instead.
+                CallbackQueryHandler(payment_handlers.topup_back_to_amount_selection, pattern="^topup_back_to_amount$"),
+            ],
             payment_handlers.METHOD: [
                 # "Back to Menu" button on the payment-method selection screen.
                 CallbackQueryHandler(payment_handlers.topup_main_menu, pattern="^main_menu$"),

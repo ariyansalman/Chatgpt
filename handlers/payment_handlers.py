@@ -430,30 +430,24 @@ async def topup_amount_custom_prompt(update: Update, context: ContextTypes.DEFAU
     await safe_answer(query)
     context.user_data.pop('topup_method', None)
 
-    # Purely informational — reads the existing admin-configured min/max,
-    # never enforces them here; topup_amount() still does the real
-    # validation exactly as before.
-    try:
-        from utils.bot_config import cfg
-        _min_enabled = cfg.get_bool("minimum_deposit_enabled", False)
-        gmin = cfg.get_float("topup_min_amount", 1.0) if _min_enabled else 0.01
-        gmax = cfg.get_float("topup_max_amount", 0.0)
-    except Exception:
-        gmin, gmax = 0.01, 0.0
-
-    lines = [
-        "✍️ <b>Custom Deposit</b>\n",
-        "Enter the amount in USD.\n",
-        f"• Minimum: ${gmin:.2f}",
-    ]
-    lines.append(f"• Maximum: ${gmax:.2f}" if gmax else "• Maximum: No limit")
-    lines.append("\nExample:\n25")
-    text = "\n".join(lines)
+    # Premium, minimal prompt. Admin-configured min/max are no longer shown
+    # here — they still apply exactly as before, but silently: topup_amount()
+    # is completely unchanged and still validates against them and still
+    # shows the existing "❌ Minimum top-up is $X." / "❌ Maximum single
+    # top-up is $X." errors on an invalid entry, with this same Back
+    # keyboard, in this same AMOUNT state.
+    text = (
+        "💰 <b>Top Up Wallet</b>\n\n"
+        "✏️ Enter the amount in USD.\n\n"
+        "<i>Example: 5 • 10.50 • 100</i>"
+    )
 
     try:
         await query.edit_message_text(
             text,
-            reply_markup=create_cancel_keyboard(),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("⬅️ Back", callback_data="topup_back_to_amount"),
+            ]]),
             parse_mode="HTML",
         )
     except BadRequest as e:
@@ -654,8 +648,11 @@ async def _ask_amount_for_gateway(update: Update, context: ContextTypes.DEFAULT_
     hint = _amount_range_hint(gmin, gmax)
     try:
         await query.edit_message_text(
-            f"{emoji} {label} selected.\n\n💬 How much would you like to add to your wallet, in USD?{hint}\nExample: 10",
+            f"{emoji} <b>{label}</b> selected.\n\n"
+            f"✏️ Enter the amount in USD.{hint}\n\n"
+            "<i>Example: 5 • 10.50 • 100</i>",
             reply_markup=create_cancel_keyboard(),
+            parse_mode="HTML",
         )
     except BadRequest as e:
         if "Message is not modified" not in str(e):
@@ -2362,11 +2359,14 @@ async def _finish_gateway_manual_payment(
     context.user_data['manual_method_id'] = None
 
     amount_str = f"৳{bdt_amount:.2f}"
+    _rate = (bdt_amount / usd_amount) if usd_amount else 0.0
     message = pui.mobile_money_invoice(
         provider_label=gateway_label, provider_emoji=emoji,
         amount=amount_str, send_to=merchant_number,
         deposit_id=transaction_id,
         instruction="📌 Send the exact amount, then submit your TrxID.",
+        wallet_credit=_plain_usd(usd_amount),
+        exchange_rate=f"1 USD = ৳{_rate:.2f}",
     )
     # Amount and number are tap-to-copy in the message body; only Cancel here.
     keyboard = pui.invoice_keyboard(submit_cb=None, cancel_cb="cancel")
@@ -2489,19 +2489,18 @@ async def _finish_zinipay_payment(
             status=TransactionStatus.PENDING,
         ).first()
         if existing_pending:
-            # Load the provider this pending order was actually created
-            # with (stored as "bdt:<amount>:<provider>" — see the Transaction
-            # created below) so the notice always reflects what the user is
-            # really supposed to pay to, never a generic combined label.
-            # Legacy rows created before the provider was tracked
-            # ("bdt:<amount>" only) fall back to whichever provider was just
-            # requested, then the admin's default, exactly like a brand-new
-            # order would resolve it.
-            pending_provider = None
-            if existing_pending.crypto_address and existing_pending.crypto_address.startswith("bdt:"):
-                _parts = existing_pending.crypto_address.split(":")
-                if len(_parts) > 2 and _parts[2]:
-                    pending_provider = _parts[2].strip().lower()
+            # Recover the provider AND the exact BDT amount this pending
+            # order was created with (stored as "bdt:<amount>:<provider>")
+            # via the single shared helper, so the notice always reflects
+            # what the user is really supposed to pay — never a generic
+            # combined label and never a re-derived figure. Legacy rows
+            # created before the provider was tracked fall back to
+            # whichever provider was just requested, then the admin's
+            # default, exactly like a brand-new order would resolve it.
+            from services.zinipay_payment import resolve_bdt_amount
+            pending_bdt_amount, pending_provider = resolve_bdt_amount(
+                existing_pending.amount, existing_pending.crypto_address
+            )
             if not pending_provider or not numbers_by_provider.get(pending_provider):
                 pending_provider = provider
 
@@ -2515,6 +2514,7 @@ async def _finish_zinipay_payment(
                 pui.pending_deposit_card(
                     method_label=pending_label, method_emoji=pending_emoji,
                     amount=_plain_usd(existing_pending.amount),
+                    secondary_amount=f"৳{pending_bdt_amount:.2f}",
                     deposit_id=existing_pending.id,
                     expires_at=_time_remaining(existing_pending.expires_at)
                     if existing_pending.expires_at else None,
@@ -2549,6 +2549,8 @@ async def _finish_zinipay_payment(
         provider_emoji=PROVIDER_EMOJI[provider],
         amount=amount_str, send_to=send_to,
         deposit_id=tx_id, expires_at="30 Minutes",
+        wallet_credit=_plain_usd(usd_amount),
+        exchange_rate=f"1 USD = ৳{rate:.2f}",
     )
     # Only Submit + Cancel — amount/number remain copyable through native controls.
     keyboard = pui.invoice_keyboard(
@@ -2641,24 +2643,22 @@ async def zinipay_cancel_submit(update: Update, context: ContextTypes.DEFAULT_TY
             }
 
         if reopenable:
-            provider, bdt_amount_str = None, None
-            if crypto_address.startswith("bdt:"):
-                parts = crypto_address.split(":")
-                if len(parts) > 1 and parts[1]:
-                    bdt_amount_str = parts[1]
-                if len(parts) > 2 and parts[2]:
-                    provider = parts[2].strip().lower()
+            from services.zinipay_payment import resolve_bdt_amount
+            bdt_amount, provider = resolve_bdt_amount(usd_amount, crypto_address)
             send_to = numbers_by_provider.get(provider) if provider else None
 
             if send_to:
                 PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🧡", "rocket": "💜", "upay": "🔵"}
                 PROVIDER_LABEL = {"bkash": "bKash", "nagad": "Nagad", "rocket": "Rocket", "upay": "Upay"}
-                amount_str = f"৳{bdt_amount_str}" if bdt_amount_str else _plain_usd(usd_amount)
+                amount_str = f"৳{bdt_amount:.2f}"
+                _rate = (bdt_amount / usd_amount) if usd_amount else 0.0
                 message = pui.mobile_money_invoice(
                     provider_label=PROVIDER_LABEL.get(provider, "Mobile Banking"),
                     provider_emoji=PROVIDER_EMOJI.get(provider, "🇧🇩"),
                     amount=amount_str, send_to=send_to,
                     deposit_id=deposit_id,
+                    wallet_credit=_plain_usd(usd_amount),
+                    exchange_rate=f"1 USD = ৳{_rate:.2f}",
                 )
                 keyboard = pui.invoice_keyboard(
                     submit_cb=f"zinipay_submit:{deposit_id}",
@@ -2746,23 +2746,13 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
 
         usd_amount = tx.amount
         # Recover the expected BDT amount (and the provider the user was
-        # shown — "bdt:<amount>:<provider>") stored at order-creation time.
-        # Falls back gracefully for old rows that only stored "bdt:<amount>".
-        # If the field is missing entirely (old row or edge case) fall back
-        # to recalculating the amount.
-        bdt_amount: float = 0.0
-        selected_provider: Optional[str] = None
-        if tx.crypto_address and tx.crypto_address.startswith("bdt:"):
-            parts = tx.crypto_address.split(":")
-            try:
-                bdt_amount = float(parts[1])
-            except (IndexError, ValueError):
-                pass
-            if len(parts) > 2 and parts[2]:
-                selected_provider = parts[2]
-        if bdt_amount <= 0:
-            from services.pricing import get_usd_to_bdt_rate as _gbdt
-            bdt_amount = round(usd_amount * _gbdt(), 2)
+        # shown) stored at order-creation time — see
+        # services/zinipay_payment.py:resolve_bdt_amount, the single helper
+        # every ZiniPay screen uses for this so bKash/Nagad/Rocket always
+        # agree on the figure. Falls back gracefully for old rows that only
+        # stored "bdt:<amount>" or nothing at all.
+        from services.zinipay_payment import resolve_bdt_amount
+        bdt_amount, selected_provider = resolve_bdt_amount(usd_amount, tx.crypto_address)
 
     # ---- Step 1: Auto-verify — retried automatically several times before
     # this ever reaches manual review (services/payment_workflow.py). ----
@@ -3845,6 +3835,25 @@ def _parse_bybit_meta(crypto_address: str):
     return payment_type, network
 
 
+def _bybit_pending_display(crypto_address: Optional[str]):
+    """Resolve (method_label, method_emoji, network_label) for a PENDING
+    Bybit-backed deposit for display purposes only.
+
+    ``PaymentMethod.BYBIT_PAY`` backs two different user-selected payment
+    methods — UID Transfer (real Bybit Pay) and on-chain crypto network
+    deposits (TRC20/BEP20/ERC20/LTC/...) — distinguished only by the
+    packed ``crypto_address`` meta string (see ``_bybit_meta`` /
+    ``_parse_bybit_meta``). "Bybit Pay" must never be shown for the
+    latter: on-chain deposits display as "Crypto" with the actual
+    network the user selected. Never used for routing/business logic —
+    presentation only.
+    """
+    payment_type, network = _parse_bybit_meta(crypto_address or "")
+    if payment_type == "onchain" and network:
+        return "Crypto", "🪙", pui.crypto_network_label(network)
+    return "Bybit Pay", "🔷", None
+
+
 def _bybit_type_keyboard(tx_id: int) -> InlineKeyboardMarkup:
     """Payment-type picker (UID Transfer / On-chain) for an already-created
     Bybit Pay order (``tx_id`` is a real, PENDING Transaction/Deposit ID by
@@ -3897,9 +3906,10 @@ async def _finish_bybit_payment(update: Update, context: ContextTypes.DEFAULT_TY
             user_id=user.id, payment_method=PaymentMethod.BYBIT_PAY, status=TransactionStatus.PENDING,
         ).first()
         if existing_pending:
+            _pm_label, _pm_emoji, _pm_network = _bybit_pending_display(existing_pending.crypto_address)
             await update.message.reply_text(
                 pui.pending_deposit_card(
-                    method_label="Bybit Pay", method_emoji="🔷",
+                    method_label=_pm_label, method_emoji=_pm_emoji, network=_pm_network,
                     amount=_plain_usd(existing_pending.amount),
                     deposit_id=existing_pending.id, created_at=existing_pending.created_at,
                     expires_at=_time_remaining(existing_pending.expires_at)
@@ -3987,9 +3997,10 @@ async def _finish_bybit_onchain_direct(update: Update, context: ContextTypes.DEF
             user_id=user.id, payment_method=PaymentMethod.BYBIT_PAY, status=TransactionStatus.PENDING,
         ).first()
         if existing_pending:
+            _pm_label, _pm_emoji, _pm_network = _bybit_pending_display(existing_pending.crypto_address)
             await update.message.reply_text(
                 pui.pending_deposit_card(
-                    method_label="Bybit Pay", method_emoji="🔷",
+                    method_label=_pm_label, method_emoji=_pm_emoji, network=_pm_network,
                     amount=_plain_usd(existing_pending.amount),
                     deposit_id=existing_pending.id, created_at=existing_pending.created_at,
                     expires_at=_time_remaining(existing_pending.expires_at)
@@ -4338,14 +4349,10 @@ async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT
         return ConversationHandler.END
 
     if method == PaymentMethod.ZINIPAY:
-        from services.zinipay_payment import ZiniPayService
+        from services.zinipay_payment import ZiniPayService, resolve_bdt_amount
         PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🧡", "rocket": "💜", "upay": "🔵"}
         PROVIDER_LABEL = {"bkash": "bKash", "nagad": "Nagad", "rocket": "Rocket", "upay": "Upay"}
-        pending_provider = None
-        if crypto_address and crypto_address.startswith("bdt:"):
-            _parts = crypto_address.split(":")
-            if len(_parts) > 2 and _parts[2]:
-                pending_provider = _parts[2].strip().lower()
+        bdt_amount, pending_provider = resolve_bdt_amount(usd_amount, crypto_address)
         with get_db_session() as session:
             from database.models import PaymentGatewayConfig as _PGC
             pgc = session.query(_PGC).filter_by(gateway="zinipay").first()
@@ -4358,7 +4365,8 @@ async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT
         if not pending_provider or not numbers_by_provider.get(pending_provider):
             pending_provider = next((p for p, n in numbers_by_provider.items() if n), pending_provider)
         send_to = numbers_by_provider.get(pending_provider)
-        _bdt_amount = f"৳{usd_amount:.2f}"
+        _bdt_amount = f"৳{bdt_amount:.2f}"
+        _rate = (bdt_amount / usd_amount) if usd_amount else 0.0
         expires_str = _time_remaining(expires_at) if expires_at else None
         if send_to:
             message = pui.mobile_money_invoice(
@@ -4366,6 +4374,8 @@ async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT
                 provider_emoji=PROVIDER_EMOJI.get(pending_provider, "🇧🇩"),
                 amount=_bdt_amount, send_to=send_to,
                 deposit_id=tx_id, expires_at=expires_str,
+                wallet_credit=_plain_usd(usd_amount),
+                exchange_rate=f"1 USD = ৳{_rate:.2f}",
             )
         else:
             message = pui.invoice_card(
@@ -4813,7 +4823,8 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                             await context.bot.send_message(
                                 chat_id=admin_id,
                                 text=pui.admin_review_card(
-                                    gateway_key="bybit_pay",
+                                    gateway_key="bybit_pay" if is_uid else None,
+                                    gateway_label_override=None if is_uid else "Crypto",
                                     amount=f"{expected_amount} {verify_currency}",
                                     order_id=tx_id,
                                     txn_id=txid_raw,
@@ -4821,7 +4832,7 @@ async def bybit_txid_received(update: Update, context: ContextTypes.DEFAULT_TYPE
                                     username=update.effective_user.username,
                                     user_id=telegram_id,
                                     status_key="pending_review",
-                                    extra=[("🌐", "Network", f"{payment_type}/{network}")] if payment_type else (),
+                                    network=(pui.crypto_network_label(network) if network else None) if not is_uid else None,
                                     verification_status="failed",
                                     verification_reason=reason,
                                 ),
