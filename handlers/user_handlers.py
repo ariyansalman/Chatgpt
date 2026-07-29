@@ -545,10 +545,10 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
         always part of the premium row format regardless of this flag.
 
     One product per button, premium marketplace format:
-        {emoji} {Product Name} • ${price} • Stock: {stock}
+        {emoji} {display_name} | ${price:.2f} | 📦 {stock}
     Out-of-stock rows always show a ❌ leading icon (via ``catalog_stock_emoji``)
-    instead of the product's configured emoji, and read "• Out of Stock" in
-    place of the stock count, so availability stays scannable at a glance.
+    instead of the product's configured emoji, and read "📦 0" in place of
+    the stock count, so availability stays scannable at a glance.
     """
     keyboard = []
     for r in rows:
@@ -569,8 +569,11 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
         if nav_row:
             keyboard.append(nav_row)
 
-    # Bottom row: Main Menu only — the browser never offers any other exit.
-    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
+    # Bottom row: Refresh + Main Menu.
+    keyboard.append([
+        InlineKeyboardButton("🔄 Refresh", callback_data="products_refresh"),
+        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
+    ])
 
     return keyboard
 
@@ -596,7 +599,7 @@ async def render_all_products_catalog(query, context, telegram_id,
         ]])
         await _safe_edit_catalog(
             query,
-            "🛍️ <b>Available Products</b>\n\n🔴 The product list is currently unavailable.",
+            "🛍️ Live Digital Products ✨\n\n🔴 The product list is currently unavailable.",
             kb,
         )
         return
@@ -607,7 +610,7 @@ async def render_all_products_catalog(query, context, telegram_id,
         ])
         await _safe_edit_catalog(
             query,
-            "🛍️ <b>Available Products</b>\n\n🟡 The product list is currently under maintenance.\nPlease check back shortly.",
+            "🛍️ Live Digital Products ✨\n\n🟡 The product list is currently under maintenance.\nPlease check back shortly.",
             kb,
         )
         return
@@ -649,7 +652,7 @@ async def render_all_products_catalog(query, context, telegram_id,
     rows = await run_db(_load_active_products, telegram_id)
 
     if not rows:
-        text = "🛍️ <b>Available Products</b>\n\n📭 No products are currently available.\nPlease check back later."
+        text = "🛍️ Live Digital Products ✨\n\n📭 No products are currently available.\nPlease check back later."
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
         ])
@@ -689,7 +692,7 @@ async def render_all_products_catalog(query, context, telegram_id,
         context.user_data["products_current_page"] = page
 
     # ── Build header text ─────────────────────────────────────────────────────
-    header_lines = ["🛍️ <b>Available Products</b>"]
+    header_lines = ["🛍️ Live Digital Products ✨"]
     if show_counter:
         header_lines.append(f"📦 Products: <b>{total_count}</b>")
     text = "\n".join(header_lines)
@@ -902,8 +905,8 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
 
             # Premium marketplace row format matching build_all_products_keyboard
             # and the search results list:
-            #   {emoji} {Product Name} • ${price} • Stock: {stock}
-            #   {emoji} {Product Name} • ${price} • Out of Stock   (OOS)
+            #   {emoji} {display_name} | ${price:.2f} | 📦 {stock}
+            #   {emoji} {display_name} | ${price:.2f} | 📦 0        (OOS)
             # The product's configured emoji is used automatically; ❌
             # overrides it whenever stock is 0. Names are shown in full and
             # are only ever shortened (with a trailing "…") if the full
@@ -958,12 +961,15 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
         if pagination_row:
             keyboard.append(pagination_row)
 
-    # Refresh button removed -- Back to Menu is the only utility action.
+    # Refresh button intentionally omitted here — "products_refresh" re-renders
+    # the flat catalog (render_all_products_catalog), not this category-filtered
+    # view, so adding it would change navigation behavior. Main Menu remains
+    # the only exit action on this legacy category screen.
     keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
     total_count = len(rows)
 
-    header_lines = ["🛍️ <b>Available Products</b>", f"📦 Products: <b>{total_count}</b>"]
+    header_lines = ["🛍️ Live Digital Products ✨", f"📦 Products: <b>{total_count}</b>"]
     text = "\n".join(header_lines)
 
     try:

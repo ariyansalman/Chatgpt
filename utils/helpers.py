@@ -187,20 +187,28 @@ def format_product_button_text(emoji: str, name: str, price_display: str,
                                 stock: int, max_len: int = 64) -> str:
     """Build one premium-marketplace catalog/search row's inline button label:
 
-        "{emoji} {name} • {price} • Stock: {stock}"
-        "{emoji} {name} • {price} • Out of Stock"   (when stock <= 0)
+        "{emoji} {display_name} | {price} | 📦 {stock}"
 
-    Only ``name`` is ever shortened (with a trailing "…"), and only if the
-    full label would otherwise exceed Telegram's ~64-character inline
-    button limit — emoji, price, and stock/availability always stay fully
-    visible. Slicing happens on Python `str` code points, which is safe for
-    multi-byte/multilingual names (Bengali, etc.) and won't corrupt
-    characters, though very long combined-emoji sequences in a name could
-    in principle be split — an acceptable, rare trade-off.
+    ``price_display`` is expected to already be a fully-formatted, two-decimal
+    price string (e.g. "$3.00") — this function only arranges it into the
+    row layout and never re-derives pricing.
+
+    Out-of-stock rows (``stock`` is ``None`` or ``<= 0``) always read
+    "📦 0" — the caller is expected to have already swapped ``emoji`` for
+    the ❌ override via :func:`catalog_stock_emoji`.
+
+    Only ``name`` is ever shortened, and only into a short *display* name
+    for this button (with a trailing "…") when the full label would
+    otherwise exceed Telegram's ~64-character inline button limit — emoji,
+    price, and stock always stay fully visible, and the underlying
+    ``Product.name`` in the database is never touched. Slicing happens on
+    Python `str` code points, which is safe for multi-byte/multilingual
+    names (Bengali, etc.) and won't corrupt characters, though very long
+    combined-emoji sequences in a name could in principle be split — an
+    acceptable, rare trade-off.
     """
-    available = stock is not None and stock > 0
-    availability = f"Stock: {stock}" if available else "Out of Stock"
-    suffix = f" • {price_display} • {availability}"
+    stock_value = stock if (stock is not None and stock > 0) else 0
+    suffix = f" | {price_display} | 📦 {stock_value}"
     prefix = f"{emoji} " if emoji else ""
     budget = max_len - len(prefix) - len(suffix)
     if budget < 4:
