@@ -171,7 +171,7 @@ def customer_display(username: Optional[str], telegram_id) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Real, destructive "❌ Cancel Deposit" — distinct from every "⬅️ Back" row
+# Real, destructive "❌ Cancel" — distinct from every "⬅️ Back" row
 # in this file. Back is pure navigation and never touches a pending
 # deposit (see handlers/payment_handlers.py). This button is the ONLY
 # action in the whole Add Funds flow that actually cancels the
@@ -188,15 +188,21 @@ DEPOSIT_CANCEL_CALLBACK = "deposit_cancel"
 def with_deposit_cancel(
     keyboard: InlineKeyboardMarkup,
     cancel_cb: str = DEPOSIT_CANCEL_CALLBACK,
-    label: str = "❌ Cancel Deposit",
+    label: str = "❌ Cancel",
 ) -> InlineKeyboardMarkup:
-    """Append a real "❌ Cancel Deposit" row to an existing keyboard,
+    """Append a real "❌ Cancel" row to an existing keyboard,
     directly above its last row (conventionally a "⬅️ Back" / "🏠 Main
     Menu" row) so Cancel always sits next to, never on top of, existing
     navigation. This never removes, relabels, or repurposes any Back
     button — Back keeps navigating exactly as before; only this row
     actually cancels the deposit (see
     handlers/payment_handlers.py:deposit_cancel).
+
+    This is the ONLY place the destructive-cancel button label is
+    defined — every screen that shows Cancel (the active invoice/payment
+    page, every Submit Transaction/Order ID prompt, the currency/network
+    pickers, and the Pending Deposit notice) renders it through this one
+    function so the label can never drift between screens.
     """
     rows = [list(r) for r in keyboard.inline_keyboard]
     cancel_row = [InlineKeyboardButton(label, callback_data=cancel_cb)]
@@ -619,7 +625,7 @@ def pending_deposit_keyboard(
     Back — always in this order, identical for every gateway.
 
     This is the ONE dedicated "Cancel Payment" menu in the payment flow:
-    tapping "❌ Cancel Deposit" here is a deliberate, explicit choice to end
+    tapping "❌ Cancel" here is a deliberate, explicit choice to end
     the pending deposit (see ``handlers/payment_handlers.py:
     cancel_pending_deposit``), unlike every other Back button in the
     payment system, which never cancels anything. ``back_cb`` — a plain
@@ -627,7 +633,7 @@ def pending_deposit_keyboard(
     """
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("▶️ Continue Deposit", callback_data=continue_cb)],
-        [InlineKeyboardButton("❌ Cancel Deposit", callback_data=cancel_cb)],
+        [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
         [InlineKeyboardButton("⬅️ Back", callback_data=back_cb)],
     ])
 

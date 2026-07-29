@@ -995,7 +995,7 @@ def main():
         },
         fallbacks=[
             CallbackQueryHandler(payment_handlers.pending_deposit_continue, pattern="^pending_continue:\\d+$"),
-            # "❌ Cancel Deposit" on the Pending Deposit notice — the one
+            # "❌ Cancel" on the Pending Deposit notice — the one
             # dedicated, explicit cancel action in the payment flow; unlike
             # "^back_payment_methods$" below (pure Back navigation, its own
             # dedicated callback name), this one really
@@ -1003,7 +1003,7 @@ def main():
             # payment_handlers.cancel_pending_deposit /
             # services/payment_ui.py:pending_deposit_keyboard.
             CallbackQueryHandler(payment_handlers.cancel_pending_deposit, pattern="^cancel_pending_deposit$"),
-            # "❌ Cancel Deposit" — the same real, destructive cancel, now
+            # "❌ Cancel" — the same real, destructive cancel, now
             # also shown on every other deposit screen (Amount Selection,
             # Payment Method Selection, Crypto Networks, Mobile Banking,
             # the active invoice/payment page, Submit Transaction/Order ID
@@ -1105,7 +1105,7 @@ def main():
         },
         fallbacks=[
             CallbackQueryHandler(payment_handlers.binance_cancel_submit, pattern="^binance_cancel_submit$"),
-            # Real "❌ Cancel Deposit" — see payment_handlers.deposit_cancel.
+            # Real "❌ Cancel" — see payment_handlers.deposit_cancel.
             CallbackQueryHandler(payment_handlers.deposit_cancel, pattern="^deposit_cancel$"),
             CommandHandler("cancel", cancel_command),
         ],
@@ -1129,7 +1129,7 @@ def main():
         },
         fallbacks=[
             CallbackQueryHandler(payment_handlers.bybit_cancel_submit, pattern="^bybit_cancel_submit$"),
-            # Real "❌ Cancel Deposit" — see payment_handlers.deposit_cancel.
+            # Real "❌ Cancel" — see payment_handlers.deposit_cancel.
             CallbackQueryHandler(payment_handlers.deposit_cancel, pattern="^deposit_cancel$"),
             CommandHandler("cancel", cancel_command),
         ],
@@ -1153,7 +1153,7 @@ def main():
         },
         fallbacks=[
             CallbackQueryHandler(payment_handlers.zinipay_cancel_submit, pattern="^zinipay_cancel_submit$"),
-            # Real "❌ Cancel Deposit" — see payment_handlers.deposit_cancel.
+            # Real "❌ Cancel" — see payment_handlers.deposit_cancel.
             CallbackQueryHandler(payment_handlers.deposit_cancel, pattern="^deposit_cancel$"),
             CommandHandler("cancel", cancel_command),
         ],
@@ -1564,12 +1564,12 @@ def main():
 
     # Global cancel handler for payment pages (outside conversation)
     application.add_handler(CallbackQueryHandler(payment_handlers.cancel_payment_page, pattern="^back_payment_methods$"))
-    # Dedicated, explicit "❌ Cancel Deposit" action from the Pending Deposit
+    # Dedicated, explicit "❌ Cancel" action from the Pending Deposit
     # notice — same dual registration (conversation fallback above + this
     # standalone one) as cancel_payment_page/topup_back_to_methods, since
     # the notice can be shown with or without an active conversation.
     application.add_handler(CallbackQueryHandler(payment_handlers.cancel_pending_deposit, pattern="^cancel_pending_deposit$"))
-    # Real "❌ Cancel Deposit" — shown on every deposit screen (Amount
+    # Real "❌ Cancel" — shown on every deposit screen (Amount
     # Selection, Payment Method Selection, Crypto Networks, Mobile Banking,
     # the active invoice/payment page, Submit Transaction/Order ID
     # prompts). Same dual registration as above: a conversation fallback

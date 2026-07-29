@@ -1,23 +1,28 @@
-"""Section 9 — dynamic quantity preset builder.
+"""Section 9 — quantity preset builder for the Quantity Selection screen.
 
-Given the real available stock plus product/variant min/max constraints,
-compute the effective [lo, hi] quantity range, then present it through the
-standardized "Intelligent Quantity Buttons" UI:
-
-    Stock 1–4     1 2 / 3 4
-    Stock 5–9     1 2 3 / 5 Max
-    Stock 10–30   1 2 3 5 / 10 15 20 Max
-    Stock 30+     1 2 3 5 / 10 25 50 Max
+``build_keyboard()`` renders the standardized, marketplace-wide Quantity
+Selection UI: a fixed preset ladder — 1, 2, 3, 5, 10, 15, 20, 25 — with any
+preset above the effective stock upper-bound hidden, followed by
+"✏️ Custom Quantity" and "⬅️ Back". Given the real available stock plus
+product/variant min/max constraints, the effective [lo, hi] quantity range
+is computed first (unchanged constraint math), then only presets that fall
+within it are shown.
 
 Rules:
 * Never present a quantity above real availability (or below the minimum).
 * Respect Product.min_quantity / Product.max_quantity when set.
 * Reusable File / Manual / Service / Pre-Order / Subscription products
   are not stock-limited; fall back to a sensible max.
-* If a tier's preset would exceed the effective max, it is dropped and a
-  single "Max" button (representing the true upper bound) is shown instead
-  of an impossible quantity.
-* Include a "Custom" entry as a caller-controlled string sentinel.
+
+The older tiered "Max"-button scheme below (``_tiered_display``) and the
+flat legacy ladder (``build_presets``) are kept only for callers that still
+use them directly; ``build_keyboard`` — the one function the live Quantity
+Selection screen uses — does not call either.
+
+    Stock 1–4     1 2 / 3 4
+    Stock 5–9     1 2 3 / 5 Max
+    Stock 10–30   1 2 3 5 / 10 15 20 Max
+    Stock 30+     1 2 3 5 / 10 25 50 Max
 
 This module is UI-presentation only — the constraint math (min/max
 quantity, unlimited product types, availability cap) is unchanged from the
@@ -39,6 +44,58 @@ _UNLIMITED_TYPES = {
     "manual_delivery", "service", "pre_order", "subscription",
     "auto_generated", "external_delivery",
 }
+
+# Presentation-only singular unit word shown on the Quantity Selection
+# screen's price line (e.g. "$25.00 / Code"). Purely a display label
+# derived from the product's existing, unchanged ``product_type`` — it
+# never affects delivery, stock counting, or any other business logic.
+_UNIT_LABELS: dict = {
+    "key":               "Key",
+    "file":              "File",
+    "redeem_link":       "Code",
+    "account_login":     "Account",
+    "downloadable_file": "File",
+    "auto_generated":    "Code",
+    "manual_delivery":   "Item",
+    "preorder":          "Item",
+    "subscription":      "License",
+    "bundle":            "Bundle",
+    "service":           "Service",
+    "voucher":           "Code",
+    "external_delivery": "Item",
+}
+
+
+def unit_label(product_type) -> str:
+    """Return the display unit word for a product type (e.g. "Key",
+    "Account", "Code"), falling back to "Unit" for anything unmapped."""
+    key = getattr(product_type, "value", str(product_type or "")).lower()
+    return _UNIT_LABELS.get(key, "Unit")
+
+
+def build_message(product_name: str, price, product_type) -> str:
+    """The one standardized Quantity Selection screen text, identical in
+    shape for every product in the store:
+
+        ⚡ {Product Name}
+
+        💶 Price
+        ${price} / {unit}
+
+        📦 Select Quantity
+
+    Presentation-only — ``price`` is rendered exactly as given (already
+    validated/priced elsewhere); this never recomputes or alters it.
+    """
+    unit = unit_label(product_type)
+    return (
+        f"⚡ {product_name}\n"
+        f"\n"
+        f"💶 Price\n"
+        f"${float(price):.2f} / {unit}\n"
+        f"\n"
+        f"📦 Select Quantity"
+    )
 
 
 def _effective_bounds(product: Product,
@@ -119,17 +176,19 @@ def build_keyboard(product: Product,
     Numeric presets fire ``qty_preset_<product_id>_<qty>``; the purchase
     handler needs no changes. A ``✏️ Custom Quantity`` button
     (``qty_custom_<product_id>``) always follows, then a final row with
-    ``⬅️ Back``.
+    ``⬅️ Back``. No Cancel button here — no order or payment exists yet
+    at this screen.
 
-    Preset ladder: [1, 2, 3, 4, 5, 10, 15, 20] — any entry exceeding the
-    effective stock upper-bound is hidden. Displayed 4 per row.
+    Preset ladder: [1, 2, 3, 5, 10, 15, 20, 25] — any entry exceeding the
+    effective stock upper-bound is hidden (unchanged constraint logic, see
+    ``_effective_bounds``). Displayed 4 per row.
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup  # lazy import
 
     pid = product_id or product.id
     _lo, hi = _effective_bounds(product, available=available)
 
-    _PRESETS = [1, 2, 3, 4, 5, 10, 15, 20]
+    _PRESETS = [1, 2, 3, 5, 10, 15, 20, 25]
     kept = [q for q in _PRESETS if q <= hi]
 
     buttons = [
@@ -142,7 +201,7 @@ def build_keyboard(product: Product,
     for i in range(0, len(buttons), row_size):
         kb.append(buttons[i:i + row_size])
 
-    kb.append([InlineKeyboardButton("✍️ Custom Quantity", callback_data=f"qty_custom_{pid}")])
+    kb.append([InlineKeyboardButton("✏️ Custom Quantity", callback_data=f"qty_custom_{pid}")])
     kb.append([InlineKeyboardButton("⬅️ Back", callback_data="back_to_products")])
     return InlineKeyboardMarkup(kb)
 

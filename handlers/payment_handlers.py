@@ -48,15 +48,17 @@ def create_cancel_keyboard():
     handlers/admin_conversations.py and handlers/dispute_handlers.py still
     use for their own, unrelated, genuinely-destructive Cancel actions.
 
-    Since every call site is inside the Add Funds flow, this also carries
-    a real, destructive "❌ Cancel Deposit" row (``deposit_cancel`` —
-    see ``services/payment_ui.py:with_deposit_cancel``) alongside the
-    unchanged "⬅️ Back" button, so the user always has a genuine way to
-    abandon the deposit here too, not just navigate.
+    Every call site of this builder fires BEFORE a Deposit ID/Transaction
+    row exists — the amount-entry prompts, every amount-validation-error
+    retry, and every "this gateway isn't available" notice all happen
+    prior to payment creation — so per the navigation spec this shows only
+    "⬅️ Back", never a destructive "❌ Cancel" row. Once a Deposit ID does
+    exist, the payment screens built after it (invoice/payment pages,
+    currency/network pickers, Submit Transaction/Order ID prompts) render
+    through ``services/payment_ui.py:with_deposit_cancel`` instead, which
+    is the only place that ever adds the real Cancel button.
     """
-    return pui.with_deposit_cancel(
-        InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_payment_methods")]])
-    )
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_payment_methods")]])
 
 
 def _plain_usd(amount: float) -> str:
@@ -368,7 +370,11 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # If nothing is configured at all, skip straight to the same "no
     # payment methods available" message the method screen would show —
     # no point asking for an amount first in that case.
-    text, keyboard, is_empty = _build_topup_method_screen()
+    # _build_topup_method_screen() instantiates every gateway service
+    # (Bybit/Binance/Cryptomus/Heleket/NOWPayments/ZiniPay/...), each doing
+    # its own DB read — run it on a worker thread so it never blocks the
+    # event loop for other users.
+    text, keyboard, is_empty = await run_db(_build_topup_method_screen)
     if is_empty:
         try:
             await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -404,7 +410,7 @@ async def topup_amount_selected(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data.pop('topup_method', None)
     context.user_data.pop('zinipay_provider', None)
 
-    text, keyboard, is_empty = _build_topup_method_screen(amount=amount)
+    text, keyboard, is_empty = await run_db(_build_topup_method_screen, amount=amount)
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -463,7 +469,7 @@ async def topup_show_crypto_networks(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await safe_answer(query)
 
-    text, keyboard = _build_crypto_networks_screen()
+    text, keyboard = await run_db(_build_crypto_networks_screen)
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -479,7 +485,7 @@ async def topup_show_mobile_money(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await safe_answer(query)
 
-    text, keyboard = _build_mobile_money_screen()
+    text, keyboard = await run_db(_build_mobile_money_screen)
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -495,7 +501,7 @@ async def topup_back_to_methods(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await safe_answer(query)
 
-    text, keyboard, is_empty = _build_topup_method_screen(amount=context.user_data.get('topup_amount'))
+    text, keyboard, is_empty = await run_db(_build_topup_method_screen, amount=context.user_data.get('topup_amount'))
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -3110,12 +3116,19 @@ async def zinipay_txid_received(update: Update, context: ContextTypes.DEFAULT_TY
 # only handles the Telegram-facing order creation / TXID submission UX.
 
 def _binance_currency_keyboard(tx_id: int) -> InlineKeyboardMarkup:
+    """Currency picker shown for an already-created Binance Pay order
+    (``tx_id`` is a real, PENDING Transaction/Deposit ID by this point —
+    see ``_finish_binance_payment``), so per the navigation spec it gets
+    the real, destructive "❌ Cancel" row alongside "⬅️ Back" — see
+    ``services/payment_ui.py:with_deposit_cancel``."""
     svc = BinancePayService()
     row = [
         InlineKeyboardButton(c, callback_data=f"binance_currency:{tx_id}:{c}")
         for c in svc.allowed_currencies
     ]
-    return InlineKeyboardMarkup([row, [InlineKeyboardButton("⬅️ Back", callback_data="back_payment_methods")]])
+    return pui.with_deposit_cancel(
+        InlineKeyboardMarkup([row, [InlineKeyboardButton("⬅️ Back", callback_data="back_payment_methods")]])
+    )
 
 
 async def _finish_binance_payment(update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -3833,21 +3846,28 @@ def _parse_bybit_meta(crypto_address: str):
 
 
 def _bybit_type_keyboard(tx_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    """Payment-type picker (UID Transfer / On-chain) for an already-created
+    Bybit Pay order (``tx_id`` is a real, PENDING Transaction/Deposit ID by
+    this point), so it gets the real "❌ Cancel" row alongside Back — see
+    ``services/payment_ui.py:with_deposit_cancel``."""
+    return pui.with_deposit_cancel(InlineKeyboardMarkup([
         [InlineKeyboardButton("🔹 UID Transfer", callback_data=f"bybit_type:{tx_id}:uid")],
         [InlineKeyboardButton("🔹 On-chain Deposit", callback_data=f"bybit_type:{tx_id}:onchain")],
         [InlineKeyboardButton("⬅️ Back", callback_data="back_payment_methods")],
-    ])
+    ]))
 
 
 def _bybit_network_keyboard(tx_id: int, svc: "BybitPayService") -> InlineKeyboardMarkup:
+    """Network picker (TRC20/BEP20/...) for the same already-created Bybit
+    Pay order — same reasoning as ``_bybit_type_keyboard`` above, so it
+    also gets the real "❌ Cancel" row."""
     rows = [
         [InlineKeyboardButton(net, callback_data=f"bybit_network:{tx_id}:{net}")]
         for net in svc.networks_with_wallets()
     ]
     rows.append([InlineKeyboardButton("🔙 Back", callback_data=f"bybit_back_type:{tx_id}")])
     rows.append([InlineKeyboardButton("⬅️ Back to Payment Methods", callback_data="back_payment_methods")])
-    return InlineKeyboardMarkup(rows)
+    return pui.with_deposit_cancel(InlineKeyboardMarkup(rows))
 
 
 async def _finish_bybit_payment(update: Update, context: ContextTypes.DEFAULT_TYPE, usd_amount: float):
@@ -4235,8 +4255,9 @@ async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT
     with get_db_session() as session:
         tx = session.query(Transaction).filter_by(id=tx_id).first()
         if not tx:
-            text, keyboard, is_empty = _build_topup_method_screen(
-                amount=context.user_data.get('topup_amount')
+            text, keyboard, is_empty = await run_db(
+                _build_topup_method_screen,
+                amount=context.user_data.get('topup_amount'),
             )
             await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
             return ConversationHandler.END if is_empty else METHOD
@@ -5788,7 +5809,7 @@ _PAYMENT_SESSION_KEYS = (
     'manual_req_txid',
 )
 
-# Everything cleared by a REAL "❌ Cancel Deposit" tap (see ``deposit_cancel``
+# Everything cleared by a REAL "❌ Cancel" tap (see ``deposit_cancel``
 # below) — every key in ``_PAYMENT_SESSION_KEYS`` above, PLUS ``topup_amount``.
 # Unlike Back, a genuine Cancel ends the whole deposit attempt, not just the
 # current mini-step within it, so the previously-picked amount must NOT
@@ -5797,7 +5818,7 @@ _DEPOSIT_CANCEL_KEYS = _PAYMENT_SESSION_KEYS + ('topup_amount',)
 
 
 async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """"❌ Cancel Deposit" tapped from ANY screen where the user is actively
+    """"❌ Cancel" tapped from ANY screen where the user is actively
     creating or completing a deposit — Amount Selection, Payment Method
     Selection, Crypto Networks, Mobile Banking, an active invoice/payment
     page, or a Submit Transaction/Order ID prompt (see
@@ -5871,7 +5892,7 @@ async def _redraw_as_payment_method_screen(update: Update, context: ContextTypes
     so callers driving a ConversationHandler can end it appropriately.
     """
     query = update.callback_query
-    text, keyboard, is_empty = _build_topup_method_screen(amount=context.user_data.get('topup_amount'))
+    text, keyboard, is_empty = await run_db(_build_topup_method_screen, amount=context.user_data.get('topup_amount'))
 
     deleted = False
     try:
@@ -5924,7 +5945,7 @@ async def _go_back_to_methods(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def _cancel_pending_deposit_and_go_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Shared behavior for the ONE dedicated, explicit "❌ Cancel Deposit"
+    """Shared behavior for the ONE dedicated, explicit "❌ Cancel"
     action (the Pending Deposit notice's Continue / Cancel / Back menu —
     see ``services/payment_ui.py:pending_deposit_keyboard``).
 
@@ -6005,7 +6026,7 @@ async def cancel_payment_page(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def cancel_pending_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """"❌ Cancel Deposit" tapped on the Pending Deposit notice (see
+    """"❌ Cancel" tapped on the Pending Deposit notice (see
     ``services/payment_ui.py:pending_deposit_keyboard``).
 
     Delegates to the shared ``deposit_cancel`` — the same real, destructive
@@ -6707,22 +6728,15 @@ async def buy_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Skip quantity input, go straight to confirmation
         return await show_purchase_confirmation(update, context)
 
-    # For key products, show dynamic quantity preset keyboard
-    message = (
-        f"🛒 {product_name}\n"
-        f"\n"
-        f"💰 Price: {format_price(product_price)}\n"
-        f"📦 Available Stock: {available}\n"
-        f"\n"
-        f"Select Quantity:"
-    )
+    # For key products, show the standardized quantity preset keyboard
+    from services.quantity_presets import build_message as _build_qty_msg
+    message = _build_qty_msg(product_name, product_price, product_type)
 
-    # Build dynamic preset keyboard from quantity_presets service (already
-    # built inside the DB thread above, since it needs the ORM product row)
-
-    # Product screen keeps only quantity presets + ❌ Cancel (no Wishlist /
-    # Price-Drop-Alert clutter) — qty_markup from quantity_presets.build_keyboard
-    # already provides exactly that.
+    # qty_markup was already built inside the DB thread above (needs the
+    # ORM product row) via services.quantity_presets.build_keyboard — the
+    # one standardized quantity keyboard used by every product in the
+    # store: fixed preset row(s), ✏️ Custom Quantity, ⬅️ Back. No Cancel
+    # button on this screen — no order or payment has been created yet.
 
     # If coming from a photo message, delete it and create new text message
     if query.message.photo:

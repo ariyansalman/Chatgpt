@@ -28,7 +28,7 @@ from telegram import (
 )
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
-from database import get_db_session
+from database import get_db_session, run_db
 from database.models import (
     Cart, Coupon, CouponRedemption, DiscountType,
     Product, ProductVariant, ProductKey, StockReservation, User, ProductType,
@@ -96,11 +96,11 @@ def _revalidate_coupon_by_id(session, coupon_id: int, user_pk: int,
     return round(min(discount, subtotal), 2), ""
 
 
-async def cart_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    if q: await q.answer()
-    tg_id = update.effective_user.id
-    lang = get_user_language(tg_id)
+def _load_cart_view_data(tg_id: int, lang: str):
+    """Runs on a worker thread via run_db — same query, same per-row
+    product/variant access, same text/button building as before, just
+    off the asyncio event loop so a slow DB round trip no longer stalls
+    every other user's button taps."""
     lines = [t("cart.title", lang) + "\n"]
     kb: list[list[InlineKeyboardButton]] = []
     subtotal = 0.0
@@ -132,6 +132,15 @@ async def cart_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     InlineKeyboardButton("+", callback_data=f"cart_inc_{row.id}"),
                     InlineKeyboardButton("🗑️", callback_data=f"cart_rm_{row.id}"),
                 ])
+    return lines, kb, subtotal
+
+
+async def cart_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q: await q.answer()
+    tg_id = update.effective_user.id
+    lang = get_user_language(tg_id)
+    lines, kb, subtotal = await run_db(_load_cart_view_data, tg_id, lang)
     lines.append(t("cart.subtotal", lang, subtotal=f"${subtotal:.2f}"))
     if subtotal > 0:
         kb.append([InlineKeyboardButton(t("cart.checkout_button", lang), callback_data="cart_checkout")])
@@ -328,6 +337,32 @@ def _revalidate_cart(session, user_id: int, lang: str = "en"):
     return valid, errors, subtotal
 
 
+def _load_checkout_preview(tg_id: int, lang: str, coupon_id, coupon_code: str):
+    """Runs on a worker thread via run_db — same cart + coupon revalidation
+    as before, just off the asyncio event loop."""
+    with get_db_session() as s:
+        user = _get_or_create_user(s, tg_id)
+        valid, errors, subtotal = _revalidate_cart(s, user.id, lang)
+        balance = float(user.wallet_balance or 0)
+
+        # ── Coupon: re-validate from DB (not trusting user_data cache) ──
+        coupon_discount = 0.0
+        coupon_err = None
+        if coupon_id and valid:
+            coupon_discount, coupon_err = _revalidate_coupon_by_id(
+                s, coupon_id, user.id, subtotal
+            )
+            if coupon_err:
+                coupon_id = None
+                coupon_code = ''
+
+    return {
+        "valid": valid, "errors": errors, "subtotal": subtotal, "balance": balance,
+        "coupon_discount": coupon_discount, "coupon_err": coupon_err,
+        "coupon_id": coupon_id, "coupon_code": coupon_code,
+    }
+
+
 async def cart_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show real checkout confirmation screen for wallet payment."""
     q = update.callback_query
@@ -335,30 +370,25 @@ async def cart_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tg_id = update.effective_user.id
     lang = get_user_language(tg_id)
 
-    with get_db_session() as s:
-        user = _get_or_create_user(s, tg_id)
-        valid, errors, subtotal = _revalidate_cart(s, user.id, lang)
-        balance = float(user.wallet_balance or 0)
+    coupon_id = context.user_data.get('purchase_coupon_id')
+    coupon_code = context.user_data.get('purchase_coupon_code', '')
 
-        # ── Coupon: re-validate from DB (not trusting user_data cache) ──
-        coupon_id = context.user_data.get('purchase_coupon_id')
-        coupon_discount = 0.0
-        coupon_code = context.user_data.get('purchase_coupon_code', '')
-        if coupon_id and valid:
-            discount_val, coupon_err = _revalidate_coupon_by_id(
-                s, coupon_id, user.id, subtotal
-            )
-            if coupon_err:
-                logger.info("Cart coupon %s rejected at checkout preview: %s",
-                            coupon_id, coupon_err)
-                for k in ('purchase_coupon_id', 'purchase_coupon_code',
-                          'purchase_coupon_discount'):
-                    context.user_data.pop(k, None)
-                coupon_id = None
-                coupon_code = ''
-            else:
-                coupon_discount = discount_val
-                context.user_data['purchase_coupon_discount'] = coupon_discount
+    result = await run_db(_load_checkout_preview, tg_id, lang, coupon_id, coupon_code)
+    valid = result["valid"]
+    errors = result["errors"]
+    subtotal = result["subtotal"]
+    balance = result["balance"]
+    coupon_discount = result["coupon_discount"]
+    coupon_code = result["coupon_code"]
+
+    if result["coupon_err"]:
+        logger.info("Cart coupon %s rejected at checkout preview: %s",
+                    coupon_id, result["coupon_err"])
+        for k in ('purchase_coupon_id', 'purchase_coupon_code',
+                  'purchase_coupon_discount'):
+            context.user_data.pop(k, None)
+    elif coupon_id and valid:
+        context.user_data['purchase_coupon_discount'] = coupon_discount
 
     if not valid:
         text = t("cart.cannot_checkout_title", lang)

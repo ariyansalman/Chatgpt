@@ -936,157 +936,148 @@ async def category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_products_list(query, category_id=None, subcategory_id=None, page=0, context=None, telegram_id=None):
     """Show list of products for a category or subcategory."""
-    with get_db_session() as session:
-        query_filter = Product.is_active == True
 
-        if category_id:
-            products = session.query(Product).filter(
-                Product.category_id == category_id,
-                Product.subcategory_id == None,
-                query_filter
-            ).all()
-        elif subcategory_id:
-            products = session.query(Product).filter(
-                Product.subcategory_id == subcategory_id,
-                query_filter
-            ).all()
-        else:
-            products = session.query(Product).filter(query_filter).all()
+    # All DB reads + per-product pricing/badge lookups run on a worker
+    # thread (via run_db) instead of the asyncio event loop — this screen
+    # is reached from every category/subcategory tap, so doing these
+    # queries inline here was blocking every other user's button press
+    # for the duration of the query (see database/db.py: run_db docstring).
+    # Same filters, same badge/flash-sale/price precedence, same OOS
+    # formatting as before — only *where* the work runs has changed.
+    def _load_rows(_category_id, _subcategory_id, _telegram_id):
+        with get_db_session() as session:
+            query_filter = Product.is_active == True
 
-        if not products:
+            if _category_id:
+                products = session.query(Product).filter(
+                    Product.category_id == _category_id,
+                    Product.subcategory_id == None,
+                    query_filter
+                ).all()
+            elif _subcategory_id:
+                products = session.query(Product).filter(
+                    Product.subcategory_id == _subcategory_id,
+                    query_filter
+                ).all()
+            else:
+                products = session.query(Product).filter(query_filter).all()
+
+            if not products:
+                return []
+
+            # Build the "🆕 New" badge context once for this listing (avoids
+            # one DB query per product row) — window is admin-configurable
+            # via BotConfig (utils/bot_config.py -> "new_product_days").
             try:
-                await query.edit_message_text(
-                    "📦 No products available in this category.",
-                    reply_markup=create_back_support_keyboard()
-                )
-            except BadRequest as e:
-                if "Message is not modified" not in str(e):
-                    raise
-            return
-
-        # Paginate products
-        page_info = paginate_items(products, page, page_size=5)
-
-        # Build the "🆕 New" badge context once for this listing (avoids one
-        # DB query per product row) — window is admin-configurable via
-        # BotConfig (utils/bot_config.py -> "new_product_days", default 7).
-        try:
-            from services.badges import build_context
-            _badge_ctx = build_context()
-        except Exception:
-            _badge_ctx = None
-
-        def _is_new(prod):
-            if not _badge_ctx or not getattr(prod, "created_at", None):
-                return False
-            return prod.created_at >= _badge_ctx.new_cutoff
-
-        # Two-line marketplace format matching build_all_products_keyboard:
-        #   🟢/badge Name • $Price      (line 1)
-        #   📦 Stock: N Left            (line 2, available)
-        #   ❌ Name • $Price            (line 1, OOS)
-        #   Out of Stock                (line 2, OOS)
-        def _row_label(prod):
-            available  = prod.stock_count > 0
-            short_name = _shorten_product_name(prod.name or "", budget=24)
-            try:
-                from services.pricing import get_flash_sale_for_display
-                fs = get_flash_sale_for_display(prod.id)
+                from services.badges import build_context, badges_for as _bfor
+                _badge_ctx = build_context()
             except Exception:
-                fs = None
-            if fs:
-                price_display = f"${fs['sale_price']:.2f}"
-            else:
-                price_display = _product_price_for_user(prod, telegram_id)
+                _badge_ctx = None
+                _bfor = None
 
-            if available:
-                # Determine leading icon: badge emoji > 🆕 > 🟢
-                if _is_new(prod):
-                    leading = "🆕 "
-                elif fs:
-                    leading = "🔥 "
+            def _is_new(prod):
+                if not _badge_ctx or not getattr(prod, "created_at", None):
+                    return False
+                return prod.created_at >= _badge_ctx.new_cutoff
+
+            # Two-line marketplace format matching build_all_products_keyboard:
+            #   🟢/badge Name • $Price      (line 1)
+            #   📦 Stock: N Left            (line 2, available)
+            #   ❌ Name • $Price            (line 1, OOS)
+            #   Out of Stock                (line 2, OOS)
+            def _row_label(prod):
+                available  = prod.stock_count > 0
+                short_name = _shorten_product_name(prod.name or "", budget=24)
+                try:
+                    from services.pricing import get_flash_sale_for_display
+                    fs = get_flash_sale_for_display(prod.id)
+                except Exception:
+                    fs = None
+                if fs:
+                    price_display = f"${fs['sale_price']:.2f}"
                 else:
-                    # Check featured / best_seller badges from context
-                    try:
-                        from services.badges import badges_for as _bfor
-                        _bl = _bfor(prod, _badge_ctx) if _badge_ctx else []
-                        leading = (_bl[0].split()[0] + " ") if _bl else "🟢 "
-                    except Exception:
-                        leading = "🟢 "
-                stock_line = f"📦 Stock: {prod.stock_count} Left"
-            else:
-                leading    = "❌ "
-                stock_line = "Out of Stock"
+                    price_display = _product_price_for_user(prod, _telegram_id)
 
-            line1 = f"{leading}{short_name} • {price_display}"
-            return f"{line1}\n{stock_line}"
+                if available:
+                    # Determine leading icon: badge emoji > 🆕 > 🟢
+                    if _is_new(prod):
+                        leading = "🆕 "
+                    elif fs:
+                        leading = "🔥 "
+                    else:
+                        # Check featured / best_seller badges from context
+                        try:
+                            _bl = _bfor(prod, _badge_ctx) if (_bfor and _badge_ctx) else []
+                            leading = (_bl[0].split()[0] + " ") if _bl else "🟢 "
+                        except Exception:
+                            leading = "🟢 "
+                    stock_line = f"📦 Stock: {prod.stock_count} Left"
+                else:
+                    leading    = "❌ "
+                    stock_line = "Out of Stock"
 
-        product_buttons = [
-            [InlineKeyboardButton(_row_label(prod), callback_data=f"product_{prod.id}")]
-            for prod in page_info['items']
-        ]
+                line1 = f"{leading}{short_name} • {price_display}"
+                return f"{line1}\n{stock_line}"
 
-        # Add pagination if needed
-        from telegram import InlineKeyboardMarkup
-        keyboard = product_buttons.copy()
-        if page_info['total_pages'] > 1:
-            pagination_row = []
-            if page > 0:
-                pagination_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"products_page_{page-1}"))
-            if page < page_info['total_pages'] - 1:
-                pagination_row.append(InlineKeyboardButton("➡️ Next", callback_data=f"products_page_{page+1}"))
-            if pagination_row:
-                keyboard.append(pagination_row)
+            return [{"id": prod.id, "label": _row_label(prod)} for prod in products]
 
-        # Refresh button removed -- Back to Menu is the only utility action.
-        keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
+    rows = await run_db(_load_rows, category_id, subcategory_id, telegram_id)
 
-        total_count = len(products)
-
-        header_lines = ["🛍️ <b>Products</b>", f"📦 Products: <b>{total_count}</b>"]
-        text = "\n".join(header_lines)
-
+    if not rows:
         try:
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-        except BadRequest as e:
-            if "Message is not modified" not in str(e):
-                raise
-
-
-@guarded_callback()
-async def product_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle product selection - show product details."""
-    query = update.callback_query
-    await query.answer()
-
-    # Check if user is banned
-    if check_user_banned(update.effective_user.id):
-        try:
-            await query.edit_message_text("⛔ You have been banned from using this bot.")
+            await query.edit_message_text(
+                "📦 No products available in this category.",
+                reply_markup=create_back_support_keyboard()
+            )
         except BadRequest as e:
             if "Message is not modified" not in str(e):
                 raise
         return
 
-    product_id = int(query.data.split("_")[1])
+    # Paginate products
+    page_info = paginate_items(rows, page, page_size=5)
 
-    # V23: Record this product view in recently-viewed history (best-effort, non-blocking)
+    product_buttons = [
+        [InlineKeyboardButton(row["label"], callback_data=f"product_{row['id']}")]
+        for row in page_info['items']
+    ]
+
+    # Add pagination if needed
+    from telegram import InlineKeyboardMarkup
+    keyboard = product_buttons.copy()
+    if page_info['total_pages'] > 1:
+        pagination_row = []
+        if page > 0:
+            pagination_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"products_page_{page-1}"))
+        if page < page_info['total_pages'] - 1:
+            pagination_row.append(InlineKeyboardButton("➡️ Next", callback_data=f"products_page_{page+1}"))
+        if pagination_row:
+            keyboard.append(pagination_row)
+
+    # Refresh button removed -- Back to Menu is the only utility action.
+    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
+
+    total_count = len(rows)
+
+    header_lines = ["🛍️ <b>Products</b>", f"📦 Products: <b>{total_count}</b>"]
+    text = "\n".join(header_lines)
+
     try:
-        from handlers.feature_handlers import track_recently_viewed
-        track_recently_viewed(update.effective_user.id, product_id)
-    except Exception:
-        pass
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
 
+
+def _load_product_detail_screen(product_id: int, telegram_id: int):
+    """Runs on a worker thread via run_db. Same query + same badge/social-proof/
+    low-stock/flash-sale/pricing computation as before — just off the event
+    loop, and no longer holding a DB connection open through the Telegram
+    photo upload/edit that used to happen inside this session block."""
     with get_db_session() as session:
         product = session.query(Product).filter_by(id=product_id).first()
-
         if not product:
-            try:
-                await query.edit_message_text("❌ Product not found.")
-            except BadRequest as e:
-                if "Message is not modified" not in str(e):
-                    raise
-            return
+            return None
 
         # Flat catalog: back navigation always returns to the complete
         # all-products list — there is no category/subcategory state.
@@ -1098,7 +1089,7 @@ async def product_detail_callback(update: Update, context: ContextTypes.DEFAULT_
         # viewer's preferred-currency price.
         details = details.replace(
             f"💰 <b>Price:</b> {format_price(product.price)}",
-            f"💰 <b>Price:</b> {_product_price_for_user(product, update.effective_user.id)}",
+            f"💰 <b>Price:</b> {_product_price_for_user(product, telegram_id)}",
         )
         try:
             from services.badges import badge_line
@@ -1135,38 +1126,83 @@ async def product_detail_callback(update: Update, context: ContextTypes.DEFAULT_
         if banner:
             details = f"{banner}\n{details}"
 
-        # Send product image if available
-        _telegram_id = update.effective_user.id
-        _stock_count = product.stock_count
-        if product.image_path and os.path.exists(product.image_path):
-            with open(product.image_path, 'rb') as image:
-                await query.message.reply_photo(
-                    photo=image,
-                    caption=details,
-                    reply_markup=create_product_detail_keyboard(
-                        product_id,
-                        back_callback,
-                        telegram_id=_telegram_id,
-                        stock_count=_stock_count,
-                    ),
-                    parse_mode='HTML',
-                )
-            await query.message.delete()
-        else:
-            try:
-                await query.edit_message_text(
-                    details,
-                    reply_markup=create_product_detail_keyboard(
-                        product_id,
-                        back_callback,
-                        telegram_id=_telegram_id,
-                        stock_count=_stock_count,
-                    ),
-                    parse_mode='HTML',
-                )
-            except BadRequest as e:
-                if "Message is not modified" not in str(e):
-                    raise
+        return {
+            "details": details,
+            "back_callback": back_callback,
+            "image_path": product.image_path,
+            "stock_count": product.stock_count,
+        }
+
+
+@guarded_callback()
+async def product_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle product selection - show product details."""
+    query = update.callback_query
+    await query.answer()
+
+    # Check if user is banned
+    if check_user_banned(update.effective_user.id):
+        try:
+            await query.edit_message_text("⛔ You have been banned from using this bot.")
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
+        return
+
+    product_id = int(query.data.split("_")[1])
+
+    # V23: Record this product view in recently-viewed history (best-effort, non-blocking)
+    try:
+        from handlers.feature_handlers import track_recently_viewed
+        track_recently_viewed(update.effective_user.id, product_id)
+    except Exception:
+        pass
+
+    _telegram_id = update.effective_user.id
+    screen = await run_db(_load_product_detail_screen, product_id, _telegram_id)
+
+    if screen is None:
+        try:
+            await query.edit_message_text("❌ Product not found.")
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
+        return
+
+    details = screen["details"]
+    back_callback = screen["back_callback"]
+    _stock_count = screen["stock_count"]
+
+    # Send product image if available
+    if screen["image_path"] and os.path.exists(screen["image_path"]):
+        with open(screen["image_path"], 'rb') as image:
+            await query.message.reply_photo(
+                photo=image,
+                caption=details,
+                reply_markup=create_product_detail_keyboard(
+                    product_id,
+                    back_callback,
+                    telegram_id=_telegram_id,
+                    stock_count=_stock_count,
+                ),
+                parse_mode='HTML',
+            )
+        await query.message.delete()
+    else:
+        try:
+            await query.edit_message_text(
+                details,
+                reply_markup=create_product_detail_keyboard(
+                    product_id,
+                    back_callback,
+                    telegram_id=_telegram_id,
+                    stock_count=_stock_count,
+                ),
+                parse_mode='HTML',
+            )
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
 
 
 async def availability_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

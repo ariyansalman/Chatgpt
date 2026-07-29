@@ -151,10 +151,12 @@ def build_payment_selection_screen(
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_back_to_amount")])
     rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
-    # Payment Method Selection — the user is actively creating a deposit
-    # here, so it gets a real, destructive Cancel alongside Back/Main Menu.
-    from services.payment_ui import with_deposit_cancel
-    keyboard = with_deposit_cancel(InlineKeyboardMarkup(rows))
+    # Payment Method Selection — no deposit/Transaction row exists yet at
+    # this point (a gateway hasn't even been picked), so this screen shows
+    # only "⬅️ Back" / "🏠 Main Menu", never a destructive "❌ Cancel" row
+    # — see services/payment_ui.py:with_deposit_cancel, reserved for
+    # screens reached only after a Deposit ID/active session exists.
+    keyboard = InlineKeyboardMarkup(rows)
 
     if amount is not None:
         text = (
@@ -180,11 +182,12 @@ def build_crypto_networks_screen(gateways: Optional[Sequence[dict]]) -> Tuple[st
     rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in crypto_sorted]
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
 
-    # Crypto Network Selection — the user is actively creating a deposit
-    # here, so it gets a real, destructive Cancel alongside Back.
-    from services.payment_ui import with_deposit_cancel
+    # Crypto Network Selection — still no deposit/Transaction row exists
+    # yet (a specific network hasn't been picked), so only "⬅️ Back" is
+    # shown here, never a destructive "❌ Cancel" row — see
+    # services/payment_ui.py:with_deposit_cancel.
     text = "₿ <b>Crypto Networks</b>\n\nSelect your preferred network."
-    return text, with_deposit_cancel(InlineKeyboardMarkup(rows))
+    return text, InlineKeyboardMarkup(rows)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -277,8 +280,9 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
 
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
 
-    # Mobile Banking Provider Selection — the user is actively creating a
-    # deposit here, so it gets a real, destructive Cancel alongside Back.
-    from services.payment_ui import with_deposit_cancel
+    # Mobile Banking Provider Selection — still no deposit/Transaction row
+    # exists yet (a specific provider hasn't been picked), so only
+    # "⬅️ Back" is shown here, never a destructive "❌ Cancel" row — see
+    # services/payment_ui.py:with_deposit_cancel.
     text = "🇧🇩 <b>Mobile Banking</b>\n\nSelect your preferred provider."
-    return text, with_deposit_cancel(InlineKeyboardMarkup(rows))
+    return text, InlineKeyboardMarkup(rows)

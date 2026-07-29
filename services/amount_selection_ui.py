@@ -110,13 +110,13 @@ def build_amount_selection_screen(
         InlineKeyboardButton("🏠 Main Menu", callback_data=MAIN_MENU_CALLBACK),
     ])
 
-    # The user is actively creating a deposit on this screen (Step 1 of
-    # Add Funds), so it gets a real, destructive "❌ Cancel Deposit" row in
-    # addition to the plain "🔙 Back" above — see
-    # services/payment_ui.py:with_deposit_cancel and
-    # handlers/payment_handlers.py:deposit_cancel.
-    from services.payment_ui import with_deposit_cancel
-    return text, with_deposit_cancel(InlineKeyboardMarkup(rows))
+    # No deposit/Transaction row exists yet at this point — Step 1 is
+    # purely picking an amount, before any payment method or gateway has
+    # even been chosen — so this screen shows only "🔙 Back" / "🏠 Main
+    # Menu" above, never a destructive "❌ Cancel" row (see
+    # services/payment_ui.py:with_deposit_cancel, which is reserved for
+    # screens reached only after a Deposit ID/active session exists).
+    return text, InlineKeyboardMarkup(rows)
 
 
 def _callback_amount(amount: float) -> str:
