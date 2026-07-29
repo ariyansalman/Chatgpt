@@ -31,6 +31,23 @@ from utils.permissions import has_permission
 from config.settings import settings as app_settings
 
 
+def create_cancel_keyboard():
+    """Payment-flow-local override of ``utils.create_cancel_keyboard``.
+
+    Every call site in THIS file only ever reaches this button while inside
+    (or just before) the Add Funds flow, where the shared "cancel"
+    callback_data now resolves to ``cancel_topup`` / ``cancel_payment_page``
+    — pure Back navigation to the Payment Method screen that never touches
+    a pending deposit (see ``_go_back_to_methods`` below). Shadowing the
+    imported name here means every existing call site keeps working
+    unmodified while showing the correct "⬅️ Back" label; it does not
+    affect ``utils.create_cancel_keyboard`` itself, which
+    handlers/admin_conversations.py and handlers/dispute_handlers.py still
+    use for their own, unrelated, genuinely-destructive Cancel actions.
+    """
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="cancel")]])
+
+
 def _plain_usd(amount: float) -> str:
     """Plain USD amount for invoice screens only.
 
@@ -729,7 +746,7 @@ async def payment_method_heleket(update: Update, context: ContextTypes.DEFAULT_T
     rows=[]
     for key, (_, _, label) in SUPPORTED_ASSETS.items():
         rows.append([InlineKeyboardButton(label, callback_data=f"heleket_asset:{key}")])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="cancel")])
     try:
         await query.edit_message_text("🪙 Select coin and network:", reply_markup=InlineKeyboardMarkup(rows))
     except BadRequest as e:
@@ -2597,15 +2614,80 @@ async def zinipay_submit_start(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def zinipay_cancel_submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel the ZiniPay TXID submission mini-conversation."""
+    """"⬅️ Back" tapped on the "Enter Transaction ID" prompt — return to
+    the ZiniPay (Mobile Banking) Payment Details (invoice) screen.
+
+    Pure navigation: the pending order is never touched, modified, or
+    cancelled here. Re-renders the exact same invoice the user saw before
+    tapping "Submit Transaction ID", straight from the still-PENDING
+    transaction row and the admin's currently-configured payment number.
+    """
     query = update.callback_query
     await query.answer()
     tx_id = context.user_data.pop('zinipay_tx_id', None)
+
+    reopenable = False
+    if tx_id:
+        with get_db_session() as session:
+            tx = session.query(Transaction).filter_by(id=tx_id).first()
+            reopenable = bool(
+                tx and tx.user.telegram_id == update.effective_user.id
+                and tx.payment_method == PaymentMethod.ZINIPAY
+                and tx.status == TransactionStatus.PENDING
+                and not (tx.expires_at and datetime.utcnow() > tx.expires_at)
+            )
+            if reopenable:
+                usd_amount = tx.amount
+                crypto_address = tx.crypto_address or ""
+                deposit_id = tx.id
+
+            from database.models import PaymentGatewayConfig as _PGC
+            pgc = session.query(_PGC).filter_by(gateway="zinipay").first()
+            numbers_by_provider = {
+                "bkash":  (pgc.zinipay_bkash_number  or "").strip() if pgc else "",
+                "nagad":  (pgc.zinipay_nagad_number   or "").strip() if pgc else "",
+                "rocket": (pgc.zinipay_rocket_number  or "").strip() if pgc else "",
+                "upay":   (pgc.zinipay_upay_number    or "").strip() if pgc else "",
+            }
+
+        if reopenable:
+            provider, bdt_amount_str = None, None
+            if crypto_address.startswith("bdt:"):
+                parts = crypto_address.split(":")
+                if len(parts) > 1 and parts[1]:
+                    bdt_amount_str = parts[1]
+                if len(parts) > 2 and parts[2]:
+                    provider = parts[2].strip().lower()
+            send_to = numbers_by_provider.get(provider) if provider else None
+
+            if send_to:
+                PROVIDER_EMOJI = {"bkash": "💗", "nagad": "🧡", "rocket": "💜", "upay": "🔵"}
+                PROVIDER_LABEL = {"bkash": "bKash", "nagad": "Nagad", "rocket": "Rocket", "upay": "Upay"}
+                amount_str = f"৳{bdt_amount_str}" if bdt_amount_str else _plain_usd(usd_amount)
+                message = pui.mobile_money_invoice(
+                    provider_label=PROVIDER_LABEL.get(provider, "Mobile Banking"),
+                    provider_emoji=PROVIDER_EMOJI.get(provider, "🇧🇩"),
+                    amount=amount_str, send_to=send_to,
+                    deposit_id=deposit_id,
+                )
+                keyboard = pui.invoice_keyboard(
+                    submit_cb=f"zinipay_submit:{deposit_id}",
+                    submit_label="🧾 Submit Transaction ID",
+                )
+                try:
+                    await query.edit_message_text(message, reply_markup=keyboard, parse_mode='HTML')
+                except BadRequest as e:
+                    if "Message is not modified" not in str(e):
+                        raise
+                return ConversationHandler.END
+
+    # Order no longer available, or its payment number was removed since —
+    # fall back to the still-pending resubmit screen instead of a dead end.
     resubmit_cb = f"zinipay_submit:{tx_id}" if tx_id else None
     try:
         await query.edit_message_text(
-            "❌ Cancelled. Your order is still pending — you can submit the "
-            "Transaction ID again anytime before it expires.",
+            "This order is no longer available.\n\n"
+            "It may have expired or already been completed.",
             reply_markup=pui.still_pending_keyboard(resubmit_cb),
         )
     except BadRequest as e:
@@ -3049,7 +3131,7 @@ def _binance_currency_keyboard(tx_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(c, callback_data=f"binance_currency:{tx_id}:{c}")
         for c in svc.allowed_currencies
     ]
-    return InlineKeyboardMarkup([row, [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
+    return InlineKeyboardMarkup([row, [InlineKeyboardButton("⬅️ Back", callback_data="cancel")]])
 
 
 async def _finish_binance_payment(update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -3252,15 +3334,44 @@ async def binance_submit_start(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def binance_cancel_submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"⬅️ Back" tapped on the "Enter Order ID" prompt — return to the
+    Binance Pay Payment Details (invoice) screen.
+
+    Pure navigation: the pending order is never touched, modified, or
+    cancelled here. Re-renders the exact same invoice the user saw before
+    tapping "Submit Order ID", straight from the still-PENDING transaction
+    row, so the user can re-check the Pay ID/amount or tap Submit again.
+    """
     query = update.callback_query
     await query.answer()
     tx_id = context.user_data.pop('binance_tx_id', None)
-    resubmit_cb = f"binance_submit:{tx_id}" if tx_id else None
+
+    if tx_id:
+        with get_db_session() as session:
+            tx = session.query(Transaction).filter_by(id=tx_id).first()
+            reopenable = bool(
+                tx and tx.user.telegram_id == update.effective_user.id
+                and tx.payment_method == PaymentMethod.BINANCE_PAY
+                and tx.status == TransactionStatus.PENDING
+                and tx.crypto_address
+                and not (tx.expires_at and datetime.utcnow() > tx.expires_at)
+            )
+            if reopenable:
+                usd_amount, currency = tx.amount, tx.crypto_address
+        if reopenable:
+            svc = BinancePayService()
+            await _send_binance_payment_screen(
+                update, context, tx_id, usd_amount, currency, svc, is_new_message=False,
+            )
+            return ConversationHandler.END
+
+    # Order no longer available (expired/completed/not found) — fall back
+    # to the still-pending resubmit screen instead of a dead end.
+    resubmit_cb = await _active_resubmit_callback(tx_id, "binance_submit")
     try:
         await query.edit_message_text(
-            "❌ <b>Cancelled</b>\n\n"
-            "Your deposit is still pending. You can submit the Order ID again "
-            "anytime before it expires.",
+            "This order is no longer available.\n\n"
+            "It may have expired or already been completed.",
             reply_markup=pui.still_pending_keyboard(
                 resubmit_cb,
                 resubmit_label="🧾 Submit Order ID Again",
@@ -3741,7 +3852,7 @@ def _bybit_type_keyboard(tx_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔹 UID Transfer", callback_data=f"bybit_type:{tx_id}:uid")],
         [InlineKeyboardButton("🔹 On-chain Deposit", callback_data=f"bybit_type:{tx_id}:onchain")],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="cancel")],
     ])
 
 
@@ -3751,7 +3862,7 @@ def _bybit_network_keyboard(tx_id: int, svc: "BybitPayService") -> InlineKeyboar
         for net in svc.networks_with_wallets()
     ]
     rows.append([InlineKeyboardButton("🔙 Back", callback_data=f"bybit_back_type:{tx_id}")])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    rows.append([InlineKeyboardButton("⬅️ Back to Payment Methods", callback_data="cancel")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -4244,13 +4355,51 @@ async def bybit_submit_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def bybit_cancel_submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"⬅️ Back" tapped on the "Enter Order ID" / "Enter Transaction Hash"
+    prompt — return to the Bybit Pay Payment Details (invoice) screen.
+
+    Pure navigation: the pending order is never touched, modified, or
+    cancelled here. Re-renders the exact same invoice (UID Transfer or
+    on-chain network, whichever this order is) the user saw before tapping
+    Submit, straight from the still-PENDING transaction row.
+    """
     query = update.callback_query
     await query.answer()
     tx_id = context.user_data.pop('bybit_tx_id', None)
+
+    if tx_id:
+        with get_db_session() as session:
+            tx = session.query(Transaction).filter_by(id=tx_id).first()
+            reopenable = bool(
+                tx and tx.user.telegram_id == update.effective_user.id
+                and tx.payment_method == PaymentMethod.BYBIT_PAY
+                and tx.status == TransactionStatus.PENDING
+                and not (tx.expires_at and datetime.utcnow() > tx.expires_at)
+            )
+            if reopenable:
+                usd_amount = tx.amount
+                crypto_address = tx.crypto_address
+                locked_rate = tx.locked_crypto_rate
+                locked_crypto_amount = tx.locked_crypto_amount
+        if reopenable:
+            svc = BybitPayService()
+            payment_type, network = _parse_bybit_meta(crypto_address)
+            if payment_type == "onchain" and network:
+                await _send_bybit_onchain_screen(
+                    update, context, tx_id, usd_amount, network, svc, is_new_message=False,
+                    locked_rate=locked_rate, locked_crypto_amount=locked_crypto_amount,
+                )
+            else:
+                await _send_bybit_uid_screen(update, context, tx_id, usd_amount, svc, is_new_message=False)
+            return ConversationHandler.END
+
+    # Order no longer available (expired/completed/not found) — fall back
+    # to the still-pending resubmit screen instead of a dead end.
     resubmit_cb = await _active_resubmit_callback(tx_id, "bybit_submit")
     try:
         await query.edit_message_text(
-            "❌ Cancelled. Your order is still pending — you can submit the Transaction ID again anytime before it expires.",
+            "This order is no longer available.\n\n"
+            "It may have expired or already been completed.",
             reply_markup=pui.still_pending_keyboard(resubmit_cb),
         )
     except BadRequest as e:
@@ -5526,37 +5675,43 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
     await notify_admin(context, admin_message, parse_mode='HTML')
 
 
-async def _cancel_pending_and_go_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Shared Cancel behavior for every payment page.
+# Keys that belong ONLY to the specific payment attempt/session that was
+# just cancelled (which gateway/provider was picked, and any in-flight
+# transaction-id/proof capture for it). These are cleared any time the
+# user leaves a specific payment attempt's mini-flow — via Back OR via a
+# real cancel — so re-selecting a method afterwards starts that method's
+# flow cleanly instead of resuming stale state.
+#
+# Deliberately NOT included: 'topup_amount' (the amount picked on the Add
+# Funds screen is part of the user's *navigation context* within the Add
+# Funds flow, not the cancelled session — keeping it means re-picking a
+# payment method after Back/Cancel opens that method's payment page
+# directly, instead of re-prompting for the amount) and anything unrelated
+# to payments (nav stacks, language, cart, etc.), which neither Back nor
+# Cancel must ever touch.
+_PAYMENT_SESSION_KEYS = (
+    'topup_method',
+    'zinipay_provider',
+    'zinipay_tx_id',
+    'binance_tx_id',
+    'bybit_tx_id',
+    'manual_method_id',
+    'manual_tx_id',
+    'manual_req_proof',
+    'manual_req_txid',
+)
 
-    Cancels whatever PENDING transaction(s) this user currently has (same
-    business/DB logic as before), then behaves exactly like a Back tap:
-    the current payment message is deleted if Telegram allows it and the
-    Payment Method screen is sent fresh; if deletion isn't possible, the
-    existing message is edited into the Payment Method screen instead.
-    No "Payment Cancelled" card, no Back/Support buttons, and never both a
-    delete *and* an edit — only ever one resulting message.
 
+async def _redraw_as_payment_method_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Shared screen-drawing tail for both Back and (dedicated) Cancel:
+    show the Payment Method screen, deleting the current message if
+    Telegram allows it and sending fresh, or editing in place if not.
+    Never both a delete *and* an edit — only ever one resulting message.
     Returns ``is_empty`` (True if no payment method is configured at all)
     so callers driving a ConversationHandler can end it appropriately.
     """
     query = update.callback_query
-    await query.answer()
-
-    telegram_id = update.effective_user.id
-
-    def _cancel_pending(_telegram_id):
-        with get_db_session() as session:
-            user = session.query(User).filter_by(telegram_id=_telegram_id).first()
-            if user:
-                _cancel_user_pending_transactions(session, user.id)
-
-    await run_db(_cancel_pending, telegram_id)
-
-    context.user_data.pop('topup_amount', None)
-    context.user_data.pop('topup_method', None)
-
-    text, keyboard, is_empty = _build_topup_method_screen()
+    text, keyboard, is_empty = _build_topup_method_screen(amount=context.user_data.get('topup_amount'))
 
     deleted = False
     try:
@@ -5579,33 +5734,128 @@ async def _cancel_pending_and_go_back(update: Update, context: ContextTypes.DEFA
             if "Message is not modified" not in str(e):
                 raise
 
-    context.user_data.clear()
     return is_empty
 
 
-async def cancel_topup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel the top-up process (during conversation).
+async def _go_back_to_methods(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Shared "⬅️ Back" behavior for every payment page (Payment Details,
+    Submit Transaction ID, Submit Order ID, currency/network pickers, ...).
 
-    Behaves like a Back tap straight to the Payment Method screen — no
-    "Payment Cancelled" card. A pending Transaction row may or may not
-    exist yet at this point in the flow, depending on which step the user
-    cancelled from; if one *was* already created, it's marked CANCELLED so
-    it can never keep blocking a future payment order.
+    Pure navigation, nothing else: a still-PENDING Transaction row is
+    NEVER cancelled, modified, or deleted here — the deposit stays exactly
+    as it was, so the user can resume it later (e.g. via "▶️ Continue
+    Deposit" on the Pending Deposit notice, or by tapping the same
+    payment method again). Only this specific payment attempt's own
+    mini-conversation session state is cleared (see ``_PAYMENT_SESSION_KEYS``)
+    so re-selecting a method afterwards starts that method's flow cleanly;
+    the user's amount, navigation context, language, etc. are left
+    untouched.
+
+    Returns ``is_empty`` (True if no payment method is configured at all)
+    so callers driving a ConversationHandler can end it appropriately.
     """
-    await _cancel_pending_and_go_back(update, context)
-    return ConversationHandler.END
+    query = update.callback_query
+    await query.answer()
+
+    for _key in _PAYMENT_SESSION_KEYS:
+        context.user_data.pop(_key, None)
+
+    return await _redraw_as_payment_method_screen(update, context)
+
+
+async def _cancel_pending_deposit_and_go_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Shared behavior for the ONE dedicated, explicit "❌ Cancel Deposit"
+    action (the Pending Deposit notice's Continue / Cancel / Back menu —
+    see ``services/payment_ui.py:pending_deposit_keyboard``).
+
+    Unlike ``_go_back_to_methods``, this really does cancel whatever
+    PENDING transaction(s) this user currently has, then behaves like a
+    Back tap: the current message is deleted if Telegram allows it and the
+    Payment Method screen is sent fresh; if deletion isn't possible, the
+    existing message is edited into the Payment Method screen instead.
+
+    Only the just-cancelled payment attempt's own session state is
+    cleared (see ``_PAYMENT_SESSION_KEYS``) — the user's navigation
+    context (which screen/flow they're in, previously-picked amount,
+    language, etc.) is left untouched, so the user stays inside the Add
+    Funds flow and picking another payment method immediately opens that
+    method's payment page again, instead of bouncing to the Main Menu.
+
+    Returns ``is_empty`` (True if no payment method is configured at all)
+    so callers driving a ConversationHandler can end it appropriately.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+
+    def _cancel_pending(_telegram_id):
+        with get_db_session() as session:
+            user = session.query(User).filter_by(telegram_id=_telegram_id).first()
+            if user:
+                _cancel_user_pending_transactions(session, user.id)
+
+    await run_db(_cancel_pending, telegram_id)
+
+    for _key in _PAYMENT_SESSION_KEYS:
+        context.user_data.pop(_key, None)
+
+    return await _redraw_as_payment_method_screen(update, context)
+
+
+async def cancel_topup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"⬅️ Back" tapped from inside the top-up conversation.
+
+    Pure navigation straight to the Payment Method screen — never cancels,
+    modifies, or deletes any pending Transaction row. See
+    ``_go_back_to_methods`` for the full contract.
+
+    Only ends the conversation if there's truly nothing left to show
+    (``is_empty``) — otherwise transitions back to the Payment Method
+    state so the Add Funds flow keeps going and every button on the
+    screen just shown (Back, payment methods, ...) keeps working.
+    """
+    is_empty = await _go_back_to_methods(update, context)
+    return ConversationHandler.END if is_empty else METHOD
 
 
 async def cancel_payment_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel from payment instruction page (outside conversation).
+    """"⬅️ Back" tapped from a payment/invoice page (outside conversation).
 
     This button is shared by every gateway's payment-instructions page, so
-    there's no single tx_id in the callback data — instead, cancel whatever
-    PENDING transaction(s) this user currently has (this is what actually
-    frees the user to start a new payment order immediately) and behave
-    like a Back tap straight to the Payment Method screen.
+    there's no single tx_id in the callback data — but unlike a real
+    cancel, Back never needs one: it never touches any transaction, it
+    just redraws the Payment Method screen. Any pending deposit(s) this
+    user has stay exactly as they were and can still be resumed.
+
+    This normally fires *after* the conversation that created the payment
+    page has already ended (see bot.py) — so, unlike ``cancel_topup``, its
+    return value isn't consumed by a ConversationHandler here. The Payment
+    Method screen's buttons (Mobile Banking, Crypto Networks, Binance Pay,
+    Bybit Pay, every individual gateway, ...) are additionally registered
+    as standalone handlers in bot.py, right after the Add Funds
+    ConversationHandler, so they keep working correctly whether or not a
+    conversation is currently active for this user — this is what fixes
+    "select a payment method after Back" landing on the Main Menu.
     """
-    await _cancel_pending_and_go_back(update, context)
+    await _go_back_to_methods(update, context)
+
+
+async def cancel_pending_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"❌ Cancel Deposit" tapped on the Pending Deposit notice — the ONE
+    dedicated, explicit "Cancel Payment" action in the whole payment flow
+    (see ``services/payment_ui.py:pending_deposit_keyboard``).
+
+    Unlike every Back button in the payment system, this really does
+    cancel the user's still-pending Transaction row(s); see
+    ``_cancel_pending_deposit_and_go_back``. Registered both inside the
+    top-up ConversationHandler and standalone in bot.py — same dual
+    registration as ``topup_back_to_methods`` — since the Pending Deposit
+    notice can be shown with or without an active conversation; the
+    return value is only consumed when a ConversationHandler is driving it.
+    """
+    is_empty = await _cancel_pending_deposit_and_go_back(update, context)
+    return ConversationHandler.END if is_empty else METHOD
 
 
 async def check_pending_payments(context: ContextTypes.DEFAULT_TYPE):

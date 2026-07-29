@@ -58,6 +58,23 @@ logger = logging.getLogger(__name__)
 _activity_checked_at: dict[int, float] = {}
 _ACTIVITY_CHECK_TTL = 60.0
 
+# ─────────────────────────────────────────────────────────────────────────
+# Callback & State Management Audit fix (root cause #6 / #7 / #12):
+# every ConversationHandler in this file previously had no
+# ``conversation_timeout``, so a user who tapped into a flow (Buy Now,
+# Top Up, "Submit TXID", any admin edit-value prompt, ...) and then
+# abandoned it — closed the chat, got distracted, restarted the bot
+# client — left that per-user/per-chat FSM state stuck *forever*. Any
+# later tap that didn't match a handler registered for that stuck state
+# was silently swallowed by python-telegram-bot instead of reaching the
+# normal menu/callback handlers, which is exactly the class of "random
+# button does nothing" / "Back doesn't work" reports concentrated around
+# the payment flow. Every ConversationHandler below now passes
+# ``conversation_timeout=CONVERSATION_TIMEOUT_SECONDS`` so an abandoned
+# conversation automatically expires and hands the user back to normal
+# routing — no business logic, states, or handlers were changed.
+CONVERSATION_TIMEOUT_SECONDS = 600  # 10 minutes of inactivity
+
 
 async def _track_activity(update, context):
     """Best-effort ``User.last_seen_at`` touch — feeds win-back detection in
@@ -806,7 +823,28 @@ def main():
         logger.exception("Main menu auto-sync failed")
 
     # Create application
-    application = Application.builder().token(settings.BOT_TOKEN).build()
+    #
+    # concurrent_updates=256: THE CRITICAL FIX for the "bot freezes during
+    # payment verification" bug. Application.builder() defaults to
+    # concurrent_updates=False, which makes python-telegram-bot process
+    # updates ONE AT A TIME. Payment verification legitimately awaits a
+    # slow external API through several retries with backoff (see
+    # services/payment_workflow.run_auto_verification_with_retries -- up
+    # to ~60-150s worst case across 4 attempts). With sequential
+    # processing that single await blocked the bot's only update-handling
+    # slot, so /start, buttons, and every other user's messages queued up
+    # behind it and appeared completely unresponsive. Setting
+    # concurrent_updates lets independent updates run as separate asyncio
+    # tasks, so one user's in-flight verification never blocks another
+    # update from being handled immediately. This does not change payment
+    # logic, the DB schema, or the UI -- it only changes how the
+    # Application schedules update handling.
+    application = (
+        Application.builder()
+        .token(settings.BOT_TOKEN)
+        .concurrent_updates(256)
+        .build()
+    )
 
     # ── Global middleware ──────────────────────────────────────────────
     # Callback-query reliability gate — must run before EVERYTHING else so
@@ -844,6 +882,7 @@ def main():
 
     # Top-up conversation
     topup_conv_handler = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(payment_handlers.topup_start, pattern="^topup$")],
         states={
             # Shared "💳 Add Funds" amount screen (services/amount_selection_ui.py) —
@@ -853,10 +892,12 @@ def main():
             payment_handlers.AMOUNT_SELECT: [
                 CallbackQueryHandler(payment_handlers.topup_amount_selected, pattern="^topup_amt_\\d+(\\.\\d+)?$"),
                 CallbackQueryHandler(payment_handlers.topup_amount_custom_prompt, pattern="^topup_amt_custom$"),
-                # "⬅️ Back" on the Amount Selection screen — leaves the
+                # "🔙 Back" on the Amount Selection screen — leaves the
                 # deposit flow and returns to the Wallet screen it was
                 # opened from (edits the same message; ends the conversation).
                 CallbackQueryHandler(payment_handlers.topup_back_to_wallet, pattern="^topup_back_to_wallet$"),
+                # "🏠 Main Menu" on the Amount Selection screen.
+                CallbackQueryHandler(payment_handlers.topup_main_menu, pattern="^main_menu$"),
             ],
             payment_handlers.AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, payment_handlers.topup_amount)],
             payment_handlers.METHOD: [
@@ -953,6 +994,13 @@ def main():
         },
         fallbacks=[
             CallbackQueryHandler(payment_handlers.pending_deposit_continue, pattern="^pending_continue:\\d+$"),
+            # "❌ Cancel Deposit" on the Pending Deposit notice — the one
+            # dedicated, explicit cancel action in the payment flow; unlike
+            # "^cancel$" below (now pure Back navigation), this one really
+            # does cancel the pending transaction. See
+            # payment_handlers.cancel_pending_deposit /
+            # services/payment_ui.py:pending_deposit_keyboard.
+            CallbackQueryHandler(payment_handlers.cancel_pending_deposit, pattern="^cancel_pending_deposit$"),
             CallbackQueryHandler(payment_handlers.cancel_topup, pattern="^cancel$"),
             CallbackQueryHandler(payment_handlers.cancel_topup)
         ],
@@ -962,10 +1010,74 @@ def main():
     )
     application.add_handler(topup_conv_handler)
 
+    # ── Add Funds: Payment Method screen buttons, registered again OUTSIDE
+    # the ConversationHandler above ────────────────────────────────────────
+    # Bug this fixes: Cancel (payment_handlers.cancel_payment_page, "^cancel$")
+    # is tapped from a gateway's payment-instructions page — a screen shown
+    # *after* the payment order was already created, at which point
+    # topup_conv_handler has already returned ConversationHandler.END and is
+    # no longer tracking an active conversation for this user. Cancel then
+    # correctly redraws the Payment Method screen (still outside any
+    # conversation), but every button on it — Mobile Banking, Crypto
+    # Networks, Binance Pay, Bybit Pay, every individual gateway/provider —
+    # was ONLY ever registered inside topup_conv_handler's METHOD state, so
+    # with no conversation active those taps matched no handler at all and
+    # fell through to the bot's generic catch-all, which lands on the Main
+    # Menu. Registering the exact same handler functions again here, as
+    # plain (non-conversation) callbacks, means every one of these buttons
+    # keeps working immediately after a Cancel — same handlers, same
+    # payment/UI/DB logic, just reachable with or without an in-progress
+    # conversation. When a conversation IS active, topup_conv_handler
+    # (added immediately above, so it is always checked first) handles the
+    # tap itself and these duplicates are never reached, so nothing here
+    # ever runs twice for a single tap. This mirrors the existing
+    # cancel_purchase pattern already used elsewhere in this file (present
+    # both inside a ConversationHandler and standalone).
+    application.add_handler(CallbackQueryHandler(payment_handlers.topup_show_crypto_networks, pattern="^topup_menu_crypto$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.topup_show_mobile_money, pattern="^topup_menu_mobile$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.topup_back_to_methods, pattern="^topup_menu_back$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.topup_back_to_amount_selection, pattern="^topup_back_to_amount$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.pending_deposit_continue, pattern="^pending_continue:\\d+$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.topup_amount_path, pattern="^topup_amount_path$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_heleket, pattern="^pay_heleket$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.heleket_asset_selected, pattern="^heleket_asset:"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_manual, pattern="^pay_pm_\\d+$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_manual, pattern="^pay_manual_\\d+$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_crypto, pattern="^pay_crypto$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_card, pattern="^pay_card$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bkash, pattern="^pay_bkash$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_nagad, pattern="^pay_nagad$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_stars, pattern="^pay_stars$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_cryptomus, pattern="^pay_cryptomus$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_nowpayments, pattern="^pay_nowpayments$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_zinipay_bkash, pattern="^pay_zinipay_bkash$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_zinipay_nagad, pattern="^pay_zinipay_nagad$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_zinipay_rocket, pattern="^pay_zinipay_rocket$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_zinipay_upay, pattern="^pay_zinipay_upay$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_zinipay, pattern="^pay_zinipay$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_binance_pay, pattern="^pay_binance_pay$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.binance_currency_selected, pattern="^binance_currency:"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_pay, pattern="^pay_bybit_pay$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_trc20, pattern="^pay_bybit_trc20$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_bep20, pattern="^pay_bybit_bep20$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_erc20, pattern="^pay_bybit_erc20$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_ltc, pattern="^pay_bybit_ltc$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_avaxc, pattern="^pay_bybit_avaxc$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_ton, pattern="^pay_bybit_ton$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_base, pattern="^pay_bybit_base$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_arb, pattern="^pay_bybit_arb$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_op, pattern="^pay_bybit_op$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_matic, pattern="^pay_bybit_matic$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.payment_method_bybit_sol, pattern="^pay_bybit_sol$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.bybit_type_selected, pattern="^bybit_type:"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.bybit_back_to_type, pattern="^bybit_back_type:"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.bybit_network_selected, pattern="^bybit_network:"))
+
     # Binance Pay: 'Submit Transaction ID' — its own small conversation,
     # independent of topup_conv_handler since it's entered from a button on
     # a message sent long after that conversation already ended.
     binance_submit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(payment_handlers.binance_submit_start, pattern="^binance_submit:\\d+$")],
         states={
             payment_handlers.BINANCE_TXID: [
@@ -987,6 +1099,7 @@ def main():
     # independent of topup_conv_handler since it's entered from a button on
     # a message sent long after that conversation already ended.
     bybit_submit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(payment_handlers.bybit_submit_start, pattern="^bybit_submit:\\d+$")],
         states={
             payment_handlers.BYBIT_TXID: [
@@ -1008,6 +1121,7 @@ def main():
     # independent of topup_conv_handler since it's entered from a button on
     # a message sent after that conversation already ended.
     zinipay_submit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(payment_handlers.zinipay_submit_start, pattern="^zinipay_submit:\\d+$")],
         states={
             payment_handlers.ZINIPAY_TXID: [
@@ -1047,6 +1161,7 @@ def main():
 
     # Product creation conversation
     create_product_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.create_product_start, pattern="^admin_create_product$")],
         states={
             admin_conversations.PRODUCT_NAME: [
@@ -1107,6 +1222,7 @@ def main():
 
     # Product edit conversation
     edit_product_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.edit_product_start, pattern="^admin_edit_product$")],
         states={
             admin_conversations.EDIT_SELECT_PRODUCT: [
@@ -1142,6 +1258,7 @@ def main():
 
     # Category creation conversation
     create_category_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.create_category_start, pattern="^admin_create_category$")],
         states={
             admin_conversations.CATEGORY_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_conversations.category_name)],
@@ -1159,6 +1276,7 @@ def main():
 
     # Subcategory creation conversation
     create_subcategory_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.create_subcategory_start, pattern="^admin_create_subcategory$")],
         states={
             admin_conversations.SUBCATEGORY_CATEGORY: [
@@ -1179,6 +1297,7 @@ def main():
 
     # Category edit conversation
     edit_category_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.edit_category_start, pattern="^admin_edit_category$")],
         states={
             admin_conversations.EDIT_CATEGORY_SELECT: [
@@ -1207,6 +1326,7 @@ def main():
 
     # Subcategory edit conversation
     edit_subcategory_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.edit_subcategory_start, pattern="^admin_edit_subcategory$")],
         states={
             admin_conversations.EDIT_SUBCATEGORY_SELECT: [
@@ -1236,6 +1356,7 @@ def main():
 
     # Support username configuration conversation
     config_support_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.config_support_username, pattern="^admin_support_username$")],
         states={
             admin_conversations.SETTING_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_conversations.setting_value)],
@@ -1252,6 +1373,7 @@ def main():
 
     # Channel username configuration conversation
     config_channel_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.config_channel_username, pattern="^admin_channel_username$")],
         states={
             admin_conversations.SETTING_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_conversations.setting_value)],
@@ -1268,6 +1390,7 @@ def main():
 
     # Welcome message configuration conversation
     config_welcome_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.config_welcome_message, pattern="^admin_welcome_msg$")],
         states={
             admin_conversations.WELCOME_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_conversations.welcome_message_value)],
@@ -1284,6 +1407,7 @@ def main():
 
     # Store logo configuration conversation
     config_logo_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.config_store_logo, pattern="^admin_store_logo$")],
         states={
             admin_conversations.STORE_LOGO: [MessageHandler(filters.PHOTO, admin_conversations.store_logo_value)],
@@ -1300,6 +1424,7 @@ def main():
 
     # Text-only broadcast conversation
     broadcast_text_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.broadcast_text_start, pattern="^admin_broadcast_text$")],
         states={
             admin_conversations.BROADCAST_TEXT: [
@@ -1318,6 +1443,7 @@ def main():
 
     # Image + Text broadcast conversation
     broadcast_image_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_conversations.broadcast_image_start, pattern="^admin_broadcast_image$")],
         states={
             admin_conversations.BROADCAST_IMAGE: [
@@ -1339,6 +1465,7 @@ def main():
 
     # Dispute conversation
     dispute_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(dispute_handlers.open_dispute_start, pattern="^open_dispute_")],
         states={
             dispute_handlers.DISPUTE_REASON: [
@@ -1357,6 +1484,7 @@ def main():
 
     # Direct purchase conversation (Buy Now flow)
     purchase_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(payment_handlers.buy_product_start, pattern="^(buy_|product_)")],
         states={
             payment_handlers.PURCHASE_QUANTITY: [
@@ -1412,6 +1540,11 @@ def main():
 
     # Global cancel handler for payment pages (outside conversation)
     application.add_handler(CallbackQueryHandler(payment_handlers.cancel_payment_page, pattern="^cancel$"))
+    # Dedicated, explicit "❌ Cancel Deposit" action from the Pending Deposit
+    # notice — same dual registration (conversation fallback above + this
+    # standalone one) as cancel_payment_page/topup_back_to_methods, since
+    # the notice can be shown with or without an active conversation.
+    application.add_handler(CallbackQueryHandler(payment_handlers.cancel_pending_deposit, pattern="^cancel_pending_deposit$"))
 
     # Admin callback handlers
     application.add_handler(CallbackQueryHandler(admin_handlers.admin_menu_callback, pattern="^admin_menu$"))
@@ -1533,6 +1666,7 @@ def main():
 
     # ── Manage Inventory conversation handler (replaces legacy Restock Keys) ────
     manage_inv_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             # New inventory-management entry points (inv_add_{pid} or inv_add_{pid}_v{vid})
             CallbackQueryHandler(
@@ -1581,11 +1715,13 @@ def main():
         ],
         per_user=True,
         per_chat=True,
+        allow_reentry=True,
     )
     application.add_handler(manage_inv_conv)
 
     # ── Delivery Format ("📄 Formatted Account") conversation ───────────────
     delivery_fmt_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(
                 admin_delivery_format.admin_delivery_format_start_callback,
@@ -1610,6 +1746,7 @@ def main():
         ],
         per_user=True,
         per_chat=True,
+        allow_reentry=True,
     )
     application.add_handler(delivery_fmt_conv)
     application.add_handler(CallbackQueryHandler(
@@ -1637,6 +1774,7 @@ def main():
 
     # New ticket conversation
     new_ticket_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(support_handlers.new_ticket_start, pattern="^sc_new$")],
         states={
             support_handlers.TICKET_SUBJECT: [
@@ -1663,6 +1801,7 @@ def main():
 
     # User reply to ticket
     user_reply_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(support_handlers.reply_ticket_start, pattern="^sc_reply_")],
         states={
             support_handlers.TICKET_REPLY: [
@@ -1687,6 +1826,7 @@ def main():
     application.add_handler(CallbackQueryHandler(support_handlers.admin_ticket_set_priority_callback, pattern="^adm_tk_pri_"))
 
     admin_reply_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(support_handlers.admin_ticket_reply_start, pattern="^adm_tk_reply_")],
         states={
             support_handlers.ADMIN_TICKET_REPLY: [
@@ -1707,6 +1847,7 @@ def main():
     # Admin referral settings
     application.add_handler(CallbackQueryHandler(referral_handlers.admin_referral_toggle, pattern="^admin_referral_toggle$"))
     referral_amount_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(referral_handlers.admin_referral_amount_start, pattern="^admin_referral_reward$")],
         states={
             referral_handlers.REFERRAL_AMOUNT_INPUT: [
@@ -1738,6 +1879,7 @@ def main():
 
     # Add new manual payment method conversation
     pm_add_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_pm.admin_pm_add_start, pattern="^admin_pm_add$")],
         states={
             admin_pm.PM_ADD_NAME: [
@@ -1766,6 +1908,7 @@ def main():
 
     # Edit existing manual payment method (single-field) conversation
     pm_edit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_pm.admin_pm_edit_start,
                                             pattern="^admin_pm_edit_(name|emoji|instr|min|max|label|acct|order)_\\d+$")],
         states={
@@ -1807,6 +1950,7 @@ def main():
 
     # Edit a single bKash/Nagad credential field conversation
     gw_edit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(
             admin_pm.admin_gw_edit_start,
             pattern="^admin_gw_edit_(mode|appkey|appsecret|username|password|"
@@ -1975,6 +2119,7 @@ def main():
     # /search command + Search menu button (conversation)
     application.add_handler(CommandHandler("search", search_handlers.search_command))
     search_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(search_handlers.search_start, pattern="^search$")],
         states={
             search_handlers.SEARCH_QUERY: [
@@ -1993,6 +2138,7 @@ def main():
 
     # Coupons — user apply flow (from purchase confirmation)
     apply_coupon_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(coupon_handlers.apply_coupon_start, pattern="^apply_coupon$")],
         states={
             coupon_handlers.COUPON_CODE_INPUT: [
@@ -2014,6 +2160,7 @@ def main():
     application.add_handler(CallbackQueryHandler(coupon_handlers.admin_coupon_delete, pattern="^admin_coupon_delete_\\d+$"))
 
     coupon_add_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(coupon_handlers.admin_coupon_add_start, pattern="^admin_coupon_add$")],
         states={
             coupon_handlers.ADD_CODE: [
@@ -2042,6 +2189,7 @@ def main():
     application.add_handler(CallbackQueryHandler(coupon_handlers.admin_currency_menu, pattern="^admin_currency$"))
     application.add_handler(CallbackQueryHandler(coupon_handlers.admin_currency_clear, pattern="^admin_currency_clear$"))
     currency_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(coupon_handlers.admin_currency_set_start, pattern="^admin_currency_set$")],
         states={
             coupon_handlers.CUR_CODE: [
@@ -2066,6 +2214,7 @@ def main():
     # Loyalty — user side
     application.add_handler(CallbackQueryHandler(loyalty_handlers.loyalty_menu, pattern="^loyalty$"))
     loyalty_redeem_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(loyalty_handlers.loyalty_redeem_start, pattern="^loyalty_redeem$")],
         states={
             loyalty_handlers.REDEEM_AMOUNT: [
@@ -2082,6 +2231,7 @@ def main():
     application.add_handler(CallbackQueryHandler(loyalty_handlers.admin_loyalty_menu, pattern="^admin_loyalty$"))
     application.add_handler(CallbackQueryHandler(loyalty_handlers.admin_loyalty_toggle, pattern="^admin_loy_toggle$"))
     admin_loy_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(loyalty_handlers.admin_loyalty_set_earn, pattern="^admin_loy_earn$"),
             CallbackQueryHandler(loyalty_handlers.admin_loyalty_set_redeem, pattern="^admin_loy_redeem$"),
@@ -2107,6 +2257,7 @@ def main():
     application.add_handler(CallbackQueryHandler(review_handlers.product_reviews_view, pattern="^reviews_\\d+$"))
     # Reviews — write flow (from order detail)
     review_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(review_handlers.review_start, pattern="^review_start_\\d+_\\d+$")],
         states={
             review_handlers.REVIEW_COMMENT: [
@@ -2145,6 +2296,7 @@ def main():
 
     # Search conversation (entry via 🔍 button → user types query → results)
     cfg_search_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_cfg.admin_config_search_start, pattern=r"^cfg_search$")],
         states={
             admin_cfg.SEARCH_QUERY: [
@@ -2165,6 +2317,7 @@ def main():
 
     # Edit conversation
     cfg_edit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(admin_cfg.admin_config_edit_start, pattern=r"^cfg_edit_[a-z_]+$")],
         states={
             admin_cfg.EDIT_VALUE: [
@@ -2380,6 +2533,7 @@ def main():
     # ── Gift Purchase (user-facing conversation) ──────────────────────────────
     from handlers import gift_purchase_handlers
     gift_purchase_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(gift_purchase_handlers.gift_start, pattern=r"^gp:start:\d+$"),
         ],
@@ -2407,6 +2561,7 @@ def main():
     # ── Gift Card redemption (user-facing conversation) ───────────────────────
     from handlers import gift_card_handlers
     gift_card_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(gift_card_handlers.redeem_start, pattern=r"^gc:redeem$"),
         ],
@@ -2440,6 +2595,7 @@ def main():
     # ── Admin Gift Card CRUD (agc:*) — includes a conversation ───────────────
     from handlers import admin_gift_cards
     gift_card_admin_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_gift_cards.create_start, pattern=r"^agc:create_start$"),
         ],
@@ -2483,6 +2639,7 @@ def main():
     # ── Admin Bundle Manager (abn:*) — includes conversations ─────────────────
     from handlers import admin_bundles
     bundle_price_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_bundles.set_price_start, pattern=r"^abn:setprice:\d+$"),
         ],
@@ -2496,6 +2653,7 @@ def main():
         per_user=True, per_chat=True, allow_reentry=True,
     )
     bundle_discount_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_bundles.set_discount_start, pattern=r"^abn:setdisc:\d+$"),
         ],
@@ -2509,6 +2667,7 @@ def main():
         per_user=True, per_chat=True, allow_reentry=True,
     )
     bundle_addchild_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_bundles.add_child_start, pattern=r"^abn:addchild:\d+$"),
         ],
@@ -2567,6 +2726,7 @@ def main():
         review_handlers.review_delete_confirm, pattern=r"^review_del_confirm_\d+$"))
     # Review edit conversation
     review_edit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(review_handlers.review_edit_start, pattern=r"^review_edit_\d+$"),
         ],
@@ -2641,6 +2801,7 @@ def main():
 
     # Wallet adjust conversation (credit / debit) — entered from acc:wal:credit|debit:<uid>
     wallet_adjust_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_wallets.adjust_start_credit,
                                  pattern=r"^acc:wal:credit:\d+$"),
@@ -2666,6 +2827,7 @@ def main():
     from handlers import admin_promotions
 
     flash_sale_new_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_promotions.fs_new_start,
                                  pattern=r"^acc:promo:fs_new:(product|category)$"),
@@ -2694,6 +2856,7 @@ def main():
     application.add_handler(flash_sale_new_conv)
 
     flash_sale_edit_pct_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_promotions.fs_edit_pct_start,
                                  pattern=r"^acc:promo:fs_edit_pct:\d+$"),
@@ -2710,6 +2873,7 @@ def main():
     application.add_handler(flash_sale_edit_pct_conv)
 
     flash_sale_edit_end_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_promotions.fs_edit_end_start,
                                  pattern=r"^acc:promo:fs_edit_end:\d+$"),
@@ -2729,6 +2893,7 @@ def main():
     # "✍️ Custom Broadcast" — compose text conversation (also re-entered by
     # the preview's "✏️ Edit Message" button).
     custom_broadcast_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_broadcast_center.custom_start,
                                  pattern=r"^acc:bc:custom:start$"),
@@ -2749,6 +2914,7 @@ def main():
     # "📦 Product Broadcast" → "✏️ Edit Message" — replace the generated
     # product-broadcast text with admin-supplied text.
     prod_broadcast_edit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[
             CallbackQueryHandler(admin_broadcast_center.prod_edit_start,
                                  pattern=r"^acc:bc:prod:edit$"),

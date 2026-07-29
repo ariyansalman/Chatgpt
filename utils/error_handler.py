@@ -75,15 +75,31 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
         except Exception:  # noqa: BLE001
             pass
 
-    # Try to inform the user gently (never leak the traceback)
+    # Try to inform the user gently (never leak the traceback). If the
+    # update that failed was a button tap, prefer editing that same
+    # message in place — CallbackQuery.edit_message_text is globally
+    # patched (utils/global_callback_reliability.py) to fall back to a
+    # fresh send only when the edit itself is truly impossible, so this
+    # never leaves a duplicate menu behind the way an unconditional
+    # send_message would.
     try:
-        if isinstance(update, Update) and update.effective_chat:
+        query = getattr(update, "callback_query", None) if isinstance(update, Update) else None
+        friendly = (
+            "⚠️ Oops! Something went wrong on our side.\n"
+            "Our team has been notified. Please try again in a moment."
+        )
+        if query is not None:
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            await query.edit_message_text(
+                friendly,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                ),
+            )
+        elif isinstance(update, Update) and update.effective_chat:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=(
-                    "⚠️ Oops! Something went wrong on our side.\n"
-                    "Our team has been notified. Please try again in a moment."
-                ),
+                text=friendly,
             )
     except Exception:  # noqa: BLE001
         pass

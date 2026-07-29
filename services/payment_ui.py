@@ -464,6 +464,16 @@ def invoice_keyboard(
     copied to the user's clipboard entirely client-side. No callback is
     fired, so nothing here can ever produce a confirmation message,
     alert, or popup.
+
+    Navigation: every invoice screen shows exactly ONE "⬅️ Back" row —
+    never a "❌ Cancel" — because Back here is pure navigation back to the
+    Payment Method screen and never touches the pending deposit (see
+    ``handlers/payment_handlers.py:cancel_topup`` /
+    ``topup_back_to_methods``). ``back_cb`` and ``cancel_cb`` both resolve
+    to that same non-destructive navigation today; ``back_cb`` wins when a
+    caller supplies both so this never renders two Back rows. The
+    ``cancel_cb`` parameter name is kept for backward compatibility with
+    every existing call site.
     """
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -486,11 +496,9 @@ def invoice_keyboard(
     elif submit_cb:
         rows.append([InlineKeyboardButton(submit_label, callback_data=submit_cb)])
 
-    if cancel_cb:
-        rows.append([InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)])
-
-    if back_cb:
-        rows.append([InlineKeyboardButton("⬅️ Back", callback_data=back_cb)])
+    back_target = back_cb or cancel_cb
+    if back_target:
+        rows.append([InlineKeyboardButton("⬅️ Back", callback_data=back_target)])
 
     return InlineKeyboardMarkup(rows)
 
@@ -546,11 +554,19 @@ def pending_deposit_card(
 def pending_deposit_keyboard(
     *,
     continue_cb: str,
-    cancel_cb: str = "cancel",
+    cancel_cb: str = "cancel_pending_deposit",
     back_cb: str = "topup_menu_back",
 ) -> InlineKeyboardMarkup:
     """Button layout for the Pending Deposit notice: Continue / Cancel /
-    Back — always in this order, identical for every gateway."""
+    Back — always in this order, identical for every gateway.
+
+    This is the ONE dedicated "Cancel Payment" menu in the payment flow:
+    tapping "❌ Cancel Deposit" here is a deliberate, explicit choice to end
+    the pending deposit (see ``handlers/payment_handlers.py:
+    cancel_pending_deposit``), unlike every other Back button in the
+    payment system, which never cancels anything. ``back_cb`` — a plain
+    "⬅️ Back" row — leaves the pending deposit untouched.
+    """
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("▶️ Continue Deposit", callback_data=continue_cb)],
         [InlineKeyboardButton("❌ Cancel Deposit", callback_data=cancel_cb)],
@@ -854,7 +870,7 @@ class PaymentMethodView:
         if self.pay_url:
             rows.append([InlineKeyboardButton(f"💳 Pay with {self.name}", url=self.pay_url)])
         if self.cancel_cb:
-            rows.append([InlineKeyboardButton("❌ Cancel", callback_data=self.cancel_cb)])
+            rows.append([InlineKeyboardButton("⬅️ Back", callback_data=self.cancel_cb)])
         return InlineKeyboardMarkup(rows) if rows else InlineKeyboardMarkup([])
 
     @classmethod
@@ -1918,6 +1934,13 @@ def submit_txid_prompt(
     ``provider_name`` is optional — when supplied for mobile-money gateways
     (e.g. "bKash"), it personalises the prompt line; omitting it falls back
     to a generic label. Never changes any gateway logic.
+
+    The button is "⬅️ Back", not "❌ Cancel" — tapping it returns to the
+    Payment Details (invoice) screen the user came from, without touching
+    the still-pending deposit (see e.g. ``binance_cancel_submit`` /
+    ``bybit_cancel_submit`` / ``zinipay_cancel_submit`` in
+    handlers/payment_handlers.py). The ``cancel_cb`` parameter name is kept
+    for backward compatibility with every existing call site.
     """
     label = txid_label(category)
     example = example_value or txid_example(category)
@@ -1942,7 +1965,7 @@ def submit_txid_prompt(
             f"Please enter your {label} below.\n\n"
             f"💡 Example: <code>{example}</code>"
         )
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data=cancel_cb)]])
     return text, keyboard
 
 
@@ -1950,7 +1973,12 @@ def binance_order_id_prompt(
     *, example_value: Optional[str] = None,
     cancel_cb: str = "cancel",
 ) -> Tuple[str, InlineKeyboardMarkup]:
-    """The Binance Pay Order ID screen."""
+    """The Binance Pay Order ID screen.
+
+    "⬅️ Back" returns to the Binance Pay Payment Details (invoice) screen
+    without touching the still-pending deposit — see
+    ``handlers/payment_handlers.py:binance_cancel_submit``.
+    """
     example = example_value or "1234567890123456789"
     text = (
         "🧾 <b>Enter Order ID</b>\n\n"
@@ -1959,7 +1987,7 @@ def binance_order_id_prompt(
         "ℹ️ You'll find this in your Binance App → Pay → Transaction History."
     )
     return text, InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
+        [InlineKeyboardButton("⬅️ Back", callback_data=cancel_cb)],
     ])
 
 
@@ -1976,7 +2004,11 @@ def bybit_order_id_prompt(
         💡 Example: 1234567890123456789
         ℹ️ You'll find this in your Bybit App → Assets → Pay → Transaction History.
 
-        [❌ Cancel]
+        [⬅️ Back]
+
+    "⬅️ Back" returns to the Bybit Pay Payment Details (invoice) screen
+    without touching the still-pending deposit — see
+    ``handlers/payment_handlers.py:bybit_cancel_submit``.
     """
     example = example_value or "1234567890123456789"
     text = (
@@ -1986,5 +2018,5 @@ def bybit_order_id_prompt(
         "ℹ️ You'll find this in your Bybit App → Assets → Pay → Transaction History."
     )
     return text, InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
+        [InlineKeyboardButton("⬅️ Back", callback_data=cancel_cb)],
     ])

@@ -447,11 +447,30 @@ async def run_auto_verification_with_retries(
     last_raw: Any = None
     last_detail = ""
 
+    # Hard ceiling on a single attempt, independent of whatever timeout (if
+    # any) the gateway adapter itself sets on its HTTP calls. Guarantees
+    # this engine can never hang indefinitely on one attempt.
+    MAX_ATTEMPT_SECONDS = 30
+
     try:
         for attempt in range(1, max_attempts + 1):
             try:
-                raw = await asyncio.to_thread(attempt_fn)
+                raw = await asyncio.wait_for(
+                    asyncio.to_thread(attempt_fn), timeout=MAX_ATTEMPT_SECONDS,
+                )
                 kind, detail = classify(raw)
+            except asyncio.TimeoutError:
+                # Gateway call exceeded the hard ceiling — never block the
+                # bot waiting on it. The background thread is left to finish
+                # on its own; we simply stop waiting for it and retry.
+                raw = None
+                kind, detail = VERIFY_RETRYABLE, (
+                    f"timed out after {MAX_ATTEMPT_SECONDS}s"
+                )
+                logger.warning(
+                    "Auto-verification attempt %s/%s timed out (>%ss) for gateway=%s tx=%s",
+                    attempt, max_attempts, MAX_ATTEMPT_SECONDS, gateway_id, tx_id,
+                )
             except Exception as e:  # API error / HTTP error / timeout / webhook
                 # delay / invalid response / unknown exception — always safe
                 # to retry, never a reason to lose the deposit.

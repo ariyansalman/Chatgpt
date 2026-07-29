@@ -23,6 +23,7 @@ from utils.bot_config import cfg
 from telegram.error import BadRequest
 from services import payment_ui as pui
 from utils.helpers import format_order_id as _fmt_oid
+from utils.callback_safety import guarded_callback
 
 
 def _format_countdown(end_time) -> str:
@@ -573,45 +574,52 @@ def _shorten_product_name(name: str, budget: int = 28) -> str:
     return result
 
 
+def _format_browser_row(emoji: str, name: str, price_display: str, stock: int,
+                         max_len: int = 64) -> str:
+    """Premium marketplace row label for the flat Product Browser:
+
+        "{emoji} {Product Name} — {price} (Stock: {stock})"
+
+    e.g. "✨ Gemini AI Pro 18m — $1.50 (Stock: 237)"
+
+    Only the product name is ever shortened (with a trailing "…") so the
+    emoji, price, and stock count always stay fully visible within
+    Telegram's ~64-character inline button label limit.
+    """
+    clean_emoji = (emoji or "✨").strip() or "✨"
+    suffix = f" — {price_display} (Stock: {stock})"
+    prefix = f"{clean_emoji} "
+    budget = max_len - len(prefix) - len(suffix)
+    if budget < 4:
+        budget = 4
+    clean_name = (name or "").strip()
+    if len(clean_name) > budget:
+        clean_name = clean_name[:max(1, budget - 1)].rstrip() + "…"
+    return f"{prefix}{clean_name}{suffix}"
+
+
 def build_all_products_keyboard(rows, page=0, total_pages=1,
                                   allow_pagination=True, show_stock=True):
     """Build the flat catalog inline keyboard with optional pagination controls.
 
-    ``rows`` — list of dicts: id / name / price_display / stock / badge.
+    ``rows`` — list of dicts: id / name / price_display / stock / badge / emoji.
     ``page`` — 0-based current page index.
     ``total_pages`` — total number of pages.
     ``allow_pagination`` — whether to include ⬅️ Previous / ➡️ Next buttons.
-    ``show_stock`` — whether to show the stock line beneath each product.
+    ``show_stock`` — kept for admin-config compatibility; the stock count is
+        always part of the premium row format regardless of this flag.
 
-    Single-line full-width format per button:
-        🟢 Product Name • $Price • 📦 N Left   (available, no badge)
-        🆕 Product Name • $Price • 📦 N Left   (available, with badge)
-        ❌ Product Name • $Price • Out of Stock  (out of stock)
+    One product per button, premium marketplace format:
+        {emoji} {Product Name} — ${price} (Stock: {stock})
+    Out-of-stock rows always show a ❌ leading icon instead of the
+    product's configured emoji, so availability stays scannable at a glance.
     """
     keyboard = []
     for r in rows:
-        stock       = r.get("stock", 0)
-        available   = stock > 0
-        price       = r["price_display"]
-        raw_name    = (r["name"] or "").strip()
-        badge_label = r.get("badge", "")
-
-        # Leading icon: first badge emoji for available+badged, otherwise 🟢/❌
-        if available:
-            leading      = (badge_label.split()[0] + " ") if badge_label else "🟢 "
-            stock_suffix = f" • 📦 {stock} Left" if show_stock else ""
-        else:
-            leading      = "❌ "
-            stock_suffix = " • Out of Stock" if show_stock else ""
-
-        price_part  = f" • {price}"
-        overhead    = len(leading) + len(price_part) + len(stock_suffix)
-        name_budget = max(4, 64 - overhead)
-        display_name = raw_name
-        if len(display_name) > name_budget:
-            display_name = display_name[:max(1, name_budget - 1)].rstrip() + "…"
-
-        label = f"{leading}{display_name}{price_part}{stock_suffix}"
+        stock     = r.get("stock", 0)
+        available = stock > 0
+        emoji     = "❌" if not available else (r.get("emoji") or "✨")
+        label = _format_browser_row(emoji, r["name"], r["price_display"], stock)
         keyboard.append([InlineKeyboardButton(label, callback_data=f"product_{r['id']}")])
 
     # Pagination row — only shown when there is more than one page
@@ -626,6 +634,7 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
         if nav_row:
             keyboard.append(nav_row)
 
+    # Bottom row: Main Menu only — the browser never offers any other exit.
     keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
 
     return keyboard
@@ -669,7 +678,8 @@ async def render_all_products_catalog(query, context, telegram_id,
         return
 
     # ── Read admin-configurable settings ─────────────────────────────────────
-    per_page       = max(1, min(10, cfg.get_int("products_per_page", 10)))
+    # Product Browser requirement: maximum 20 products per page.
+    per_page       = max(1, min(20, cfg.get_int("products_per_page", 20)))
     allow_pag      = cfg.get_bool("product_list_allow_pagination", True)
     show_stock     = cfg.get_bool("product_list_show_stock", True)
     show_counter   = cfg.get_bool("product_list_show_counter", True)
@@ -736,6 +746,13 @@ async def render_all_products_catalog(query, context, telegram_id,
     start     = page * per_page
     page_rows = rows[start: start + per_page]
 
+    # Remember this page so refresh, Back-from-product-details, and any
+    # future re-entry into the browser resume exactly here instead of
+    # resetting to page 0. Only "🏠 Main Menu" is allowed to leave the
+    # browser / reset navigation state.
+    if context is not None and getattr(context, "user_data", None) is not None:
+        context.user_data["products_current_page"] = page
+
     # ── Build header text ─────────────────────────────────────────────────────
     header_lines = ["🛍️ <b>Products</b>"]
     if show_counter:
@@ -757,6 +774,7 @@ async def render_all_products_catalog(query, context, telegram_id,
 
 
 @perf_track("products_handler")
+@guarded_callback()
 async def products_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle all flat-catalog callbacks:
       • 'products'           — initial open (main menu button)
@@ -779,14 +797,22 @@ async def products_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise
         return
 
-    # Parse page number from products_page_{N}; fall back to 0 for any other
-    # variant (bare 'products', 'products_refresh', unknown suffixes).
-    page = 0
+    # Parse page number from products_page_{N} — an explicit page request.
+    # Any other variant ('products', 'products_refresh', 'back_to_products',
+    # unknown suffixes) resumes the user's remembered current page instead
+    # of resetting to page 0, so Refresh, Back, and re-opening the browser
+    # never jump the user back to page 1 unless they explicitly asked for it.
+    explicit_page = None
     if data.startswith("products_page_"):
         try:
-            page = int(data[len("products_page_"):])
+            explicit_page = int(data[len("products_page_"):])
         except (ValueError, IndexError):
-            page = 0
+            explicit_page = None
+
+    if explicit_page is not None:
+        page = explicit_page
+    else:
+        page = context.user_data.get("products_current_page", 0) if context is not None else 0
 
     await render_all_products_catalog(
         query, context, update.effective_user.id, page=page,
@@ -1027,6 +1053,7 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
                 raise
 
 
+@guarded_callback()
 async def product_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle product selection - show product details."""
     query = update.callback_query
@@ -1978,6 +2005,8 @@ async def download_receipt_callback(update: Update, context: ContextTypes.DEFAUL
 
 
 async def back_to_products_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle "↩️ Back to Products" — reloads the complete flat catalog."""
-    # Just redirect to products_callback
+    """Handle "↩️ Back to Products" — returns to the exact page the user was
+    browsing before opening product details (see ``products_current_page``
+    in ``render_all_products_catalog``); never resets to page 0."""
+    # Just redirect to products_callback (already duplicate-tap guarded)
     await products_callback(update, context)
