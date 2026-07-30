@@ -3538,6 +3538,20 @@ def main():
     # Register global error handler — catches every unhandled exception
     application.add_error_handler(global_error_handler)
 
+    # ── FSM / conversation-state guard ─────────────────────────────────
+    # Must be installed last, after every ConversationHandler above (and
+    # every other module's own register_handlers(application) call) has
+    # been added, so it can discover the complete set. Ensures /start,
+    # Main Menu, Products, Wallet, Support, and every other global-nav
+    # button force-ends any conversation flow (Support, Quantity, Deposit,
+    # Search, Coupon, etc.) still tracked for that user, so only one
+    # active state can ever exist and no stale flow can intercept a
+    # message after the user has navigated elsewhere. See
+    # utils/conversation_guard.py for details. No callback_data, business
+    # logic, database, or UI is touched by this.
+    from utils.conversation_guard import install as _install_conversation_guard
+    _install_conversation_guard(application)
+
     # Start the bot (Phase 4: polling OR webhook mode)
     logger.info("Bot started successfully!")
 
