@@ -635,11 +635,15 @@ async def _do_inv_import(update, context, lines, product_id, variant_id, ptype):
         # genuine 0 → >0 restock transition for the automatic broadcast.
         avail_before = _count_key_backed_available(session, product_id, variant_id)
 
+        # Duplicate detection only considers currently available (unsold)
+        # inventory. Sold/delivered keys are excluded so admins can
+        # re-import previously sold inventory for testing or restocking.
         existing_fps = {
             row[0] for row in session.query(ProductKey.key_fingerprint)
             .filter(
                 ProductKey.product_id == product_id,
                 ProductKey.key_fingerprint.isnot(None),
+                ProductKey.is_sold.is_(False),
             )
             .all()
         }
@@ -650,6 +654,7 @@ async def _do_inv_import(update, context, lines, product_id, variant_id, ptype):
                     ProductKey.product_id == product_id,
                     ProductKey.variant_id == variant_id,
                     ProductKey.key_fingerprint.isnot(None),
+                    ProductKey.is_sold.is_(False),
                 )
                 .all()
             }

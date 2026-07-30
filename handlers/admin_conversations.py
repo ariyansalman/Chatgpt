@@ -628,12 +628,16 @@ async def create_product_final(update, context):
         duplicates_skipped = 0
         if product_keys and context.user_data['product_type'] in KEY_LIKE:
             # Section 15 — normalized fingerprints, safe duplicate detection.
+            # Only currently available (unsold) inventory counts toward
+            # duplicates — sold/delivered keys are excluded so admins can
+            # re-import previously sold inventory (testing/restocking).
             from services.inventory_import import dedupe_import
             ptype = context.user_data['product_type']
             existing_fps = {
                 row[0] for row in session.query(ProductKey.key_fingerprint)
                 .filter(ProductKey.product_id == p_id,
-                        ProductKey.key_fingerprint.isnot(None)).all()
+                        ProductKey.key_fingerprint.isnot(None),
+                        ProductKey.is_sold.is_(False)).all()
             }
             accepted, dupes, invalid = dedupe_import(
                 product_keys, product_type=ptype, existing_fps=existing_fps)
