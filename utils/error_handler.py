@@ -6,7 +6,7 @@ import os
 import traceback
 
 from telegram import Update
-from telegram.error import BadRequest
+from telegram.error import BadRequest, NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
 from config import settings as app_settings
@@ -33,6 +33,15 @@ def _is_benign_stale_callback_query(err: BaseException | None) -> bool:
         return False
     msg = str(err).lower()
     return any(needle in msg for needle in _BENIGN_CALLBACK_QUERY_ERRORS)
+
+
+# Transient network hiccups during the long-poll getUpdates loop (dropped
+# TCP connection, read timeout, etc.). PTB's own network_retry_loop already
+# catches and retries these with backoff before this handler ever sees
+# them, so no update or user is actually affected -- there's nothing to
+# "fix" and it should not page the admin as if the bot crashed.
+def _is_benign_polling_network_error(err: BaseException | None) -> bool:
+    return isinstance(err, (NetworkError, TimedOut))
 
 # Optional Sentry integration — only initialized if SENTRY_DSN is set.
 SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
@@ -63,6 +72,13 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
         # callback query) — log quietly and skip the user/admin
         # notifications entirely; there is nothing actionable here.
         logger.debug("Ignoring stale/expired callback query: %s", err)
+        return
+
+    if _is_benign_polling_network_error(err):
+        # Expected, self-recovering network blip during long-polling --
+        # already retried internally by PTB. Log quietly and skip the
+        # user/admin notifications entirely.
+        logger.debug("Ignoring transient polling network error (auto-retried): %s", err)
         return
 
     logger.error("Unhandled exception while processing update", exc_info=err)

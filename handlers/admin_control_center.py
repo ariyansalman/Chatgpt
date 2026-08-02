@@ -11,6 +11,7 @@ Callback namespace
   acc:cat:<name>          — category submenu page 1
   acc:cat:<name>:<page>   — category submenu page N
   acc:ui:search           — admin quick search → existing gse:menu
+  acc:ui:ssearch          — Settings Search (searches _CAT_PAGES only, new)
   acc:ui:favs             — favorites menu
   acc:ui:recent           — recent menus
   acc:ui:settings         — admin UI settings panel
@@ -30,7 +31,14 @@ from __future__ import annotations
 
 import logging
 from telegram import Update, InlineKeyboardButton as IKB, InlineKeyboardMarkup as IKM
-from telegram.ext import ContextTypes
+from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    ConversationHandler,
+    MessageHandler,
+    filters,
+)
 from telegram.error import BadRequest
 
 from utils.permissions import has_permission
@@ -286,6 +294,137 @@ for _cat, _pages in _CAT_PAGES.items():
             if _cb not in _CB_META:
                 _CB_META[_cb] = (_cat, _label)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Settings Search — independent from Global Search (gse:*), searches only
+# the settings/menu items in _CAT_PAGES. Built once at import time.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SSEARCH_INDEX: list[tuple[str, str, str, str]] = []  # (category_name, emoji, label, cb)
+for _cat, _pages in _CAT_PAGES.items():
+    _icon, _name = _CAT_META.get(_cat, ("📋", _cat.title()))
+    for _page in _pages:
+        for _label, _cb in _page:
+            _SSEARCH_INDEX.append((_name, _icon, _label, _cb))
+
+SSEARCH_QUERY = 950  # ConversationHandler state for Settings Search
+
+
+def _ssearch(query: str, limit: int = 15) -> list[tuple[str, str, str, str]]:
+    """Rank-search _SSEARCH_INDEX. Never touches _CAT_PAGES."""
+    q = query.strip().lower()
+    if not q:
+        return []
+    words = q.split()
+
+    exact, starts, label_hit, cat_hit, other = [], [], [], [], []
+    for name, icon, label, cb in _SSEARCH_INDEX:
+        label_l, cat_l = label.lower(), name.lower()
+        if label_l == q:
+            exact.append((name, icon, label, cb))
+        elif label_l.startswith(q):
+            starts.append((name, icon, label, cb))
+        elif q in label_l:
+            label_hit.append((name, icon, label, cb))
+        elif q in cat_l:
+            cat_hit.append((name, icon, label, cb))
+        elif all(w in label_l or w in cat_l for w in words):
+            other.append((name, icon, label, cb))
+
+    seen: set[str] = set()
+    results: list[tuple[str, str, str, str]] = []
+    for item in exact + starts + label_hit + cat_hit + other:
+        if item[3] in seen:
+            continue
+        seen.add(item[3])
+        results.append(item)
+        if len(results) >= limit:
+            break
+    return results
+
+
+async def ssearch_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Entry point for acc:ui:ssearch — prompts admin for a keyword."""
+    query = update.callback_query
+    await query.answer()
+    if not has_permission(update.effective_user.id, "view_analytics"):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return ConversationHandler.END
+
+    await _safe_edit(
+        query,
+        "🔍 <b>Search Settings</b>\n\n"
+        "Type a keyword to search settings.\n\n"
+        "Examples:\n"
+        "<code>delivery</code>  <code>payment</code>  <code>theme</code>\n"
+        "<code>wallet</code>  <code>language</code>",
+        IKM([[IKB("❌ Cancel", callback_data="acc:root")]]),
+    )
+    return SSEARCH_QUERY
+
+
+async def ssearch_recv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Receives the typed keyword, shows ranked results, ends the conversation."""
+    text = (update.message.text or "").strip()
+    if not text:
+        await update.message.reply_text("🔍 Type a keyword to search settings.")
+        return SSEARCH_QUERY
+
+    results = _ssearch(text)
+
+    if not results:
+        await update.message.reply_text(
+            "🔍 <b>Search Settings</b>\n\n"
+            "❌ কিছু পাওয়া যায়নি।\n\n"
+            "বানান পরীক্ষা করুন অথবা অন্য একটি শব্দ ব্যবহার করুন।",
+            parse_mode="HTML",
+            reply_markup=IKM([
+                [IKB("🔄 Search Again", callback_data="acc:ui:ssearch")],
+                [IKB("⬅ Back", callback_data="acc:root")],
+            ]),
+        )
+        return ConversationHandler.END
+
+    kb = [[IKB(f"{icon} {label}", callback_data=cb)] for _, icon, label, cb in results]
+    kb.append([IKB("🔄 Search Again", callback_data="acc:ui:ssearch")])
+    kb.append([IKB("⬅ Back", callback_data="acc:root")])
+
+    await update.message.reply_text(
+        f"🔍 <b>Search Results</b>\n\nFound: {len(results)} result(s)",
+        parse_mode="HTML",
+        reply_markup=IKM(kb),
+    )
+    return ConversationHandler.END
+
+
+async def ssearch_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel/Back handler while the search conversation is active."""
+    if update.callback_query:
+        await update.callback_query.answer()
+    await render_control_center(update, context)
+    return ConversationHandler.END
+
+
+def build_ssearch_conversation() -> ConversationHandler:
+    """Settings Search conversation — registered separately in bot.py,
+    independent from the existing Global Search (gse:*) conversation."""
+    return ConversationHandler(
+        entry_points=[CallbackQueryHandler(ssearch_start, pattern=r"^acc:ui:ssearch$")],
+        states={
+            SSEARCH_QUERY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ssearch_recv),
+                CallbackQueryHandler(ssearch_cancel, pattern=r"^acc:root$"),
+            ],
+        },
+        fallbacks=[
+            CallbackQueryHandler(ssearch_cancel, pattern=r"^acc:root$"),
+            CommandHandler("cancel", ssearch_cancel),
+        ],
+        per_message=False,
+        allow_reentry=True,
+        name="acc_ssearch",
+    )
+
+
 _MAX_FAVS   = 8
 _MAX_RECENT = 10
 _NAV_KEY    = "admin_nav_v2"   # key in context.bot_data
@@ -397,8 +536,25 @@ def build_acc_root_keyboard(maintenance_on: bool,
     if row:
         kb.append(row)
 
+    # ── Store Settings — promoted to the home screen as a primary entry
+    # point (previously reachable only via 🏪 Store → Store Settings).
+    # Reuses the existing "admin_settings" callback/handler — no new menu,
+    # no new callback. The old path via the Store category still works.
+    kb.append([IKB("⚙️ Store Settings", callback_data="admin_settings")])
+
+    # ── Favorites & Recent — expose existing backend (unchanged logic) ────────
+    kb.append([
+        IKB("⭐ Favorites", callback_data="acc:ui:favs"),
+        IKB("🕐 Recent", callback_data="acc:ui:recent"),
+    ])
+
     # ── Search ────────────────────────────────────────────────────────────────
-    kb.append([IKB("🔍 Search", callback_data="acc:ui:search")])
+    # "Search" = data search (orders/users/products) via existing Global Search.
+    # "Search Settings" = new, searches only _CAT_PAGES (admin settings/menus).
+    kb.append([
+        IKB("🔍 Search", callback_data="acc:ui:search"),
+        IKB("🔍 Search Settings", callback_data="acc:ui:ssearch"),
+    ])
 
     # ── Maintenance toggle ────────────────────────────────────────────────────
     maint_label = (
@@ -429,19 +585,23 @@ def _build_category_keyboard(cat: str, page: int, uid: int,
     kb: list[list[IKB]] = []
 
     if compact:
-        # Two buttons per row
-        row: list[IKB] = []
+        # Setting + pin toggle per row (compact layout keeps its own
+        # toggle/flag working; pin exposure is identical in shape to
+        # non-compact so every setting gets a reachable pin button).
         for label, cb in items:
-            row.append(IKB(label, callback_data=cb))
-            if len(row) == 2:
-                kb.append(row)
-                row = []
-        if row:
-            kb.append(row)
+            pin_icon = "★" if _is_fav(context, uid, cb) else "⭐"
+            kb.append([
+                IKB(label, callback_data=cb),
+                IKB(pin_icon, callback_data=f"acc:ui:pin:{cb}"),
+            ])
     else:
-        # One button per row (cleaner on mobile)
+        # One setting + pin toggle per row (cleaner on mobile)
         for label, cb in items:
-            kb.append([IKB(label, callback_data=cb)])
+            pin_icon = "★" if _is_fav(context, uid, cb) else "⭐"
+            kb.append([
+                IKB(label, callback_data=cb),
+                IKB(pin_icon, callback_data=f"acc:ui:pin:{cb}"),
+            ])
 
     # Pagination row
     pag: list[IKB] = []
@@ -633,6 +793,10 @@ async def _render_category(cat: str, page: int, uid: int,
     total = len(pages)
     page  = max(1, min(page, total))
 
+    # Remember where the admin currently is, so pin/unpin (Task 5) can
+    # refresh this exact message in place instead of jumping to root.
+    _nav(context, uid)["cur"] = (cat, page)
+
     use_bc = _cfg_bool("admin_panel_breadcrumb", True)
     if use_bc and total > 1:
         breadcrumb = f"🏠 Admin  ›  {cat_icon} <b>{cat_name}</b>  ·  {page} / {total}"
@@ -686,9 +850,35 @@ async def _handle_ui_action(action: str, rest: list[str], uid: int,
         label, _ = _CB_META.get(cb, ("", cb))
         if not label:
             label = cb
-        added = _toggle_fav(context, uid, label, cb)
-        await query.answer("⭐ Pinned!" if added else "✅ Unpinned", show_alert=False)
-        await render_control_center(update, context)
+
+        nd         = _nav(context, uid)
+        was_pinned = _is_fav(context, uid, cb)
+        if not was_pinned and len(nd["favs"]) >= _MAX_FAVS:
+            # _toggle_fav() itself no-ops silently at the cap — surface an
+            # honest warning here rather than a misleading "Pinned!" toast.
+            await query.answer(
+                f"⚠️ Max {_MAX_FAVS} favorites reached. Unpin one first.",
+                show_alert=True,
+            )
+        else:
+            _toggle_fav(context, uid, label, cb)
+            now_pinned = _is_fav(context, uid, cb)
+            await query.answer("⭐ Pinned!" if now_pinned else "✅ Unpinned", show_alert=False)
+
+        # Immediate in-place refresh (⭐ ↔ ★) — no new message, no jump to
+        # root. Falls back to the root panel only if we don't know where
+        # the admin currently is (should not normally happen, since the
+        # pin button only appears inside a category page).
+        cur = _nav(context, uid).get("cur")
+        if cur:
+            cat, page = cur
+            new_kb = _build_category_keyboard(cat, page, uid, context)
+            try:
+                await query.edit_message_reply_markup(reply_markup=new_kb)
+            except BadRequest:
+                pass
+        else:
+            await render_control_center(update, context)
         return
 
     # ── unpin (from favorites list) ───────────────────────────────────────────

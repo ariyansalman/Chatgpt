@@ -295,7 +295,7 @@ def create_support_center_keyboard(lang: str, support_username: str = ""):
     ]
     if support_username:
         keyboard.append([InlineKeyboardButton(
-            "📞 Chat with Support",
+            "📞 Contact Support",
             url=f"https://t.me/{support_username}",
         )])
     return InlineKeyboardMarkup(keyboard)

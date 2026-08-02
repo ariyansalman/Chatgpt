@@ -103,13 +103,21 @@ async def support_center_callback(update: Update, context: ContextTypes.DEFAULT_
 
     with get_db_session() as session:
         _ = _get_user(session, tid)
+        # Always re-query Settings fresh (single source of truth) so any
+        # change saved from Store Settings is reflected immediately, with
+        # no restart and no caching involved.
         s = session.query(Settings).first()
-        support_username = (s.support_username or "").lstrip("@") if s else ""
+        support_username = (s.support_username or "").strip().lstrip("@") if s else ""
 
     text = (
         "🎧 <b>Support Center</b>\n\n"
-        "Need help? Open a support ticket and our team will reply here."
+        "Need help? Open a support ticket and our team will reply here.\n\n"
     )
+    if support_username:
+        text += f"📞 Support: @{support_username}"
+    else:
+        text += "📞 Support username not configured."
+
     await safe_edit_message_text(query, 
         text,
         reply_markup=create_support_center_keyboard("en", support_username),

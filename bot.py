@@ -2532,6 +2532,12 @@ def main():
     from handlers.admin_control_center import acc_dispatch, render_control_center
     from handlers import admin_wallets
 
+    # ─── V46: Settings Search — registered before the acc_dispatch catch-all
+    # (further below) so acc:ui:ssearch is intercepted by this conversation
+    # first. Independent from the existing Global Search (gse:*) conversation.
+    from handlers.admin_control_center import build_ssearch_conversation
+    application.add_handler(build_ssearch_conversation())
+
     # /panel opens the new Admin Control Center directly.
     async def _panel_command(update, context):
         from utils.helpers import is_admin
@@ -3506,7 +3512,8 @@ def main():
         pattern=r"^acc:(?!wal:(?:credit|debit):\d+$)(?!sup:add$)(?!bat:add$)(?!res:(?:add|assign)$)"
                 r"(?!bc:custom:(?:start|edit)$)(?!bc:prod:edit$)"
                 r"(?!promo:fs_new:(?:product|category)$)"
-                r"(?!promo:fs_edit_pct:\d+$)(?!promo:fs_edit_end:\d+$).+$"))
+                r"(?!promo:fs_edit_pct:\d+$)(?!promo:fs_edit_end:\d+$)"
+                r"(?!ui:ssearch$).+$"))
 
     # Copy-link / download-links buttons on the purchase success keyboard
     from services.purchase_success import (
