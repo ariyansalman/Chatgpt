@@ -1,0 +1,27 @@
+# Railway deployment config — https://docs.railway.com/reference/config-as-code
+#
+# Mirrors render.yaml's primary service: render_service.py binds $PORT with a
+# /health endpoint (so Railway's HTTP health check passes) and then runs
+# bot.py's polling loop in the same process — see render_service.py.
+#
+# This file was previously MISSING, which meant a Railway deploy fell back to
+# Nixpacks auto-detection instead of a defined start command. Nixpacks has no
+# reliable way to know this repo runs a Telegram bot (not a web app) via
+# render_service.py, so an undeclared deploy could easily start the wrong
+# entry point (e.g. bot.py directly, without the $PORT health server Railway
+# needs) or fail to start at all.
+#
+# The payment-gateway webhook receiver (webhook_server.py) needs a public
+# HTTPS callback URL and its own $PORT; deploy it as a SECOND Railway service
+# in the same project if you use bKash/Nagad/Cryptomus/NOWPayments/ZiniPay/
+# CryptoBot, with startCommand = "python webhook_server.py".
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "python render_service.py"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
