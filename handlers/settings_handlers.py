@@ -65,11 +65,10 @@ async def settings_menu_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t("language.menu_button", lang), callback_data="language_menu")],
         [InlineKeyboardButton(t("settings.notifications", lang), callback_data="uset:notif")],
         [InlineKeyboardButton(t("settings.currency", lang), callback_data="uset:currency")],
-        [InlineKeyboardButton(t("settings.privacy", lang), callback_data="uset:privacy")],
-        [InlineKeyboardButton(t("settings.terms", lang), callback_data="uset:terms")],
-        [InlineKeyboardButton(t("settings.about", lang), callback_data="uset:about")],
+        [InlineKeyboardButton(t("settings.referral_settings", lang), callback_data="uset:privacy")],
         _back_row("main_menu", t("settings.back", lang)),
     ])
     await safe_edit_message_text(
@@ -153,7 +152,7 @@ async def privacy_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
     ])
     await safe_edit_message_text(
         query,
-        f"{t('settings.privacy', lang)}\n\n{t('settings.privacy_hint', lang)}",
+        f"{t('settings.referral_settings', lang)}\n\n{t('settings.privacy_hint', lang)}",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
@@ -225,7 +224,34 @@ async def about_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")
 
 
+async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/about — footer/help entry point for Privacy, Terms, and About Store.
+
+    These three pages used to sit in the primary ⚙ Settings menu; they now
+    live here instead, reached via /about (or the "ℹ️ About & Legal" row
+    inside Settings) so the primary Settings menu only surfaces real,
+    functional settings. Every underlying handler/callback (uset:privacy,
+    uset:terms, uset:about) is unchanged -- this is purely a new entry point.
+    """
+    tid = update.effective_user.id
+    lang = get_user_language(tid)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t("settings.referral_settings", lang), callback_data="uset:privacy")],
+        [InlineKeyboardButton(t("settings.terms", lang), callback_data="uset:terms")],
+        [InlineKeyboardButton(t("settings.about", lang), callback_data="uset:about")],
+        _back_row("main_menu", t("settings.back", lang)),
+    ])
+    text = f"ℹ️ {t('settings.about', lang)} & Legal"
+    if update.callback_query:
+        await update.callback_query.answer()
+        await safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
+    else:
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+
 def register_handlers(app):
+    from telegram.ext import CommandHandler
+    app.add_handler(CommandHandler("about", about_command))
     app.add_handler(CallbackQueryHandler(settings_menu_callback, pattern=r"^uset:menu$"))
     app.add_handler(CallbackQueryHandler(notifications_menu_callback, pattern=r"^uset:notif$"))
     app.add_handler(CallbackQueryHandler(notifications_toggle_callback, pattern=r"^uset:notif:tgl:(promo|order)$"))

@@ -286,7 +286,7 @@ def create_language_keyboard(lang: str = "en"):
 def create_refer_keyboard(lang: str):
     """Refer & Earn keyboard — compact 3-button layout."""
     keyboard = [
-        [InlineKeyboardButton("📋 Copy Link", callback_data="copy_ref_link")],
+        [InlineKeyboardButton("🔗 Copy Referral Link", callback_data="copy_ref_link")],
         [InlineKeyboardButton("📜 Referral History", callback_data="rd:comm")],
         [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ]

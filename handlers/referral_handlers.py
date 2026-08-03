@@ -57,25 +57,13 @@ async def refer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise
         return
 
-    bot_username = (await context.bot.get_me()).username
-    link = f"https://t.me/{bot_username}?start=ref_{telegram_id}"
-
-    from utils.user_prefs import get_hide_referral
-    if get_hide_referral(telegram_id):
-        link_block = "🔒 <i>Hidden — enable in ⚙ Settings → 🔐 Privacy</i>"
-    else:
-        link_block = f"<code>{link}</code>"
-
     pct_str = _fmt_pct(_commission_pct())
     text = (
-        "👥 <b>Referral Program</b>\n"
-        "Invite friends and earn commission on every eligible completed purchase made through your referral link.\n\n"
-        f"💰 <b>Commission Rate:</b> {pct_str}\n\n"
-        "📊 <b>Statistics</b>\n"
-        f"👥 Total Referrals: <b>{count}</b>\n"
-        f"💵 Total Earnings: <b>${earned:.2f}</b>\n\n"
-        "🔗 <b>Your Referral Link</b>\n"
-        f"{link_block}\n\n"
+        "👥 <b>Invite Friends</b>\n"
+        "Invite friends and earn rewards after eligible purchases.\n\n"
+        f"💰 <b>Commission:</b> {pct_str}\n"
+        f"👥 <b>Total Referrals:</b> {count}\n"
+        f"💵 <b>Total Earnings:</b> ${earned:.2f}\n\n"
         "ℹ️ Commission is credited automatically after every eligible completed order."
     )
 
@@ -183,14 +171,28 @@ async def process_referral_reward(
 
 
 async def copy_ref_link_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show a popup confirmation for Copy Link (copy_ref_link).
+    """Surface the referral link for Copy Link (copy_ref_link).
 
-    The referral link is already displayed as a <code> block in the message
-    (tap-to-copy on all Telegram clients). This handler shows a popup to
-    confirm the action without sending any new chat message.
+    The main Invite message intentionally no longer prints the raw URL
+    (per spec: don't display the raw referral URL inside the message), so
+    this button is now the only place the link appears -- shown in a popup
+    alert the user can press-and-hold to copy, without sending a new chat
+    message or changing anything about how the link itself is generated.
     """
     query = update.callback_query
-    await query.answer("✅ Referral link copied.", show_alert=True)
+    telegram_id = update.effective_user.id
+
+    from utils.user_prefs import get_hide_referral
+    if get_hide_referral(telegram_id):
+        await query.answer(
+            "🔒 Your referral link is hidden. Enable it in ⚙ Settings → 🎁 Referral Settings.",
+            show_alert=True,
+        )
+        return
+
+    bot_username = (await context.bot.get_me()).username
+    link = f"https://t.me/{bot_username}?start=ref_{telegram_id}"
+    await query.answer(f"🔗 Your referral link:\n{link}", show_alert=True)
 
 
 # ─── Admin: referral settings ───────────────────────────────────────────────
