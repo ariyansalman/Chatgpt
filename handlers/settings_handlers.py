@@ -3,8 +3,8 @@
 Callback namespace: ``uset:*`` (new -- does not collide with any existing
 namespace in this project).
 
-    uset:menu                  — Settings root (Language / Notifications /
-                                  Currency / Privacy / Terms / About / Back)
+    uset:menu                  — Settings root (Notifications / Currency /
+                                  Privacy / Terms / About / Back)
     uset:notif                 — Notifications sub-menu
     uset:notif:tgl:<promo|order>
     uset:currency               — Currency sub-menu (reuses the existing
@@ -16,10 +16,11 @@ namespace in this project).
 
 This module does not change any existing business logic, database schema,
 callback_data, or handler -- it only adds a new navigational layer that the
-Main Menu's ⚙ Settings button opens into. The existing 🌐 Language button
-(``language_menu`` callback, handlers/user_handlers.py) and the existing
-USD/BDT currency toggle (``utils.currency.toggle_user_currency``) are reused
-as-is from inside this menu.
+Main Menu's ⚙ Settings button opens into. 🌐 Language is its own top-level
+Main Menu button again (``language_menu`` callback, handlers/user_handlers.py,
+unchanged) and is no longer nested inside Settings. The existing USD/BDT
+currency toggle (``utils.currency.toggle_user_currency``) is reused as-is
+from inside this menu.
 """
 from __future__ import annotations
 
@@ -64,7 +65,6 @@ async def settings_menu_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(t("language.menu_button", lang), callback_data="language_menu")],
         [InlineKeyboardButton(t("settings.notifications", lang), callback_data="uset:notif")],
         [InlineKeyboardButton(t("settings.currency", lang), callback_data="uset:currency")],
         [InlineKeyboardButton(t("settings.privacy", lang), callback_data="uset:privacy")],

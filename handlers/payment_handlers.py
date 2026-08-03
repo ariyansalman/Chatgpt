@@ -6906,7 +6906,7 @@ async def show_purchase_confirmation(update: Update, context: ContextTypes.DEFAU
         ]
     else:
         keyboard = [
-            [InlineKeyboardButton("💰 Top Up Wallet", callback_data="topup")],
+            [InlineKeyboardButton("➕ Add Funds", callback_data="topup")],
             [InlineKeyboardButton("⬅️ Back", callback_data=f"buy_{product_id}")],
         ]
 

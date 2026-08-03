@@ -108,6 +108,7 @@ async def support_center_callback(update: Update, context: ContextTypes.DEFAULT_
         # no restart and no caching involved.
         s = session.query(Settings).first()
         support_username = (s.support_username or "").strip().lstrip("@") if s else ""
+        channel_username = (s.channel_username or "").strip().lstrip("@") if s else ""
 
     text = (
         "🎧 <b>Support Center</b>\n\n"
@@ -120,7 +121,7 @@ async def support_center_callback(update: Update, context: ContextTypes.DEFAULT_
 
     await safe_edit_message_text(query, 
         text,
-        reply_markup=create_support_center_keyboard("en", support_username),
+        reply_markup=create_support_center_keyboard("en", support_username, channel_username),
         parse_mode="HTML",
     )
 

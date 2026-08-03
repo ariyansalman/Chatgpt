@@ -293,7 +293,7 @@ def create_refer_keyboard(lang: str):
     return InlineKeyboardMarkup(keyboard)
 
 
-def create_support_center_keyboard(lang: str, support_username: str = ""):
+def create_support_center_keyboard(lang: str, support_username: str = "", channel_username: str = ""):
     """Support Center main keyboard — compact 2-column grid layout."""
     keyboard = [
         [
@@ -305,6 +305,11 @@ def create_support_center_keyboard(lang: str, support_username: str = ""):
             InlineKeyboardButton("🏠 Main Menu",    callback_data="main_menu"),
         ],
     ]
+    if channel_username:
+        keyboard.append([InlineKeyboardButton(
+            "📢 Channel",
+            url=f"https://t.me/{channel_username}",
+        )])
     if support_username:
         keyboard.append([InlineKeyboardButton(
             "📞 Contact Support",
@@ -620,20 +625,10 @@ def create_payment_method_keyboard(methods=None, gateways=None):
     return InlineKeyboardMarkup(keyboard)
 
 
-
-def create_support_keyboard(support_username, channel_username):
-    """Create support page keyboard with contact and community links."""
-    keyboard = []
-
-    if support_username:
-        keyboard.append([InlineKeyboardButton("📞 Contact support", url=f"https://t.me/{support_username}")])
-
-    if channel_username:
-        keyboard.append([InlineKeyboardButton("🫂 Join My Community", url=f"https://t.me/{channel_username}")])
-
-    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="main_menu")])
-
-    return InlineKeyboardMarkup(keyboard)
+# NOTE: create_support_keyboard() was removed here as part of the Main Menu
+# restructure -- it only backed the now-removed legacy support_callback
+# screen. The 📢 Channel link it used to show now lives on the real Support
+# Center keyboard below (create_support_center_keyboard).
 
 
 def create_admin_main_menu_keyboard():

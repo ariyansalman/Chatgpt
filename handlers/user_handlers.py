@@ -9,7 +9,7 @@ from database import get_db_session, run_db, User, Category, Subcategory, Produc
 from sqlalchemy.orm import selectinload, joinedload
 from utils import (
     format_price, format_datetime, create_main_menu_keyboard, create_product_detail_keyboard,
-    create_support_keyboard, check_user_banned,
+    check_user_banned,
     paginate_items, format_product_display,
     build_availability_text, create_back_support_keyboard, create_language_keyboard,
     get_user_currency, toggle_user_currency,
@@ -1277,36 +1277,13 @@ async def flash_sales_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
 
-async def support_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle support button - show support page."""
-    query = update.callback_query
-    await query.answer()
-
-    # Check if user is banned
-    if check_user_banned(update.effective_user.id):
-        try:
-            await query.edit_message_text("⛔ You have been banned from using this bot.")
-        except BadRequest as e:
-            if "Message is not modified" not in str(e):
-                raise
-        return
-
-    with get_db_session() as session:
-        store_settings = session.query(Settings).first()
-
-        support_username = store_settings.support_username if store_settings else ""
-        channel_username = store_settings.channel_username if store_settings else ""
-
-        message = "☎️ My Shop is Open 24/7"
-
-        try:
-            await query.edit_message_text(
-                message,
-                reply_markup=create_support_keyboard(support_username, channel_username)
-            )
-        except BadRequest as e:
-            if "Message is not modified" not in str(e):
-                raise
+# NOTE: the legacy support_callback (old "☎️ My Shop is Open 24/7" screen,
+# create_support_keyboard) was removed here as part of the Main Menu
+# restructure -- it was dead code (never registered against any
+# callback_data) and duplicated the real, currently-used Support Center at
+# handlers/support_handlers.py:support_center_callback (callback
+# "support_center"), which now also surfaces the 📢 Channel link that this
+# screen used to show. See MAIN_MENU_RESTRUCTURE_REPORT.md.
 
 
 # ── Order History / Order Detail ── shared module-level helpers ───────────────

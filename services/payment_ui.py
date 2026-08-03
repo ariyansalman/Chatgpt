@@ -215,17 +215,17 @@ def with_deposit_cancel(
 
 def deposit_cancelled_card() -> str:
     """The one shared confirmation shown after a real deposit cancel."""
-    return "✅ Deposit cancelled successfully."
+    return "✅ Payment cancelled successfully."
 
 
 def deposit_cancelled_keyboard(
     new_deposit_cb: str = "topup",
     back_cb: str = "topup_back_to_wallet",
 ) -> InlineKeyboardMarkup:
-    """Buttons shown under the "✅ Deposit cancelled successfully." card:
+    """Buttons shown under the "✅ Payment cancelled successfully." card:
     start a brand-new deposit immediately, or go back."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Create New Deposit", callback_data=new_deposit_cb)],
+        [InlineKeyboardButton("➕ Add Funds", callback_data=new_deposit_cb)],
         [InlineKeyboardButton("🔙 Back", callback_data=back_cb)],
     ])
 
@@ -275,12 +275,12 @@ def build_card(
 _STAGE_TITLE = {
     "created":        "Payment Created",
     "waiting":         "Waiting for Payment",
-    "pending_review":  "Deposit Submitted",
-    "approved":        "Deposit Approved",
-    "rejected":        "Deposit Rejected",
-    "expired":         "Deposit Expired",
-    "cancelled":       "Deposit Cancelled",
-    "failed":          "Deposit Failed",
+    "pending_review":  "Payment Submitted",
+    "approved":        "Payment Approved",
+    "rejected":        "Payment Rejected",
+    "expired":         "Payment Expired",
+    "cancelled":       "Payment Cancelled",
+    "failed":          "Payment Failed",
 }
 
 _STAGE_STATUS = {
@@ -361,7 +361,7 @@ def user_payment_card(
         fields = [
             ("💳", "Payment Method", label),
             ("💰", "Amount", copy_code(amount) if amount else None),
-            ("🧾", "Deposit ID", copy_code(_display_deposit_id(order_id, created_at))),
+            ("🧾", "Payment ID", copy_code(_display_deposit_id(order_id, created_at))),
             ("🔗", "Transaction ID", copy_code(txn_id) if txn_id else None),
         ]
         fields.extend(extra)
@@ -377,7 +377,7 @@ def user_payment_card(
     show_txn_id = bool(txn_id) and str(txn_id) != str(dep_id)
 
     lines: list[str] = [
-        f"{_STAGE_TITLE_EMOJI[stage]} <b>{_STAGE_TITLE.get(stage, 'Deposit Update')}</b>",
+        f"{_STAGE_TITLE_EMOJI[stage]} <b>{_STAGE_TITLE.get(stage, 'Payment Update')}</b>",
         "",
         f"💳 {label}",
     ]
@@ -487,7 +487,7 @@ def invoice_card(
     dep = _display_deposit_id(deposit_id, created_at)
     if dep:
         lines.append("")
-        lines.append("🧾 <b>Deposit ID</b>")
+        lines.append("🧾 <b>Payment ID</b>")
         lines.append(f"<code>{dep}</code>")
 
     if expires_at:
@@ -609,9 +609,9 @@ def pending_deposit_card(
     single generic "Amount" line unchanged.
     """
     lines = [
-        "⚠️ <b>Pending Deposit</b>",
+        "⚠️ <b>Pending Payment</b>",
         "",
-        "You already have a deposit in progress. Continue it or cancel it "
+        "You already have a payment in progress. Continue it or cancel it "
         "before starting a new one.",
         "",
         f"{method_emoji} <b>Payment Method</b>",
@@ -638,7 +638,7 @@ def pending_deposit_card(
     dep = _display_deposit_id(deposit_id, created_at)
     if dep:
         lines.append("")
-        lines.append("🧾 <b>Deposit ID</b>")
+        lines.append("🧾 <b>Payment ID</b>")
         lines.append(f"<code>{dep}</code>")
     if expires_at:
         lines.append("")
@@ -664,7 +664,7 @@ def pending_deposit_keyboard(
     "⬅️ Back" row — leaves the pending deposit untouched.
     """
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("▶️ Continue Deposit", callback_data=continue_cb)],
+        [InlineKeyboardButton("▶️ Continue Payment", callback_data=continue_cb)],
         [InlineKeyboardButton("❌ Cancel", callback_data=cancel_cb)],
         [InlineKeyboardButton("⬅️ Back", callback_data=back_cb)],
     ])
@@ -702,7 +702,7 @@ def binance_pay_invoice(
         f"{copy_code(pay_id)}"
     )
     if dep:
-        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(dep)}")
+        lines.append(f"🧾 <b>Payment ID:</b> {copy_code(dep)}")
     if expires_at:
         lines.append(f"⏳ <b>Expires In:</b> {expires_at}")
     lines.extend([
@@ -746,7 +746,7 @@ def bybit_pay_invoice(
         f"{copy_code(pay_id)}"
     )
     if dep:
-        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(dep)}")
+        lines.append(f"🧾 <b>Payment ID:</b> {copy_code(dep)}")
     if expires_at:
         lines.append(f"⏳ <b>Expires In:</b> {expires_at}")
     lines.extend([
@@ -836,7 +836,7 @@ def crypto_invoice(
     lines.append("📥 <b>Wallet Address:</b>")
     lines.append(f"{copy_code(wallet_address)}")
     if dep:
-        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(dep)}")
+        lines.append(f"🧾 <b>Payment ID:</b> {copy_code(dep)}")
     if expires_at:
         lines.append(f"⏳ <b>Expires In:</b> {expires_at}")
     lines.extend(["", "📌 <b>Instructions:</b>", instr])
@@ -878,7 +878,7 @@ def mobile_money_invoice(
         lines.append(f"📊 <b>Exchange Rate:</b> <code>{exchange_rate}</code>")
     lines.append(f"📲 <b>Send Money To:</b> <code>{send_to}</code>")
     if dep:
-        lines.append(f"🧾 <b>Deposit ID:</b> <code>{dep}</code>")
+        lines.append(f"🧾 <b>Payment ID:</b> <code>{dep}</code>")
     if expires_at:
         lines.append(f"⏳ <b>Expires In:</b> {expires_at}")
     lines.extend(["", "📌 <b>Instructions:</b>", instr])
@@ -1024,7 +1024,7 @@ class PaymentMethodView:
 # ─────────────────────────────────────────────────────────────────────────
 
 _DEFAULT_PENDING_REVIEW_NOTE = (
-    "Your deposit has been received and is waiting for verification."
+    "Your payment has been received and is waiting for verification."
 )
 
 
@@ -1079,7 +1079,7 @@ def pending_review_card(
 
     # ── Build card ────────────────────────────────────────────────────────
     lines: list[str] = [
-        "🟡 <b>Deposit Submitted</b>",
+        "🟡 <b>Payment Submitted</b>",
         "",
         f"💳 {label}",
     ]
@@ -1119,7 +1119,7 @@ def pending_review_keyboard(
     are introduced here, and future payment methods get this keyboard for free.
     """
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📜 Deposit History",  callback_data=history_cb)],
+        [InlineKeyboardButton("📜 Payment History",  callback_data=history_cb)],
         [InlineKeyboardButton("🎧 Support",           callback_data=support_cb)],
         [InlineKeyboardButton("⬅️ Back to Menu",      callback_data=menu_cb)],
     ])
@@ -1165,13 +1165,13 @@ def pending_review_keyboard(
 # ─────────────────────────────────────────────────────────────────────────
 
 _ADMIN_TITLES: dict[str, str] = {
-    "pending_review":  "🔔 New Deposit Request",
-    "approved":        "✅ Deposit Approved",
-    "rejected":        "❌ Deposit Rejected",
-    "expired":         "⌛ Deposit Expired",
-    "cancelled":       "🚫 Deposit Cancelled",
-    "failed":          "⚠️ Deposit Failed",
-    "waiting_payment": "🔔 Deposit Request",
+    "pending_review":  "🔔 New Payment Request",
+    "approved":        "✅ Payment Approved",
+    "rejected":        "❌ Payment Rejected",
+    "expired":         "⌛ Payment Expired",
+    "cancelled":       "🚫 Payment Cancelled",
+    "failed":          "⚠️ Payment Failed",
+    "waiting_payment": "🔔 Payment Request",
 }
 
 
@@ -1249,7 +1249,7 @@ def admin_review_card(
     gateway_label, _ = gateway_meta(gateway_key, gateway_label_override)
     deposit_id = _display_deposit_id(order_id, created_at)
     status_emoji, status_text = _status_parts(status_key)
-    title = _ADMIN_TITLES.get(status_key, "🔔 Deposit Update")
+    title = _ADMIN_TITLES.get(status_key, "🔔 Payment Update")
 
     name_line = full_name or customer_name
     username_suffix = f" (@{username.lstrip('@')})" if username else ""
@@ -1427,7 +1427,7 @@ def admin_review_keyboard(
     if msg_user_id:
         row3.append(InlineKeyboardButton("💬 Message User", url=f"tg://user?id={msg_user_id}"))
     if history_cb:
-        row3.append(InlineKeyboardButton("📜 Deposit History", callback_data=history_cb))
+        row3.append(InlineKeyboardButton("📜 Payment History", callback_data=history_cb))
     if back_cb:
         row4.append(InlineKeyboardButton("⬅ Back", callback_data=back_cb))
     rows = [r for r in (row1, row2, row3, row4) if r]
@@ -1473,13 +1473,13 @@ def deposit_success_card(
 
         🎉 Your wallet has been credited successfully. Thank you for using our service!
     """
-    lines = ["✅ <b>Deposit Successful!</b>", ""]
+    lines = ["✅ <b>Payment Successful!</b>", ""]
     lines.append(f"💵 <b>Amount Credited:</b> {amount}")
     lines.append(f"💳 <b>Payment Method:</b> {payment_method}")
     if bonus_line:
         lines.append(f"🎁 <b>Bonus:</b> {bonus_line}")
     if deposit_id:
-        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+        lines.append(f"🧾 <b>Payment ID:</b> <code>{deposit_id}</code>")
     lines.append("🕒 <b>Time:</b> Just now")
     lines.extend([
         "",
@@ -1495,13 +1495,13 @@ def binance_deposit_success_card(
     bonus_line: Optional[str] = None,
 ) -> str:
     """Binance Pay success receipt, isolated from other gateway UIs."""
-    lines = ["✅ <b>Deposit Successful!</b>", ""]
+    lines = ["✅ <b>Payment Successful!</b>", ""]
     lines.append(f"💵 <b>Amount Credited:</b> {amount}")
     lines.append("💳 <b>Payment Method:</b> Binance Pay")
     if bonus_line:
         lines.append(f"🎁 <b>Bonus:</b> {bonus_line}")
     if deposit_id:
-        lines.append(f"🧾 <b>Deposit ID:</b> {deposit_id}")
+        lines.append(f"🧾 <b>Payment ID:</b> {deposit_id}")
     lines.append("🕒 <b>Time:</b> Just now")
     lines.extend([
         "",
@@ -1565,7 +1565,7 @@ def binance_verifying_card(*, order_id: str, deposit_id: Optional[str] = None) -
         f"🧾 <b>Order ID:</b> {copy_code(order_id)}",
     ]
     if deposit_id:
-        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(deposit_id)}")
+        lines.append(f"🧾 <b>Payment ID:</b> {copy_code(deposit_id)}")
     lines.extend([
         "",
         "⏳ This usually takes a few seconds...",
@@ -1600,7 +1600,7 @@ def crypto_verifying_card(
     if txhash:
         lines.append(f"🧾 <b>TxHash:</b> <code>{txhash}</code>")
     if deposit_id:
-        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+        lines.append(f"🧾 <b>Payment ID:</b> <code>{deposit_id}</code>")
     lines.append("")
     lines.append("⏳ Waiting for network confirmation...")
     return "\n".join(lines)
@@ -1640,12 +1640,12 @@ def crypto_verification_pending_card(
     )
     lines.append("")
     lines.append(
-        "Your deposit has been placed in the Pending Review queue and will be reviewed shortly."
+        "Your payment has been placed in the Pending Review queue and will be reviewed shortly."
     )
     if deposit_id or txhash:
         lines.append("")
     if deposit_id:
-        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+        lines.append(f"🧾 <b>Payment ID:</b> <code>{deposit_id}</code>")
     if txhash:
         lines.append(f"🔗 <b>TxHash:</b> <code>{txhash}</code>")
     lines.extend([
@@ -1672,7 +1672,7 @@ def bybit_verifying_card(
     if order_id:
         lines.append(f"🧾 <b>Order ID:</b> <code>{order_id}</code>")
     if deposit_id:
-        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+        lines.append(f"🧾 <b>Payment ID:</b> <code>{deposit_id}</code>")
     lines.append("")
     lines.append("⏳ This usually takes a few seconds...")
     return "\n".join(lines)
@@ -1709,7 +1709,7 @@ def mobile_money_verifying_card(
     if txid:
         lines.append(f"🧾 <b>TrxID:</b> <code>{txid}</code>")
     if deposit_id:
-        lines.append(f"🧾 <b>Deposit ID:</b> <code>{deposit_id}</code>")
+        lines.append(f"🧾 <b>Payment ID:</b> <code>{deposit_id}</code>")
     lines.append("")
     lines.append("⏳ This usually takes a few seconds...")
     return "\n".join(lines)
@@ -1779,7 +1779,7 @@ def binance_verification_pending_card(
         f"🧾 <b>Order ID:</b> {copy_code(order_id)}",
     ]
     if deposit_id:
-        lines.append(f"🧾 <b>Deposit ID:</b> {copy_code(deposit_id)}")
+        lines.append(f"🧾 <b>Payment ID:</b> {copy_code(deposit_id)}")
     lines.extend([
         "",
         "⏱ This usually takes a few minutes.",
@@ -1836,9 +1836,9 @@ def payment_expired_keyboard() -> InlineKeyboardMarkup:
     💳 Create New Deposit · 🔄 Generate New Payment · 📜 Deposit History ·
     👛 My Wallet · 🏠 Back to Menu."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Create New Deposit", callback_data="topup")],
+        [InlineKeyboardButton("➕ Add Funds", callback_data="topup")],
         [InlineKeyboardButton("🔄 Generate New Payment", callback_data="topup")],
-        [InlineKeyboardButton("📜 Deposit History", callback_data="wallet_history"),
+        [InlineKeyboardButton("📜 Payment History", callback_data="wallet_history"),
          InlineKeyboardButton("👛 My Wallet", callback_data="wallet")],
         [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ])

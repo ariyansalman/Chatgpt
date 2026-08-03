@@ -1,9 +1,11 @@
-"""Section 12 — user-facing Wallet menu.
+"""Section 12 — user-facing Wallet menu (the complete financial center).
 
-Shows the real current balance, Total Deposited, and Total Spent (sums of
+Shows the real current balance, Total Added, and Total Spent (sums of
 COMPLETED Transaction/Order rows only — never counts failed/rejected/
 pending/refund transactions). Buttons: Add Funds (routes into the existing
-topup flow), Payment History, Back to Menu.
+topup flow), Payment History, Redeem Coupon (gift-card/coupon-to-balance
+redemption), Withdraw (shown only while withdrawals aren't disabled --
+routes into the existing referral-earnings withdrawal flow), Back to Menu.
 """
 from __future__ import annotations
 
@@ -164,16 +166,25 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "👛 <b>Wallet</b>\n\n"
         f"💰 Current Balance: <b>{bal_str}</b>\n"
-        f"📥 Total Deposited: <b>{dep_str}</b>\n"
+        f"📥 Total Added: <b>{dep_str}</b>\n"
         f"🛒 Total Spent: <b>{spent_str}</b>\n\n"
         "Manage your wallet using the options below."
     )
 
-    kb = InlineKeyboardMarkup([
+    kb_rows = [
         [InlineKeyboardButton("➕ Add Funds",       callback_data="topup"),
          InlineKeyboardButton("📜 Payment History", callback_data="wallet_history")],
-        [InlineKeyboardButton("🏠 Main Menu",   callback_data="main_menu")],
-    ])
+        [InlineKeyboardButton("🎁 Redeem Coupon",   callback_data="gc:redeem")],
+    ]
+    try:
+        from utils.bot_config import cfg as _wallet_cfg
+        _withdraw_status = _wallet_cfg.get_str("withdrawal_approval_status", "enabled")
+    except Exception:
+        _withdraw_status = "enabled"
+    if _withdraw_status not in ("disabled",):
+        kb_rows.append([InlineKeyboardButton("💸 Withdraw", callback_data="rd:withdraw")])
+    kb_rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
+    kb = InlineKeyboardMarkup(kb_rows)
     if q:
         try:
             try:

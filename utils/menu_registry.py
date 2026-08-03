@@ -63,31 +63,38 @@ LEADING_EMOJI_RE = re.compile(
 DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
     # Row 1 — Shop (full-width)
     {"key": "products", "label_key": "main_menu.products", "callback": "products",
-     "row": 1, "order": 0, "full_width": True, "emoji": "🛍"},
+     "row": 1, "order": 0, "full_width": True, "emoji": "🛒"},
 
-    # Row 2 — Wallet | Deposit
+    # Row 2 — Wallet | Orders
+    # NOTE: 💳 Deposit (key "topup", callback "topup") used to be its own
+    # top-level button. Wallet is now the complete financial center --
+    # "Add Funds" (the same "topup" flow, unchanged) lives one level down
+    # as a button inside 👛 Wallet (see handlers/wallet_handlers.py), so it
+    # no longer competes for space on the Main Menu. Every other entry
+    # point that used to say "Deposit" now redirects into Wallet / Add
+    # Funds; the "topup" callback itself is untouched for compatibility.
     {"key": "wallet", "label_key": "main_menu.wallet", "callback": "wallet",
      "row": 2, "order": 0, "emoji": "👛"},
-    {"key": "topup", "label_key": "main_menu.topup", "callback": "topup",
-     "row": 2, "order": 1, "emoji": "💳"},
-
-    # Row 3 — Orders | Invite
     {"key": "orders", "label_key": "main_menu.order_history", "callback": "order_history",
-     "row": 3, "order": 0, "emoji": "📦"},
-    {"key": "refer", "label_key": "main_menu.refer", "callback": "refer",
-     "row": 3, "order": 1, "emoji": "👥"},
+     "row": 2, "order": 1, "emoji": "📦"},
 
-    # Row 4 — Support | Settings
-    # NOTE: 🌐 Language used to live directly on the Main Menu (key
-    # "language", callback "language_menu"). It now lives one level down,
-    # inside ⚙ Settings (see handlers/settings_handlers.py), alongside the
-    # new Notifications / Currency / Privacy / Terms / About screens --
-    # the "language_menu" callback and its handler are unchanged, just
-    # reached via Settings instead of a dedicated top-level button.
+    # Row 3 — Invite | Support
+    {"key": "refer", "label_key": "main_menu.refer", "callback": "refer",
+     "row": 3, "order": 0, "emoji": "👥"},
     {"key": "support", "label_key": "main_menu.support", "callback": "support_center",
-     "row": 4, "order": 0, "emoji": "🎧"},
+     "row": 3, "order": 1, "emoji": "🎧"},
+
+    # Row 4 — Language | Settings
+    # NOTE: 🌐 Language previously lived one level down inside ⚙ Settings.
+    # It is now back on the Main Menu as its own top-level button (the
+    # "language_menu" callback and its handler in handlers/user_handlers.py
+    # are unchanged) so language selection doesn't require opening Settings
+    # first. ⚙ Settings keeps only real, functional settings (Notifications /
+    # Currency / Privacy / Terms / About) -- see handlers/settings_handlers.py.
+    {"key": "language", "label_key": "language.menu_button", "callback": "language_menu",
+     "row": 4, "order": 0, "emoji": "🌐"},
     {"key": "settings", "label_key": "main_menu.settings", "callback": "uset:menu",
-     "row": 4, "order": 1, "emoji": "⚙"},
+     "row": 4, "order": 1, "emoji": "⚙️"},
 
     # NOTE: the old full-width "👤 Profile" main-menu button has been
     # retired as part of a Main Menu simplification pass -- the primary
@@ -97,7 +104,8 @@ DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
     # "ua:profile", unchanged), just reached via the /profile command
     # instead of a dedicated button, so it doesn't compete for space here.
 
-    # Row 5 — Admin Panel (full-width, admin-only)
+    # Row 5 — Admin Panel (full-width, admin-only; not one of the 7
+    # user-facing Main Menu buttons -- only ever shown to admins)
     {"key": "admin", "label_key": "main_menu.admin_panel", "callback": "admin_menu",
      "row": 5, "order": 0, "full_width": True, "admin_only": True, "emoji": "🛠️"},
 ]
@@ -186,7 +194,7 @@ _PROFILE_CFG_KEYS = {
 # admin button-press required after a deploy. Manual customizations made
 # *after* that automatic sync are left alone until the version is bumped
 # again.
-MENU_DEFAULTS_VERSION = 4
+MENU_DEFAULTS_VERSION = 5
 _MENU_DEFAULTS_VERSION_CFG_KEY = "main_menu_defaults_version"
 
 
