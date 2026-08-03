@@ -100,61 +100,41 @@ def _product_price_for_user(product, telegram_id):
     return f"{symbol}{amount:,.2f}"
 
 
-_HOME_DIVIDER = "━━━━━━━━━━━━━━━━"
-
-
-def _time_greeting(lang: str, first_name: str = "") -> str:
-    """Return a time-of-day greeting ('☀️ Good Morning, Name') in the local
-    server hour. Falls back to a neutral welcome if no name is available."""
-    hour = datetime.now().hour
-    if 5 <= hour < 12:
-        greet = t("start.greeting_morning", lang)
-    elif 12 <= hour < 18:
-        greet = t("start.greeting_afternoon", lang)
-    else:
-        greet = t("start.greeting_evening", lang)
-    name = (first_name or "").strip()
-    return f"{greet}, {name}" if name else greet
-
-
 def _build_home_message(lang: str, balance_str: str, total_orders: int = 0,
                          first_name: str = "", hide_balance: bool = False) -> str:
-    """Compose the /start & Main Menu dashboard card.
+    """Compose the /start, Main Menu, Home, and Language-refresh welcome message.
 
-    Premium layout:
-      🛍 Premium Digital Store
+    This is the ONE welcome-message builder used everywhere the Home screen
+    is (re)built — see the three call sites of _build_home_message() in this
+    file (start_command, main_menu_callback, set_language_callback). Fixed,
+    compact template (no admin-configurable title/footer/greeting/order
+    count -- those were retired along with the old dashboard-card layout):
 
-      ━━━━━━━━━━━━━━━━
-      ☀️ Good Morning, Name
-      💰 Balance: $X.XX
-      📦 Orders: N
-      ━━━━━━━━━━━━━━━━
+        🛍 Welcome to {shop_name}!
 
-      ✨ Instant Delivery • Secure Payments
+        Premium digital products with secure payments and instant automated
+        delivery.
 
-    Title/footer stay admin-configurable via Bot Configuration (home_title /
-    home_footer), same as before — only the surrounding scaffolding
-    (dividers, time-based greeting, balance/orders lines) is new.
+        💰 Wallet Balance: {balance}
+
+    {shop_name} is read fresh from Bot Configuration on every call (the
+    "shop_name" key, category Operations → Home) so an admin renaming the
+    store is reflected immediately, everywhere, with no restart -- falls
+    back to "Digital Store" if never set. {balance} is whatever the caller
+    already fetched from the DB and formatted in the user's configured
+    currency, so it's always the live value -- falls back to "$0.00" if the
+    caller couldn't resolve one. `total_orders` and `first_name` are no
+    longer part of the message; the parameters are kept so none of the
+    existing call sites need to change.
     """
-    title  = cfg.get_str("home_title",  "").strip() or t("start.dashboard_title", lang)
-    footer = cfg.get_str("home_footer", "").strip() or t("start.dashboard_footer", lang)
-    wallet_label = t("start.dashboard_wallet_label", lang)
-    orders_label = t("start.dashboard_orders_label", lang)
+    shop_name = cfg.get_str("shop_name", "").strip() or "Digital Store"
+    shown_balance = "••••••" if hide_balance else (balance_str or "$0.00")
 
-    greeting = _time_greeting(lang, first_name)
-    shown_balance = "••••••" if hide_balance else balance_str
-
-    body_lines = [
-        _HOME_DIVIDER,
-        greeting,
-        f"{wallet_label}: {shown_balance}",
-        f"{orders_label}: {total_orders}",
-        _HOME_DIVIDER,
-    ]
-
-    parts = [title, "\n".join(body_lines), footer]
-    # Drop any empty part so admins who clear a field never get a stray blank line.
-    return "\n\n".join(p for p in parts if p and p.strip())
+    return (
+        f"🛍 Welcome to {shop_name}!\n\n"
+        "Premium digital products with secure payments and instant automated delivery.\n\n"
+        f"💰 Wallet Balance: {shown_balance}"
+    )
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

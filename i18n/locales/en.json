@@ -18,21 +18,6 @@
     "select_other": "Select another language:",
     "saved": "✅ Language set to {language}."
   },
-  "start": {
-    "welcome_balance": "{welcome_msg}\n\n💰 Your Wallet Balance: {balance}",
-    "stats_card": "💎 YOUR ACCOUNT\n\n💰  Balance   →  {balance}\n📦  Orders    →  {orders}\n❤️  Wishlist  →  {wishlist}",
-    "choose_option": "👇 Choose an option below",
-    "greeting": "👋 Hey {name}, welcome back!",
-    "dashboard_title": "🛍 Premium Digital Store",
-    "dashboard_subtitle": "AI Subscriptions • Software • Digital Products",
-    "dashboard_wallet_label": "💰 Balance",
-    "dashboard_footer": "✨ Instant Delivery • Secure Payments",
-    "dashboard_orders_label": "📦 Orders",
-    "greeting_morning": "☀️ Good Morning",
-    "greeting_afternoon": "🌤 Good Afternoon",
-    "greeting_evening": "🌙 Good Evening",
-    "greeting_fallback": "👋 Welcome"
-  },
   "main_menu": {
     "products": "🛍 Shop",
     "flash_sales": "🔥 Flash Sales",

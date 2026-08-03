@@ -258,24 +258,17 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("page_about", "text", "We sell digital keys and files. Fast, automated, 24/7.",
      "ops", "About", "Shown when the user opens About."),
 
-    # ── Home Dashboard (/start & Main Menu card) ────────────────────────────
-    ("home_title", "str", "🛍️ Premium Digital Store",
-     "home_dashboard", "Home: Title",
-     "Bold headline shown at the top of the /start & Main Menu dashboard card. "
-     "Leave empty to use the built-in localized default."),
-    ("home_subtitle", "text", "✨ Premium AI subscriptions, software licenses, and digital products.",
-     "home_dashboard", "Home: Subtitle",
-     "One-line tagline shown under the title. "
-     "Leave empty to use the built-in localized default."),
-    ("home_wallet_label", "str", "💳 Wallet Balance",
-     "home_dashboard", "Home: Wallet Label",
-     "Label shown above the user's wallet balance (rendered in monospace). "
-     "Leave empty to use the built-in localized default."),
-    ("home_footer", "str", "",
-     "home_dashboard", "Home: Footer",
-     "Optional short line shown at the bottom of the dashboard card, above the menu buttons. "
-     "Left blank by default -- the menu below is self-explanatory and doesn't need a "
-     "\"choose an option\" prompt. Set this only if your store needs a specific call-to-action."),
+    # ── Home / Welcome message (/start, Main Menu, Language refresh, any
+    # screen that rebuilds Home) ─────────────────────────────────────────────
+    # The welcome message itself is a fixed, compact template (see
+    # handlers/user_handlers.py:_build_home_message) — shop_name is the only
+    # admin-configurable piece of it. Renaming it here is reflected
+    # immediately everywhere the Home screen is shown, no restart needed.
+    ("shop_name", "str", "Digital Store",
+     "home_dashboard", "Shop Name",
+     "Store name shown in the Welcome message everywhere (\"🛍 Welcome to "
+     "{shop_name}!\") -- /start, Main Menu, Home, Return to Home, and after "
+     "a language change. Leave empty to fall back to \"Digital Store\"."),
 
     # ── Operations ──────────────────────────────────────────────────────────
     ("webhook_base_url", "str", "", "ops",
