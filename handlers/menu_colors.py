@@ -129,11 +129,12 @@ async def mm_toggle_colors(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def mm_toggle_all_colors(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Instantly enable/disable colored buttons across the ENTIRE bot."""
     from utils.bot_config import cfg
+    from utils.button_colors import global_colors_enabled
     query = update.callback_query
     if not is_admin_user(update):
         await query.answer("⛔ Admins only.", show_alert=True)
         return
-    current = cfg.get_bool("global_button_colors_enabled", True)
+    current = global_colors_enabled()
     cfg.set("global_button_colors_enabled", not current)
     await query.answer(
         "🚫 All bot buttons turned OFF (default color everywhere)." if current

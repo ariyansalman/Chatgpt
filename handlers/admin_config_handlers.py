@@ -25,6 +25,7 @@ from telegram.error import BadRequest
 from utils.bot_config import cfg, CATEGORIES, get_meta, list_by_category, DEFAULTS
 from utils.safe_conversation import safe_conversation
 from utils.permissions import has_permission
+from utils import nav_state
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,14 @@ async def admin_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not has_permission(update.effective_user.id, "manage_settings"):
         return
 
+    # Push this screen onto the shared breadcrumb stack, then ask it what
+    # was open immediately before Bot Configuration was entered (Admin
+    # Panel, a specific category page, the legacy admin menu, etc). This
+    # replaces a previous hardcoded jump to Store Settings — Back must
+    # return to wherever the admin actually came from.
+    nav_state.enter_screen(context, "admin_bot_config")
+    back_cb = nav_state.parent_of(context, "admin_bot_config", default="acc:root")
+
     # ── Search bar at the top ──
     kb: list[list[InlineKeyboardButton]] = [
         [InlineKeyboardButton(
@@ -143,7 +152,7 @@ async def admin_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if row:
         kb.append(row)
 
-    kb.append([InlineKeyboardButton("🔙 Back", callback_data="admin_settings")])
+    kb.append([InlineKeyboardButton("🔙 Back", callback_data=back_cb)])
 
     total_all = sum(_CAT_COUNT.values())
     text = (
@@ -299,6 +308,7 @@ async def admin_config_section(update: Update, context: ContextTypes.DEFAULT_TYP
     sec = _SEC_BY_ID.get(sid)
     if not sec:
         return
+    nav_state.enter_screen(context, f"cfg_sec_{sid}")
     _, emoji, label, cats = sec
 
     kb: list[list[InlineKeyboardButton]] = []
@@ -346,6 +356,7 @@ async def admin_config_category(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             cat, page = raw, 1
 
+    nav_state.enter_screen(context, f"cfg_cat_{cat}__p1")
     items       = list_by_category(cat)
     cat_label   = _CAT_LABELS.get(cat, cat)
     total       = len(items)

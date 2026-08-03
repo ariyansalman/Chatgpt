@@ -174,7 +174,8 @@ async def mm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ])
 
     # Bot-wide color switch — covers every OTHER keyboard in the bot
-    all_colors_on = cfg.get_bool("global_button_colors_enabled", True)
+    from utils.button_colors import global_colors_enabled
+    all_colors_on = global_colors_enabled()
     rows.append([
         InlineKeyboardButton(
             f"🌈 All Bot Buttons: {'✅ ON' if all_colors_on else '🚫 OFF'}",

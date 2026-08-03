@@ -64,6 +64,7 @@ DEFAULT_MENU_ITEM_COLORS: dict[str, str] = {
     "refer": "green",
     "account": "blue",
     "language": "blue",
+    "settings": "blue",
     "admin": "red",
 }
 
@@ -143,12 +144,48 @@ def default_color_for_button(button_id: Any = "", text: Any = "") -> str:
     return "blue"
 
 
+_GLOBAL_COLORS_KEY = "global_button_colors_enabled"
+
+
+def global_colors_enabled() -> bool:
+    """The one place that answers "are bot-wide button colors ON?".
+
+    Every keyboard builder that needs to decide whether to render a
+    color should go through :func:`get_button_color` (which already
+    calls this), not read the ``global_button_colors_enabled`` bot_config
+    key directly -- keeping a single source of truth means the toggle
+    can never drift out of sync between call sites again.
+    """
+    try:
+        from utils.bot_config import cfg
+        return cfg.get_bool(_GLOBAL_COLORS_KEY, True)
+    except Exception:
+        # Config may not be ready during early startup -- default to the
+        # same "on" default the stored setting itself uses.
+        return True
+
+
 def get_button_color(
     button_id: Any = "",
     text: Any = "",
     fallback: Any = None,
-) -> str:
-    """Get an exact override, or a compatible automatic default."""
+) -> str | None:
+    """The single source of truth for "what color should this button be".
+
+    Every keyboard builder in the project should ask this function --
+    directly or through :func:`telegram_style_for_color` fed by this
+    function's return value -- instead of deciding colors on its own.
+
+    Returns ``None`` when the global colors toggle is OFF. In that case
+    nothing else runs: no per-button override, no automatic default, no
+    random/cycle result -- callers must treat ``None`` as "render this
+    button with Telegram's own default style, no exceptions". Stored
+    per-button overrides are left completely untouched in the database;
+    this function only ever decides whether they get *rendered* on this
+    call, never whether they get *kept*.
+    """
+    if not global_colors_enabled():
+        return None
     key = str(button_id or "").strip()
     if key:
         override = _read_overrides().get(key)

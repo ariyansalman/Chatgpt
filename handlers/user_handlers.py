@@ -23,6 +23,7 @@ from telegram.error import BadRequest
 from services import payment_ui as pui
 from utils.helpers import format_order_id as _fmt_oid
 from utils.callback_safety import guarded_callback
+from utils.user_prefs import get_hide_balance
 
 
 def _format_countdown(end_time) -> str:
@@ -99,34 +100,59 @@ def _product_price_for_user(product, telegram_id):
     return f"{symbol}{amount:,.2f}"
 
 
-def _build_home_message(lang: str, balance_str: str, total_orders: int = 0) -> str:
+_HOME_DIVIDER = "━━━━━━━━━━━━━━━━"
+
+
+def _time_greeting(lang: str, first_name: str = "") -> str:
+    """Return a time-of-day greeting ('☀️ Good Morning, Name') in the local
+    server hour. Falls back to a neutral welcome if no name is available."""
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        greet = t("start.greeting_morning", lang)
+    elif 12 <= hour < 18:
+        greet = t("start.greeting_afternoon", lang)
+    else:
+        greet = t("start.greeting_evening", lang)
+    name = (first_name or "").strip()
+    return f"{greet}, {name}" if name else greet
+
+
+def _build_home_message(lang: str, balance_str: str, total_orders: int = 0,
+                         first_name: str = "", hide_balance: bool = False) -> str:
     """Compose the /start & Main Menu dashboard card.
 
-    Compact premium layout:
-      🛍️ Premium Digital Store
-      AI Subscriptions • Software • Digital Products
+    Premium layout:
+      🛍 Premium Digital Store
 
+      ━━━━━━━━━━━━━━━━
+      ☀️ Good Morning, Name
       💰 Balance: $X.XX
       📦 Orders: N
+      ━━━━━━━━━━━━━━━━
 
-    Title and subtitle are joined on consecutive lines (no blank line
-    between them) for a tighter feel. Stats block is separated by one
-    blank line. Footer is blank by default — admins can set home_footer
-    in Bot Configuration if needed.
+      ✨ Instant Delivery • Secure Payments
+
+    Title/footer stay admin-configurable via Bot Configuration (home_title /
+    home_footer), same as before — only the surrounding scaffolding
+    (dividers, time-based greeting, balance/orders lines) is new.
     """
-    title    = cfg.get_str("home_title",    "").strip() or t("start.dashboard_title", lang)
-    subtitle = cfg.get_str("home_subtitle", "").strip() or t("start.dashboard_subtitle", lang)
-    footer   = cfg.get_str("home_footer",   "").strip() or t("start.dashboard_footer", lang)
+    title  = cfg.get_str("home_title",  "").strip() or t("start.dashboard_title", lang)
+    footer = cfg.get_str("home_footer", "").strip() or t("start.dashboard_footer", lang)
     wallet_label = t("start.dashboard_wallet_label", lang)
     orders_label = t("start.dashboard_orders_label", lang)
 
-    # Title + subtitle on consecutive lines (compact header block)
-    header_parts = [p for p in [title, subtitle] if p and p.strip()]
-    header = "\n".join(header_parts)
+    greeting = _time_greeting(lang, first_name)
+    shown_balance = "••••••" if hide_balance else balance_str
 
-    stats = f"{wallet_label}: {balance_str}\n{orders_label}: {total_orders}"
+    body_lines = [
+        _HOME_DIVIDER,
+        greeting,
+        f"{wallet_label}: {shown_balance}",
+        f"{orders_label}: {total_orders}",
+        _HOME_DIVIDER,
+    ]
 
-    parts = [header, stats, footer]
+    parts = [title, "\n".join(body_lines), footer]
     # Drop any empty part so admins who clear a field never get a stray blank line.
     return "\n\n".join(p for p in parts if p and p.strip())
 
@@ -254,7 +280,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(logo_path, 'rb') as logo:
             await update.message.reply_photo(photo=logo)
 
-    message = _build_home_message(lang, balance_str=format_amount_in(wallet_balance, user_currency), total_orders=total_orders)
+    message = _build_home_message(
+        lang, balance_str=format_amount_in(wallet_balance, user_currency), total_orders=total_orders,
+        first_name=user.first_name or "", hide_balance=get_hide_balance(telegram_id),
+    )
 
     await update.message.reply_text(
         message,
@@ -402,7 +431,10 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         _load_home, user_id, resolve_initial_language(update.effective_user)
     )
 
-    message = _build_home_message(lang, balance_str=format_price_for_user(wallet_balance, user_id), total_orders=total_orders)
+    message = _build_home_message(
+        lang, balance_str=format_price_for_user(wallet_balance, user_id), total_orders=total_orders,
+        first_name=update.effective_user.first_name or "", hide_balance=get_hide_balance(user_id),
+    )
 
     try:
         await query.edit_message_text(
@@ -497,6 +529,8 @@ async def set_language_callback(update: Update, context: ContextTypes.DEFAULT_TY
         new_lang,
         balance_str=format_price_for_user(wallet_balance, user_id),
         total_orders=total_orders,
+        first_name=update.effective_user.first_name or "",
+        hide_balance=get_hide_balance(user_id),
     )
     try:
         await query.edit_message_text(

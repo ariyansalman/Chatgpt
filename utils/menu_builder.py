@@ -73,6 +73,7 @@ from typing import Any, Dict, List, Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from .button_colors import (
     get_button_color,
+    global_colors_enabled,
     telegram_style_for_color,
 )
 from .menu_registry import LEADING_EMOJI_RE
@@ -350,7 +351,11 @@ def _build_button(
     elif not enabled and callback:
         callback = f"menu_disabled:{item.get('key', '')}"
 
-    if colors_enabled:
+    # The global toggle always wins, full stop -- it overrides both the
+    # per-item stored style below (an admin's custom color for this one
+    # button) and the local `colors_enabled` flag some callers pass (kept
+    # for backward compatibility; it can only turn colors off, never on).
+    if colors_enabled and global_colors_enabled():
         selected_color = item.get("style") or get_button_color(
             item.get("callback") or item.get("key"),
             text=label,

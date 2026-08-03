@@ -33,7 +33,7 @@ from handlers import admin_payment_methods as admin_pm
 from handlers import admin_config_handlers as admin_cfg
 from handlers import admin_dashboard as admin_dash
 from handlers import variant_handlers, cart_handlers
-from handlers import admin_redelivery, admin_badges, wallet_handlers
+from handlers import admin_redelivery, admin_badges, wallet_handlers, settings_handlers
 from handlers import admin_order_search as _aos
 from handlers import admin_broadcast_center
 from handlers import admin_auth
@@ -2328,6 +2328,7 @@ def main():
     admin_redelivery.register(application)
     admin_badges.register_handlers(application)
     wallet_handlers.register_handlers(application)
+    settings_handlers.register_handlers(application)
 
     # ─── V6: Unified Bot Configuration (admin) ─────────────────────────
     application.add_handler(CallbackQueryHandler(admin_cfg.admin_config_menu,        pattern=r"^admin_bot_config$"))

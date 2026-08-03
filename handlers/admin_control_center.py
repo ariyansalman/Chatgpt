@@ -43,6 +43,7 @@ from telegram.error import BadRequest
 
 from utils.permissions import has_permission
 from utils.perf import perf_track
+from utils import nav_state
 
 logger = logging.getLogger(__name__)
 
@@ -702,6 +703,11 @@ async def render_control_center(update: Update,
     from handlers.admin_dashboard import _collect_dashboard_stats, _render_dashboard_text
     from utils.bot_config import cfg
 
+    # Root of the breadcrumb trail — every deeper screen's Back chain
+    # (including external ones like Bot Configuration) resolves up to
+    # this frame instead of a hardcoded destination.
+    nav_state.enter_screen(context, "acc:root")
+
     stats = _collect_dashboard_stats()
     text  = _render_dashboard_text(stats)
     kb    = build_acc_root_keyboard(cfg.get_bool("maintenance_mode", False), stats=stats)
@@ -796,6 +802,13 @@ async def _render_category(cat: str, page: int, uid: int,
     # Remember where the admin currently is, so pin/unpin (Task 5) can
     # refresh this exact message in place instead of jumping to root.
     _nav(context, uid)["cur"] = (cat, page)
+
+    # Push this category page onto the breadcrumb stack. Screens that are
+    # reached *from* here (e.g. Bot Configuration under "system", Search
+    # Settings under "tools") are rendered by other handler modules, but
+    # they share this same per-user stack, so their Back button can look
+    # up "whatever was open immediately before me" instead of guessing.
+    nav_state.enter_screen(context, f"acc:cat:{cat}")
 
     use_bc = _cfg_bool("admin_panel_breadcrumb", True)
     if use_bc and total > 1:
@@ -1126,7 +1139,8 @@ async def _render_theme_manager(update: Update, context: ContextTypes.DEFAULT_TY
     working screen (colors, emoji, panel appearance, live preview)."""
     query = update.callback_query
     from utils.bot_config import cfg
-    all_colors_on = cfg.get_bool("global_button_colors_enabled", True)
+    from utils.button_colors import global_colors_enabled
+    all_colors_on = global_colors_enabled()
     icons_on = cfg.get_bool("admin_panel_icons", True)
     text_ = (
         "🎭 <b>Theme Manager</b>\n\n"
@@ -1153,13 +1167,14 @@ async def _render_button_color_manager(update: Update, context: ContextTypes.DEF
     to the same unchanged handler functions."""
     query = update.callback_query
     from utils.bot_config import cfg
+    from utils.button_colors import global_colors_enabled
     from handlers.menu_state import active_audience
     from utils.menu_registry import get_menu_layout, MENU_AUDIENCE_LABELS
 
     uid = update.effective_user.id
     audience = active_audience(context)
     colors_on = bool(get_menu_layout(audience).get("colors_enabled", True))
-    all_colors_on = cfg.get_bool("global_button_colors_enabled", True)
+    all_colors_on = global_colors_enabled()
 
     text_ = (
         "🎨 <b>Button Color Manager</b>\n\n"

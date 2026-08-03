@@ -8,6 +8,7 @@ from .helpers import is_admin
 from .button_colors import (
     DEFAULT_MENU_ITEM_COLORS,
     get_button_color,
+    global_colors_enabled,
     normalize_color,
     telegram_style_for_color,
 )
@@ -44,6 +45,23 @@ def _styled_button(text: str, item_key: str = None, callback_data: str = None, u
     and set `style`/`emoji_id` directly instead (used for admin-defined
     custom buttons, which carry their own style/emoji_id in their JSON).
     """
+    if not global_colors_enabled():
+        # The bot-wide kill switch always wins here too, regardless of
+        # what the caller passed in -- ignore any stored per-item style,
+        # profile override, or automatic default.
+        style = None
+        if not emoji_id:
+            emoji_id = None
+        kwargs = {}
+        if callback_data is not None:
+            kwargs["callback_data"] = callback_data
+        if url is not None:
+            kwargs["url"] = url
+        try:
+            return InlineKeyboardButton(text, style=style, icon_custom_emoji_id=emoji_id, **kwargs)
+        except TypeError:
+            return InlineKeyboardButton(text, **kwargs)
+
     # A profile may supply its own style/icon.  Only consult the legacy
     # per-item config when the caller did not provide a profile override.
     profile_override = style is not None or emoji_id is not None
@@ -52,11 +70,6 @@ def _styled_button(text: str, item_key: str = None, callback_data: str = None, u
             from utils.bot_config import cfg as _cfg
             style = _cfg.get_str(f"menu_item_{item_key}_style", _DEFAULT_MENU_STYLES.get(item_key, ""))
             emoji_id = _cfg.get_str(f"menu_item_{item_key}_emoji_id", "")
-            # NOTE: The "colors enabled" toggle is stored in the audience-profile
-            # JSON (colors_enabled field written by save_menu_layout) and applied
-            # by the callers before they decide which style= value to pass here.
-            # There is no "main_menu_colors_enabled" bot_config key; any check
-            # against it would always return the default (True) and is dead code.
         except Exception:
             style = _DEFAULT_MENU_STYLES.get(item_key)
     if style is None:
@@ -152,8 +165,7 @@ def create_main_menu_keyboard(
     # here, on top of (not instead of) the per-profile switch: colors show
     # only when BOTH are on.
     try:
-        from utils.bot_config import cfg as _colors_cfg
-        _global_colors_on = _colors_cfg.get_bool("global_button_colors_enabled", True)
+        _global_colors_on = global_colors_enabled()
     except Exception:
         _global_colors_on = True
     _colors_on = _global_colors_on and menu_colors_enabled(audience)

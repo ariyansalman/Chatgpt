@@ -18,18 +18,13 @@ _ORIG_INIT = _Btn.__init__
 _PATCHED = False
 
 
-def _colors_enabled() -> bool:
-    try:
-        from utils.bot_config import cfg
-        return cfg.get_bool("global_button_colors_enabled", True)
-    except Exception:
-        # Config may not be ready during early startup.
-        return True
-
-
 def _patched_init(self, text, *args, **kwargs):
-    if "style" not in kwargs and _colors_enabled():
+    if "style" not in kwargs:
         button_id = kwargs.get("callback_data") or text
+        # get_button_color() is the single source of truth for whether a
+        # color renders at all. It returns None outright when the global
+        # toggle is off, so telegram_style_for_color(None) always yields
+        # None here too -- no separate toggle check needed in this file.
         kwargs["style"] = telegram_style_for_color(
             get_button_color(button_id, text=text)
         )

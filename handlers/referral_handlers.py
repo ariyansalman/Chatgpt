@@ -60,6 +60,12 @@ async def refer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_username = (await context.bot.get_me()).username
     link = f"https://t.me/{bot_username}?start=ref_{telegram_id}"
 
+    from utils.user_prefs import get_hide_referral
+    if get_hide_referral(telegram_id):
+        link_block = "🔒 <i>Hidden — enable in ⚙ Settings → 🔐 Privacy</i>"
+    else:
+        link_block = f"<code>{link}</code>"
+
     pct_str = _fmt_pct(_commission_pct())
     text = (
         "👥 <b>Referral Program</b>\n"
@@ -69,7 +75,7 @@ async def refer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👥 Total Referrals: <b>{count}</b>\n"
         f"💵 Total Earnings: <b>${earned:.2f}</b>\n\n"
         "🔗 <b>Your Referral Link</b>\n"
-        f"<code>{link}</code>\n\n"
+        f"{link_block}\n\n"
         "ℹ️ Commission is credited automatically after every eligible completed order."
     )
 

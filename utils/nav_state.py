@@ -43,12 +43,20 @@ def enter_screen(context, screen_cb: str) -> None:
 
     Call this at the top of a menu-rendering handler, right after you
     know which screen you're about to draw. Re-entering the screen
-    already on top of the stack (e.g. a refresh tap) is a no-op --
-    it never pushes a duplicate frame.
+    already on top of the stack (e.g. a refresh tap) is a no-op -- it
+    never pushes a duplicate frame. Re-entering a screen that's further
+    down the stack (the user pressed Back, or otherwise returned to a
+    screen they'd already visited) truncates everything above it, so
+    the trail reflects where they actually are instead of accumulating
+    stale duplicate frames that would throw off later parent_of/go_back
+    lookups.
     """
     stack = context.user_data.setdefault(_STACK_KEY, [])
-    if not stack or stack[-1] != screen_cb:
-        stack.append(screen_cb)
+    if stack and screen_cb in stack:
+        idx = len(stack) - 1 - stack[::-1].index(screen_cb)
+        del stack[idx + 1:]
+        return
+    stack.append(screen_cb)
 
 
 def parent_of(context, screen_cb: str, default: str = "admin_menu") -> str:
