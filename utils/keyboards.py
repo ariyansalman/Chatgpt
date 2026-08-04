@@ -536,6 +536,16 @@ def create_product_detail_keyboard(
     except Exception:
         pass
 
+    # V48: Product Information button (only when info blocks exist and admin has them enabled)
+    try:
+        from services.product_info_service import has_info_blocks as _pib_has, get_visibility as _pib_vis
+        if _pib_vis('show_info_blocks') and _pib_has(product_id):
+            keyboard.append([
+                InlineKeyboardButton("📋 Product Info", callback_data=f"pib:view:{product_id}")
+            ])
+    except Exception:
+        pass
+
     keyboard.append([
         InlineKeyboardButton("🔙 Back", callback_data=back_callback),
         InlineKeyboardButton("☎️ Support", callback_data="support_center")

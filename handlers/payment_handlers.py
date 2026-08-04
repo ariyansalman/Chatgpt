@@ -6733,6 +6733,48 @@ async def buy_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    # V48: Product Information Builder — show info page before purchase flow
+    # This is a UI-only step. No payment/delivery/order logic is touched.
+    try:
+        from services.product_info_service import (
+            get_purchase_settings as _pib_settings,
+            has_info_blocks as _pib_has,
+            render_product_info_page as _pib_render,
+        )
+        _ps = _pib_settings(product_id)
+        _show_info = (
+            not _already_shown
+            and _ps.get('show_info_before_purchase', True)
+            and not (_ps.get('skip_if_no_blocks', True) and not _pib_has(product_id))
+        )
+        if _show_info:
+            _info_html, _blk_count = _pib_render(product_id)
+            if _info_html and _blk_count > 0:
+                _info_text = (
+                    f'📋 <b>Product Information: {product_name}</b>\n\n'
+                    + _info_html
+                )
+                if len(_info_text) > 4000:
+                    _info_text = _info_text[:3980] + '\n\n<i>…(see full details in store)</i>'
+                _continue_kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton('🛒 Continue to Purchase', callback_data=f'buy_{product_id}__skip_info')],
+                    [InlineKeyboardButton('🔙 Back to Product', callback_data=f'product_{product_id}')],
+                ])
+                # Mark in user_data so the next buy_ call skips info page
+                context.user_data['pib_info_shown_for'] = product_id
+                if query.message.photo:
+                    await query.message.delete()
+                    await query.message.reply_text(_info_text, reply_markup=_continue_kb, parse_mode='HTML')
+                else:
+                    try:
+                        await query.edit_message_text(_info_text, reply_markup=_continue_kb, parse_mode='HTML')
+                    except BadRequest as _pib_e:
+                        if 'Message is not modified' not in str(_pib_e):
+                            raise
+                return PURCHASE_QUANTITY
+    except Exception as _pib_exc:
+        logger.debug('PIB info page check failed (non-critical): %s', _pib_exc)
+
     # For file products, quantity is always 1
     if product_type == ProductType.FILE:
         context.user_data['purchase_quantity'] = 1

@@ -23,6 +23,13 @@ from telegram.error import BadRequest
 from services import payment_ui as pui
 from utils.helpers import format_order_id as _fmt_oid
 from utils.callback_safety import guarded_callback
+from services.product_info_service import (
+    format_product_detail_card as _pib_card,
+    render_product_info_page as _pib_page,
+    has_info_blocks as _pib_has_blocks,
+    get_purchase_settings as _pib_settings,
+    get_visibility as _pib_vis,
+)
 from utils.user_prefs import get_hide_balance
 
 
@@ -303,11 +310,19 @@ async def _send_product_detail(update: Update, context: ContextTypes.DEFAULT_TYP
             # all-products list — there is no category/subcategory state.
             back_callback = "back_to_products"
 
-            details = format_product_display(product, include_description=True)
-            details = details.replace(
-                f"💰 <b>Price:</b> {format_price(product.price)}",
-                f"💰 <b>Price:</b> {_product_price_for_user(product, _telegram_id)}",
-            )
+            # V48: Use enhanced product card from Product Info Builder
+            try:
+                details = _pib_card(product, telegram_id=_telegram_id)
+                details = details.replace(
+                    f"💰 <b>Price:</b> {format_price(product.price)}",
+                    f"💰 <b>Price:</b> {_product_price_for_user(product, _telegram_id)}",
+                )
+            except Exception:
+                details = format_product_display(product, include_description=True)
+                details = details.replace(
+                    f"💰 <b>Price:</b> {format_price(product.price)}",
+                    f"💰 <b>Price:</b> {_product_price_for_user(product, _telegram_id)}",
+                )
             try:
                 from services.badges import badge_line
                 _bl = badge_line(product)
@@ -1008,13 +1023,21 @@ def _load_product_detail_screen(product_id: int, telegram_id: int):
         back_callback = "back_to_products"
 
         # Format product details + Section 14 badges
-        details = format_product_display(product, include_description=True)
-        # V12 (Multi-Currency): replace the USD-only price line with the
-        # viewer's preferred-currency price.
-        details = details.replace(
-            f"💰 <b>Price:</b> {format_price(product.price)}",
-            f"💰 <b>Price:</b> {_product_price_for_user(product, telegram_id)}",
-        )
+        # V48: Use enhanced product card from Product Info Builder
+        try:
+            details = _pib_card(product, telegram_id=telegram_id)
+            details = details.replace(
+                f"💰 <b>Price:</b> {format_price(product.price)}",
+                f"💰 <b>Price:</b> {_product_price_for_user(product, telegram_id)}",
+            )
+        except Exception:
+            details = format_product_display(product, include_description=True)
+            # V12 (Multi-Currency): replace the USD-only price line with the
+            # viewer's preferred-currency price.
+            details = details.replace(
+                f"💰 <b>Price:</b> {format_price(product.price)}",
+                f"💰 <b>Price:</b> {_product_price_for_user(product, telegram_id)}",
+            )
         try:
             from services.badges import badge_line
             _bl = badge_line(product)

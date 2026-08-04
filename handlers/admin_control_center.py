@@ -122,6 +122,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
             ("🏭 Suppliers",           "acc:sec:suppliers"),
             ("📦 Digital Delivery",    "flm:menu"),
             ("🚚 Delivery Manager",    "dms:menu"),
+            ("📖 Product Info Builder", "pib:admin:products:0"),
         ],
     ],
 

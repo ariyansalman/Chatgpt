@@ -127,6 +127,8 @@ from .models import (
     CustomerTagAssignment, CustomerReminder,
     # V45 — Restock Notifications
     RestockSubscription, RestockNotificationLog,
+    # V48 — Product Information Builder
+    ProductInfoBlock, ProductInfoTemplate, ProductInfoTemplateBlock,
     # Product Recommendation Pins
     ProductRecommendationPin,
 )
@@ -254,5 +256,6 @@ __all__ = [
     'RestockSubscription', 'RestockNotificationLog',
     # Product Recommendation Pins
     'ProductRecommendationPin',
+    'ProductInfoBlock', 'ProductInfoTemplate', 'ProductInfoTemplateBlock',
     'init_db', 'get_db_session', 'run_db'
 ]

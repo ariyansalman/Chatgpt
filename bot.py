@@ -43,6 +43,7 @@ from handlers import feature_handlers, admin_features
 from handlers import account_features, admin_account_features
 from handlers import admin_menu_manager
 from handlers import admin_activity_feed
+from handlers import product_info_handlers as _pib_handlers
 from services import inventory as inventory_svc
 from utils.logging_config import setup_logging
 from utils.error_handler import global_error_handler
@@ -1518,7 +1519,9 @@ def main():
     # Direct purchase conversation (Buy Now flow)
     purchase_conv = ConversationHandler(
         conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
-        entry_points=[CallbackQueryHandler(payment_handlers.buy_product_start, pattern="^(buy_|product_)")],
+        entry_points=[
+            CallbackQueryHandler(payment_handlers.buy_product_start, pattern=r"^(buy_|product_)"),
+        ],
         states={
             payment_handlers.PURCHASE_QUANTITY: [
                 CallbackQueryHandler(payment_handlers.qty_custom_prompt, pattern=r"^qty_custom_\d+$"),
@@ -3512,6 +3515,9 @@ def main():
     application.add_handler(CallbackQueryHandler(_aos.aos_copy,   pattern=r"^aos:copy:\d+$"))
     # Standalone cancel — covers stale Cancel buttons from ended conversations.
     application.add_handler(CallbackQueryHandler(_aos.aos_cancel, pattern=r"^aos:cancel$"))
+
+    # V48: Product Information Builder handlers
+    _pib_handlers.register_handlers(application)
 
     # Callback-data safety net — MUST be the very last handler registered
     # in the default group. It only ever runs when no ConversationHandler

@@ -364,6 +364,12 @@ class Product(Base):
     variants = relationship("ProductVariant", back_populates="product",
                             cascade="all, delete-orphan",
                             order_by="ProductVariant.display_order")
+    info_blocks = relationship(
+        "ProductInfoBlock",
+        back_populates="product",
+        cascade="all, delete-orphan",
+        order_by="ProductInfoBlock.display_order",
+    )
 
 
 class ProductVariant(Base):
@@ -4446,3 +4452,78 @@ class ProductRecommendationPin(Base):
 
     product             = relationship("Product", foreign_keys=[product_id])
     recommended_product = relationship("Product", foreign_keys=[recommended_product_id])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# V48: Product Information Builder
+# Admin-controlled per-product information blocks and reusable templates.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ProductInfoBlock(Base):
+    """Admin-defined information block displayed on a product's detail page.
+
+    Each product can have unlimited blocks, rendered in display_order ASC.
+    block_type controls rendering: text | bold_text | italic_text |
+    underline_text | spoiler | quote | expandable_quote | bullet_list |
+    number_list | divider | html.
+    """
+    __tablename__ = 'product_info_blocks'
+
+    id            = Column(Integer, primary_key=True)
+    product_id    = Column(Integer, ForeignKey('products.id', ondelete='CASCADE'),
+                           nullable=False, index=True)
+    title         = Column(String(200), nullable=True)
+    emoji         = Column(String(32),  nullable=True)
+    content       = Column(Text,        nullable=False, default='')
+    block_type    = Column(String(32),  nullable=False, default='text')
+    accent_color  = Column(String(16),  nullable=True,  default='none')
+    is_bold       = Column(Boolean, default=False, nullable=False)
+    is_italic     = Column(Boolean, default=False, nullable=False)
+    has_spoiler   = Column(Boolean, default=False, nullable=False)
+    is_visible    = Column(Boolean, default=True,  nullable=False, index=True)
+    display_order = Column(Integer, default=0,     nullable=False, index=True)
+    created_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    product = relationship("Product", back_populates="info_blocks")
+
+
+class ProductInfoTemplate(Base):
+    """Reusable collection of info blocks that can be applied to any product."""
+    __tablename__ = 'product_info_templates'
+
+    id          = Column(Integer, primary_key=True)
+    name        = Column(String(200), nullable=False)
+    emoji       = Column(String(32),  nullable=True)
+    description = Column(Text,        nullable=True)
+    is_active   = Column(Boolean, default=True, nullable=False)
+    created_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    blocks = relationship(
+        "ProductInfoTemplateBlock",
+        back_populates="template",
+        cascade="all, delete-orphan",
+        order_by="ProductInfoTemplateBlock.display_order",
+    )
+
+
+class ProductInfoTemplateBlock(Base):
+    """A single block within a ProductInfoTemplate."""
+    __tablename__ = 'product_info_template_blocks'
+
+    id            = Column(Integer, primary_key=True)
+    template_id   = Column(Integer, ForeignKey('product_info_templates.id', ondelete='CASCADE'),
+                           nullable=False, index=True)
+    title         = Column(String(200), nullable=True)
+    emoji         = Column(String(32),  nullable=True)
+    content       = Column(Text,        nullable=False, default='')
+    block_type    = Column(String(32),  nullable=False, default='text')
+    accent_color  = Column(String(16),  nullable=True,  default='none')
+    is_bold       = Column(Boolean, default=False, nullable=False)
+    is_italic     = Column(Boolean, default=False, nullable=False)
+    has_spoiler   = Column(Boolean, default=False, nullable=False)
+    is_visible    = Column(Boolean, default=True,  nullable=False)
+    display_order = Column(Integer, default=0,     nullable=False)
+
+    template = relationship("ProductInfoTemplate", back_populates="blocks")
