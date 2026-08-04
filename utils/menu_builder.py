@@ -588,6 +588,17 @@ register_menu("admin_order_menu", [
 # Note: "currency_toggle" label is computed at render time by keyboards.py
 # via ``runtime_overrides`` — the label stored here is just a fallback.
 # ---------------------------------------------------------------------------
+# NOTE (flat-hierarchy pass): four items that used to live here — Coupons,
+# Display Currency, Loyalty Program, Bot Configuration — were removed.
+# Each already has its own canonical, single-parent home in the Admin
+# Control Center (Coupons category, Store category, Marketing category,
+# System category respectively); keeping them here too gave those four
+# submenus a second parent and made this screen a nested "Settings inside
+# Settings" page. This is now the single, canonical home for the items
+# that are genuinely unique to it — reachable in exactly 3 taps as
+# ⚡Home → 🎨 Appearance / 🏪 Store → this screen — and its own Back button
+# now returns to that immediate parent instead of jumping to the
+# user-facing bot menu.
 register_menu("admin_settings_menu", [
     {"key": "welcome_msg",       "label": "💬 Welcome Message",            "callback": "admin_welcome_msg",
      "row": 1,  "order": 0, "full_width": True},
@@ -597,26 +608,18 @@ register_menu("admin_settings_menu", [
      "row": 3,  "order": 0, "full_width": True},
     {"key": "channel_username",  "label": "📢 Channel Username",            "callback": "admin_channel_username",
      "row": 4,  "order": 0, "full_width": True},
-    {"key": "coupons",           "label": "🎟 Coupons / Promo Codes",       "callback": "admin_coupons",
-     "row": 5,  "order": 0, "full_width": True},
-    {"key": "display_currency",  "label": "💱 Display Currency",            "callback": "admin_currency",
-     "row": 6,  "order": 0, "full_width": True},
     {"key": "currency_toggle",   "label": "🌐 Currency Toggle Button",      "callback": "admin_toggle_currency_btn",
-     "row": 7,  "order": 0, "full_width": True},
+     "row": 5,  "order": 0, "full_width": True},
     {"key": "referral_reward",   "label": "👑 Referral Reward",             "callback": "admin_referral_reward",
-     "row": 8,  "order": 0, "full_width": True},
+     "row": 6,  "order": 0, "full_width": True},
     {"key": "referral_toggle",   "label": "🔁 Toggle Referral Program",     "callback": "admin_referral_toggle",
-     "row": 9,  "order": 0, "full_width": True},
-    {"key": "loyalty_program",   "label": "🎁 Loyalty Program",             "callback": "admin_loyalty",
-     "row": 10, "order": 0, "full_width": True},
+     "row": 7,  "order": 0, "full_width": True},
     {"key": "delivery_msg_builder", "label": "📐 Delivery Message Builder",  "callback": "dmb:menu",
-     "row": 11, "order": 0, "full_width": True},
+     "row": 8,  "order": 0, "full_width": True},
     {"key": "accdel_settings",   "label": "📧 Account Delivery Settings",   "callback": "accdel:menu",
-     "row": 12, "order": 0, "full_width": True},
-    {"key": "bot_config",        "label": "🛠 Bot Configuration",           "callback": "admin_bot_config",
-     "row": 13, "order": 0, "full_width": True},
-    {"key": "back_settings",     "label": "🔙 Back",                        "callback": "admin_menu",
-     "row": 14, "order": 0, "full_width": True},
+     "row": 9,  "order": 0, "full_width": True},
+    {"key": "back_settings",     "label": "🔙 Back",                        "callback": "acc:cat:store",
+     "row": 10, "order": 0, "full_width": True},
 ], description="Admin store settings sub-menu")
 
 # ---------------------------------------------------------------------------

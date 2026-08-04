@@ -2,7 +2,7 @@
 ru, zh, fr, de, ar, id — driven entirely by i18n.SUPPORTED_LANGUAGES /
 LANGUAGE_NAMES / LANGUAGE_FLAGS, so no per-language branching lives here)."""
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 from i18n import t, SUPPORTED_LANGUAGES, LANGUAGE_NAMES, LANGUAGE_FLAGS
 from .helpers import is_admin
 from .button_colors import (
@@ -283,10 +283,26 @@ def create_language_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup(keyboard)
 
 
-def create_refer_keyboard(lang: str):
-    """Refer & Earn keyboard — compact 3-button layout."""
+def create_refer_keyboard(lang: str, referral_link: str = None, hide_referral: bool = False):
+    """Refer & Earn keyboard — compact 3-button layout.
+
+    The "Copy Referral Link" button uses Telegram's native ``copy_text``
+    button (Bot API 7.1+ via ``CopyTextButton``) so tapping it copies the
+    user's personal referral link straight to the clipboard — no message
+    is sent and no page is opened. When the user has hidden their referral
+    link (⚙ Settings → 🎁 Referral Settings), we fall back to a locked
+    button that just explains how to re-enable it, matching prior behavior.
+    """
+    if referral_link and not hide_referral:
+        ref_button = InlineKeyboardButton(
+            "🔗 Copy Referral Link",
+            copy_text=CopyTextButton(text=referral_link),
+        )
+    else:
+        ref_button = InlineKeyboardButton("🔗 Copy Referral Link", callback_data="copy_ref_link_locked")
+
     keyboard = [
-        [InlineKeyboardButton("🔗 Copy Referral Link", callback_data="copy_ref_link")],
+        [ref_button],
         [InlineKeyboardButton("📜 Referral History", callback_data="rd:comm")],
         [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
     ]
@@ -694,7 +710,7 @@ def create_admin_payment_methods_menu_keyboard(methods):
     keyboard.append([InlineKeyboardButton("➕ Add Payment Method", callback_data="admin_pm_add")])
     if methods:
         keyboard.append([InlineKeyboardButton("🗑 Delete All", callback_data="admin_pm_delete_all_confirm")])
-    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="acc:root")])
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="acc:cat:payments")])
     return InlineKeyboardMarkup(keyboard)
 
 

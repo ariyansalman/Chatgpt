@@ -1,9 +1,12 @@
-"""Premium Admin Control Center — categorized navigation (v46).
+"""Premium Admin Control Center — categorized navigation (v47).
 
-Root shows the 12 enterprise sections (Dashboard, Products, Orders,
-Payments, Customers, Marketing, Notifications, UI & Menu, Store Settings,
-Security, System, Tools) + search + quick-access + maintenance + exit.
-Each category opens a paginated submenu (≤8 items + Back/Home per page).
+Root shows 24 enterprise categories (Dashboard, Products, Orders, Payments,
+Wallet, Customers, Coupons, Referrals, Marketing, Support, Appearance,
+Store, Localization, Notifications, Security, Admins, System, Tools,
+Backup, Analytics, Templates, Automation, Logs, API Manager) + Favorites /
+Recent + Global Search / Settings Search + Maintenance toggle + Exit Admin.
+Each category opens a paginated submenu (≤8 items + Back/Home per page),
+so navigation never exceeds Admin Panel → Category → Feature (3 levels).
 
 Callback namespace
 ──────────────────
@@ -50,7 +53,7 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Category definitions — Enterprise structure (v46)
 #
-# Exactly 12 top-level sections, matching the approved information
+# 24 top-level sections, matching the approved enterprise information
 # architecture. Every existing feature keeps its original callback_data —
 # only *which category dict it's listed under* changed, so no routing,
 # handler, or business logic was touched anywhere in the bot.
@@ -61,25 +64,39 @@ logger = logging.getLogger(__name__)
 
 _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
 
-    # ── 📊 Dashboard — reporting & KPIs (unchanged from v45) ────────────────
+    # ── ⚡ Dashboard — live KPIs + 1-tap quick actions. Analytics/forecast
+    # screens moved out to their own 📈 Analytics category (below) so this
+    # page stays pure "what needs my attention right now". Every quick
+    # action reuses its existing, unchanged callback_data.
     "dashboard": [[
-        ("📊 Dashboard",           "acc:sec:dashboard"),
-        ("📈 Analytics",           "admin_analytics"),
+        ("📊 Live Dashboard",      "acc:sec:dashboard"),
+        ("📉 Low Stock Alert",     "admin_low_stock"),
+        ("🛒 Pending Orders",      "admin_orders"),
+        ("🧾 Pending Deposits",    "pd:list:0:desc"),
+        ("🎧 Open Tickets",        "admin_tickets"),
+    ]],
+
+    # ── 📈 Analytics — split out of the old "dashboard" category so KPIs
+    # (above) and deep-dive reporting (here) aren't mixed on one page.
+    # Sales Graph, Top Products, Top Customers, Conversion Rate and Payment
+    # Statistics are sub-views inside Analytics Overview / Advanced
+    # Analytics rather than separate top-level buttons.
+    "analytics": [[
+        ("📈 Analytics Overview",  "admin_analytics"),
         ("🔬 Advanced Analytics",  "aana:menu"),
         ("💼 Business Insights",   "abiz:menu"),
         ("📉 Sales Forecast",      "asf:menu"),
         ("💹 Profit",              "acc:sec:profit"),
-        ("📜 Activity Logs",       "gat:menu"),
         ("📈 Growth & LTV",        "admin_analytics_cohort"),
     ]],
 
     # ── 📦 Products — catalog, discovery, inventory & suppliers all live
-    # under one roof (former "inventory" and "suppliers" top-level categories
-    # folded in as extra pages — they're all product-management, not
-    # separate concerns).
+    # under one roof. Unchanged from v46 other than a "Badges & Featured"
+    # entry, which reuses the existing per-product toggle (there's no
+    # separate badges list screen in the codebase).
     "products": [
         [
-            ("📦 Products",            "admin_products"),
+            ("📦 Product List",        "admin_products"),
             ("🗂 Categories",          "admin_manage_categories"),
             ("🎀 Bundles",             "abn:menu"),
             ("🎟 Gift Cards",          "agc:menu"),
@@ -87,6 +104,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
             ("📄 Clone Products",      "pct:menu"),
         ],
         [
+            ("⭐ Badges & Featured",    "admin_products"),
             ("❓ Product FAQ",          "acc:sec:pfaq"),
             ("⚖️ Product Compare",      "acc:sec:pcmp"),
             ("❤️ Favorites",            "acc:sec:favs"),
@@ -97,187 +115,292 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
             ("📂 Batches",             "acc:sec:batches"),
             ("🏷 Price History",       "acc:sec:ph"),
             ("⏳ Reservation",         "acc:sec:irs"),
-            ("⚡ Bulk Products",       "bpim:menu"),
-            ("📉 Low Stock",           "admin_low_stock"),
+            ("⚡ Bulk Import / Export", "bpim:menu"),
+            ("📉 Stock Alerts",        "admin_low_stock"),
         ],
         [
             ("🏭 Suppliers",           "acc:sec:suppliers"),
-            ("🗝 File & Keys",         "flm:menu"),
+            ("📦 Digital Delivery",    "flm:menu"),
             ("🚚 Delivery Manager",    "dms:menu"),
         ],
     ],
 
-    # ── 🛒 Orders — order lifecycle, incl. disputes (moved in from the old
-    # "loyalty" grab-bag — a dispute is an order-level issue, not a loyalty
-    # one).
+    # ── 🛒 Orders — order lifecycle, incl. disputes. Resend Delivery and
+    # Manual Complete are per-order actions inside Orders / Delivery Queue,
+    # not separate top-level buttons.
     "orders": [[
-        ("🧾 Orders",              "admin_orders"),
-        ("🔎 Search Order",        "aos:menu"),
-        ("🤖 Auto Assign",         "acc:sec:sas"),
-        ("⏱ Order Timeline",      "acc:sec:ots"),
+        ("🧾 Orders (All / Pending / Completed)", "admin_orders"),
+        ("🔎 Search Orders",       "aos:menu"),
         ("📬 Delivery Queue",      "acc:sec:delivery"),
-        ("💰 Refunds",             "aref:menu"),
+        ("💰 Refunds / Cancellations", "aref:menu"),
         ("🛍 Gift Purchase",       "agp:menu"),
         ("⚠️ Disputes",            "admin_view_disputes"),
     ]],
 
-    # ── 💳 Payments — unchanged from v45 ──────────────────────────────────
+    # ── 💳 Payments — gateways & deposits. Wallet balances/manual credit and
+    # multi-currency/FX now live in their own 💰 Wallet category (below);
+    # log-style screens (webhooks/payment logs) moved to 📜 Logs so this
+    # category stays focused on "how customers pay", not history/records.
     "payments": [[
-        ("💳 Payment Settings",    "admin_gateways"),
-        ("🏦 Manual Payments",     "admin_payment_methods"),
-        ("🧾 Pending Deposits",    "pd:list:0:desc"),
-        ("👛 Wallets",             "acc:sec:wallets"),
-        ("🌍 Multi-Currency",      "amcw:menu"),
-        ("🔄 Exchange Rates",      "aerm:menu"),
-        ("🔌 Webhook Monitor",     "awm:menu"),
+        ("💳 Payment Gateways",    "admin_gateways"),
+        ("🏦 Manual Payment Methods", "admin_payment_methods"),
+        ("🧾 Deposit Requests",    "pd:list:0:desc"),
     ]],
 
-    # ── 👥 Customers — accounts & customer support (Support moved in from
-    # the old "loyalty" grab-bag — it's a customer-facing concern, not a
-    # loyalty-program one).
-    "customers": [[
-        ("👥 Users",               "admin_users"),
+    # ── 💰 Wallet — customer wallet balances, manual credit/debit,
+    # multi-currency wallets and FX rates. Split out of Payments so wallet
+    # administration has its own front door, matching the customer-facing
+    # Wallet feature.
+    "wallet": [[
+        ("👛 Wallets / Manual Credit", "acc:sec:wallets"),
+        ("🌍 Multi-Currency Wallets",  "amcw:menu"),
+        ("🔄 Exchange Rates",          "aerm:menu"),
+    ]],
+
+    # ── 👥 Customers — accounts, CRM & bulk tools. Support moved out to its
+    # own 🎧 Support category (below); Ban/Unban, User Purchases, User Notes
+    # and User Groups live inside User List / Customer CRM detail screens.
+    "users": [[
+        ("👥 User List / Search",  "admin_users"),
         ("📝 Customer CRM",        "crm:home"),
-        ("📋 Bulk Users",          "bum:menu"),
+        ("📋 Bulk Users / Export", "bum:menu"),
         ("⭐ Reviews",             "arv:menu"),
         ("⏳ Pending Reviews",     "arv:list:pending:0"),
-        ("🎧 Support",             "admin_tickets"),
     ]],
 
-    # ── 📣 Marketing — everything that reaches out to or rewards customers:
-    # broadcast, promotions/coupons, and the loyalty/VIP/referral programs
-    # (former "broadcast", "promotions", and most of "loyalty" merged here).
-    "marketing": [
-        [
-            ("📢 Broadcast",           "acc:sec:broadcast"),
-            ("📨 Scheduled Broadcast", "asb:menu"),
-            ("📣 Announcements",       "ann:menu"),
-            ("🎁 Loyalty Points",      "admin_loyalty"),
-            ("🏆 VIP Manager",         "vip:menu"),
-            ("🎯 Referral Program",    "rd:admin"),
-            ("🎉 Promotions",          "acc:sec:promotions"),
-            ("⚡ Flash Sales",         "fsm:menu"),
-        ],
-        [
-            ("✂️ Coupons",             "admin_coupons"),
-            ("🏷 Coupons (Advanced)",  "acpn:menu"),
-            ("⏰ Sub Reminders",       "acc:sec:subrem"),
-        ],
-    ],
+    # ── 🎟 Coupons — split out of the old "marketing" grab-bag into its own
+    # top-level home. Active/Expired/Usage History are views inside these
+    # two screens.
+    "coupons": [[
+        ("✂️ Coupons",             "admin_coupons"),
+        ("🏷 Advanced / Auto Coupons", "acpn:menu"),
+    ]],
 
-    # ── 🔔 Notifications — new top-level home for every notification
-    # surface. "Notification Center" moved in from "broadcast"; "Notification
-    # Settings" promoted from a root-panel quick-access shortcut so it now
-    # has a proper category home; "Restock Notifications" previously had no
-    # menu entry point anywhere in the panel — added here.
+    # ── 🎁 Referral — split out of "marketing" into its own top-level home.
+    # Commission, Rewards, Statistics and History are sections inside the
+    # Referral Program screen.
+    "referral": [[
+        ("🎯 Referral Program",    "rd:admin"),
+    ]],
+
+    # ── 📣 Marketing — broadcast, promotions, loyalty, VIP & flash sales
+    # (Coupons and Referral now live in their own categories above; recurring
+    # / scheduled jobs now live in 🤖 Automation, below).
+    # No standalone Banner Manager or Push Notifications screen exists yet —
+    # banner images are set per-campaign inside Flash Sales, and outbound
+    # pushes go through Broadcast / Notification Center.
+    "marketing": [[
+        ("📢 Broadcast",           "acc:sec:broadcast"),
+        ("📣 Popup Announcements", "ann:menu"),
+        ("🎁 Loyalty Points",      "admin_loyalty"),
+        ("🏆 VIP Manager",         "vip:menu"),
+        ("🎉 Promotions",          "acc:sec:promotions"),
+        ("⚡ Flash Sales",         "fsm:menu"),
+    ]],
+
+    # ── 🤖 Automation — recurring/scheduled jobs that run without a human
+    # tapping a button each time. Auto Assign moved from Orders, Scheduled
+    # Broadcast moved from Marketing, Subscription Reminders moved from
+    # Marketing; Marketing Automation (cart/win-back reminders) is an
+    # existing screen that previously had no front door in this panel at
+    # all (it was only reachable by drilling into Broadcast) — surfaced
+    # here directly, same unchanged callback. Auto Backup and Auto Reports
+    # don't have dedicated admin screens in the codebase yet — flagged as
+    # gaps, nothing fabricated.
+    "automation": [[
+        ("📨 Scheduled Broadcast", "asb:menu"),
+        ("🛒 Marketing Automation (Cart/Win-back)", "acc:bc:mkt:menu"),
+        ("🤖 Auto Assign Orders",  "acc:sec:sas"),
+        ("⏰ Subscription Reminders", "acc:sec:subrem"),
+    ]],
+
+    # ── 🎨 Appearance — everything about how the bot looks. Store Logo and
+    # Welcome Message live inside the 🏪 Store category (below) — they're
+    # fields on the same Store Settings screen, so listing them here too
+    # would give that one screen two parents. No dedicated Font Style
+    # control exists in the codebase — flagged as a gap.
+    "appearance": [[
+        ("🧩 Main Menu Builder",   "mm:menu"),
+        ("🔘 Button Manager",      "mm:menu"),
+        ("😀 Emoji Manager",       "mm:emoji_help"),
+        ("🎨 Color Manager",       "acc:sec:colors"),
+        ("🎭 Theme",               "acc:sec:theme"),
+        ("👁 Live Preview",        "admin_preview"),
+        ("🔧 Panel Settings",      "acc:ui:settings"),
+    ]],
+
+    # ── 🏪 Store — customer-facing store configuration. This is the single,
+    # canonical home for the Store Settings screen (Store Logo, Welcome
+    # Message, Support Username, Channel, Referral Reward/Toggle, Delivery
+    # Message Builder, Account Delivery Settings all live inside it) —
+    # nothing else in the panel links to "admin_settings" anymore, so this
+    # screen now has exactly one parent.
+    "store": [[
+        ("🏪 Store Settings (Name, Logo, Welcome Msg)", "admin_settings"),
+        ("🔧 Storefront Features", "af:menu"),
+        ("📱 Account Features",    "aaf:menu"),
+    ]],
+
+    # ── 🌍 Localization — split out of Store so language/currency admin has
+    # its own home. No dedicated Timezone or Date Format screen exists in
+    # the codebase yet (dates are rendered server-side) — flagged as a gap.
+    "localization": [[
+        ("🌐 Languages",           "alng:menu"),
+        ("💱 Currency",            "admin_currency"),
+    ]],
+
+    # ── 🔔 Notifications — unchanged from v46. Order/Payment/Deposit/Ticket/
+    # Admin alert toggles and Log Channel live inside Notification Settings.
     "notifications": [[
-        ("🔔 Notification Center",   "anc:menu"),
+        ("🔔 Notification Center", "anc:menu"),
         ("⚙️ Notification Settings", "nsm:menu"),
         ("📥 Restock Notifications", "rsn:menu"),
     ]],
 
-    # ── 🎨 UI & Menu — everything about how the bot's menus look, split out
-    # from general settings so navigation/presentation is its own clear
-    # section. "Menu Manager" moved from "system"; "Panel Settings" promoted
-    # from a root-panel quick-access shortcut; "Store Preview" moved from
-    # "system" (it's a UI preview, not a store config value).
-    "ui_menu": [[
-        ("🧩 Menu Builder",        "mm:menu"),
-        ("😀 Emoji Manager",       "mm:emoji_help"),
-        ("🎨 Button Color Manager", "acc:sec:colors"),
-        ("🎭 Theme Manager",       "acc:sec:theme"),
-        ("🔧 Panel Settings",      "acc:ui:settings"),
-        ("👁 Store Preview",       "admin_preview"),
+    # ── 🎧 Support — split out of "users" into its own top-level home.
+    # Product FAQ stays single-parented under 📦 Products (it's product-
+    # specific, not a general store FAQ). Support Categories exist in the
+    # ticket flow (category picker) but aren't yet admin-editable; a
+    # general Store FAQ, Auto Reply and Canned Replies don't exist in the
+    # codebase yet — flagged as gaps, nothing fabricated here.
+    "support": [[
+        ("🎫 Ticket System",       "admin_tickets"),
     ]],
 
-    # ── 🏪 Store Settings — customer-facing store configuration, split out
-    # of the old catch-all "system" category. "Display Currency" previously
-    # had no menu entry point anywhere in the panel — added here.
-    "store_settings": [[
-        ("🏪 Store Settings",       "admin_settings"),
-        ("💱 Display Currency",     "admin_currency"),
-        ("🌐 Languages",            "alng:menu"),
-        ("🔧 Storefront Features",  "af:menu"),
-        ("📱 Account Features",     "aaf:menu"),
-    ]],
-
-    # ── 🛡 Security — unchanged from v45 ("API & Integrations" renamed to
-    # "Integrations Health" to make clear it's the read-only check; "API
-    # Keys" is the actual key-management screen).
+    # ── 🔐 Security — threat detection & access control. Admin roster moved
+    # to its own 👨‍💼 Admins category, API keys/status moved to 🌐 API
+    # Manager, and Audit Logs moved to 📜 Logs, so Security stays focused
+    # on fraud/spam/session protection. Session Manager lives inside Login
+    # Activity (it already lists/terminates active sessions).
     "security": [[
         ("🔍 Fraud Detection",     "fds:home"),
         ("🛡 Anti-Spam",           "aasm:menu"),
-        ("📝 Audit Logs",          "acc:sec:audit"),
-        ("🔐 Login Activity",      "lam:home"),
+        ("🔐 Login Activity / Sessions", "lam:home"),
         ("🔌 Integrations Health", "acc:sec:integrations"),
-        ("🔑 API Keys",            "aim:menu"),
-        ("📡 API Status",          "aim:check_all"),
-        ("👤 Admin Roles",         "acc:sec:roles"),
     ]],
 
-    # ── ⚙ System — technical/infrastructure configuration and health, split
-    # out of the old catch-all "system" category (business/branding settings
-    # moved to Store Settings; menu presentation moved to UI & Menu).
-    "system": [
-        [
-            ("⚙️ Bot Settings",        "admin_bot_config"),
-            ("🛠 System Tools",        "acc:sec:system"),
-            ("📈 System Health",       "acc:sys:health"),
-            ("🗄 Database Status",     "acc:sys:db"),
-            ("💾 Backup & Restore",    "acc:sec:backups"),
-            ("⚡ Performance Monitor", "pcm:menu"),
-            ("🧹 Cache Manager",       "pcm:cache"),
-            ("🩺 Diagnostics",         "acc:diag:menu"),
-        ],
-        [
-            ("🧩 Modules & Plugins",   "pmm:menu"),
-            ("📤 Data Export",         "dec:menu"),
-        ],
-    ],
+    # ── 👨‍💼 Admins — admin roster & permissions. Add/re-role/remove still
+    # go through the existing /admin_add, /admin_role, /admin_remove
+    # commands (unchanged) — this screen (moved from Security) is the
+    # existing read-only roster + permissions view.
+    "admins": [[
+        ("👤 Admin Roles & Permissions", "acc:sec:roles"),
+    ]],
 
-    # ── 🧰 Tools — day-to-day admin/dev utilities (Global Search moved in
-    # from the old "performance" page; the rest is what's left of the old
-    # "tools" category after System took the infrastructure items above).
+    # ── 🌐 API Manager — split out of Security into its own home.
+    "api": [[
+        ("🔑 API Keys",            "aim:menu"),
+        ("📡 API Status",          "aim:check_all"),
+    ]],
+
+    # ── 📜 Logs — read-only history/audit trails, pulled together from
+    # across the panel (Audit Logs from Security, Recent Activity from
+    # Dashboard, Order Timeline from Orders, Webhooks & Payment Logs from
+    # Payments) so there's one place to review "what happened", separate
+    # from the day-to-day action screens. No separate System/Error log
+    # viewer exists yet beyond these — flagged as a gap.
+    "logs": [[
+        ("📝 Audit Logs",          "acc:sec:audit"),
+        ("📜 Recent Activity / Global Timeline", "gat:menu"),
+        ("⏱ Order Timeline",      "acc:sec:ots"),
+        ("🔌 Webhooks & Payment Logs", "awm:menu"),
+    ]],
+
+    # ── 📝 Templates — message templates that are actually editable from
+    # the panel today. Order/Deposit/Ticket/Coupon/Referral notifications
+    # use fixed formatting (utils/notify_format.py) rather than admin-
+    # editable templates, so only Delivery Message Builder is listed here
+    # — flagged as a gap rather than fabricated.
+    "templates": [[
+        ("📦 Delivery Message Builder", "dmb:menu"),
+    ]],
+
+    # ── ⚙ System — infrastructure config & health (Backup split out to its
+    # own category below).
+    "system": [[
+        ("⚙️ Bot Settings / Environment", "admin_bot_config"),
+        ("🛠 System Tools",        "acc:sec:system"),
+        ("📈 System Health / Version", "acc:sys:health"),
+        ("🗄 Database Status",     "acc:sys:db"),
+        ("⚡ Performance / Scheduler", "pcm:menu"),
+        ("🧹 Cache Manager",       "pcm:cache"),
+        ("🩺 Diagnostics / Health Check", "acc:diag:menu"),
+        ("🧩 Modules & Plugins",   "pmm:menu"),
+    ]],
+
+    # ── 📂 Backup — split out of "system" into its own top-level home.
+    # DB Dump, Settings Backup (with Import/Export) all live inside this
+    # one screen already.
+    "backup": [[
+        ("💾 Backup & Restore",    "acc:sec:backups"),
+        ("📤 Data Export",         "dec:menu"),
+    ]],
+
+    # ── 🧰 Tools — day-to-day admin/dev utilities. Global Search itself is
+    # now a root-panel icon (below); Search Settings stays here.
     "tools": [[
         ("🔩 Maintenance+",        "maint:menu"),
         ("🧪 Quality Control",     "acc:sec:quality"),
-        ("🔬 Integrity Scan",      "acc:sec:integrity"),
+        ("🔬 Integrity / Diagnostics Scan", "acc:sec:integrity"),
         ("🤝 Resellers",           "acc:sec:resellers"),
-        ("🔍 Global Search",       "gse:menu"),
         ("⚙️ Search Settings",     "gse:settings"),
     ]],
 }
 
 _CAT_META: dict[str, tuple[str, str]] = {
-    "dashboard":      ("📊", "Dashboard"),
+    "dashboard":      ("⚡", "Dashboard"),
+    "analytics":      ("📈", "Analytics"),
     "products":       ("📦", "Products"),
     "orders":         ("🛒", "Orders"),
     "payments":       ("💳", "Payments"),
-    "customers":      ("👥", "Users"),
-    "marketing":      ("📣", "Marketing"),
+    "wallet":         ("💰", "Wallet"),
+    "users":          ("👥", "Customers"),
+    "coupons":        ("🎟", "Coupons"),
+    "referral":       ("🎁", "Referrals"),
+    "marketing":      ("📢", "Marketing"),
+    "automation":     ("🤖", "Automation"),
+    "support":        ("🎫", "Support"),
+    "appearance":     ("🎨", "Appearance"),
+    "store":          ("🏪", "Store"),
+    "localization":   ("🌍", "Localization"),
     "notifications":  ("🔔", "Notifications"),
-    "ui_menu":        ("🎨", "UI & Menu"),
-    "store_settings": ("🏪", "Store"),
-    "security":       ("🔒", "Security"),
+    "security":       ("🔐", "Security"),
+    "admins":         ("👨‍💼", "Admins"),
     "system":         ("⚙️", "System"),
     "tools":          ("🧰", "Tools"),
+    "backup":         ("📂", "Backup"),
+    "templates":      ("📝", "Templates"),
+    "logs":           ("📜", "Logs"),
+    "api":            ("🌐", "API Manager"),
 }
 
 # One-line tagline shown under the breadcrumb on each category's submenu,
 # so admins know at a glance what kind of tools live in this section.
 _CAT_DESC: dict[str, str] = {
-    "dashboard":      "Live stats, revenue &amp; growth metrics at a glance.",
+    "dashboard":      "Live KPIs &amp; 1-tap quick actions for daily ops.",
+    "analytics":      "Deep-dive reporting, forecasts &amp; growth metrics.",
     "products":       "Catalog, discovery, inventory &amp; suppliers.",
     "orders":         "Order queue, search, delivery tracking, refunds &amp; disputes.",
-    "payments":       "Gateways, deposits, wallets, FX rates &amp; webhooks.",
-    "customers":      "User accounts, CRM, bulk tools, reviews &amp; support.",
-    "marketing":      "Broadcasts, promotions, coupons, loyalty, VIP &amp; referrals.",
+    "payments":       "Gateways, manual methods &amp; deposit requests.",
+    "wallet":         "Customer wallet balances, manual credit/debit, multi-currency &amp; FX rates.",
+    "users":          "Customer accounts, CRM, bulk tools &amp; reviews.",
+    "coupons":        "Create, track &amp; retire discount codes.",
+    "referral":       "Referral program, commissions &amp; rewards.",
+    "marketing":      "Broadcasts, promotions, loyalty, VIP &amp; flash sales.",
+    "automation":     "Scheduled/recurring jobs: broadcasts, cart &amp; win-back reminders, auto-assign, subscription reminders.",
+    "appearance":     "Branding, menus, buttons, colors, theme &amp; preview.",
+    "store":          "Store identity &amp; storefront/account features. (Language &amp; currency live in Localization.)",
+    "localization":   "Languages &amp; currency.",
     "notifications":  "Notification center, delivery settings &amp; restock alerts.",
-    "ui_menu":        "Main-menu layout, admin panel appearance &amp; store preview.",
-    "store_settings": "Branding, currency, languages &amp; storefront/account features.",
-    "security":       "Fraud detection, anti-spam, audit logs, access &amp; API keys.",
-    "system":         "Bot config, infrastructure health, backups &amp; performance.",
-    "tools":          "Maintenance, quality control, integrity checks &amp; search.",
+    "support":        "Ticket system. (Product FAQ lives in Products.)",
+    "security":       "Fraud detection, anti-spam &amp; session/login protection.",
+    "admins":         "Admin roster &amp; permissions.",
+    "system":         "Bot config, infrastructure health &amp; performance.",
+    "backup":         "Database &amp; settings backup, restore, import/export.",
+    "tools":          "Maintenance, quality control, integrity checks &amp; search config.",
+    "templates":      "Editable message templates.",
+    "logs":           "Audit logs, activity timeline, order timeline &amp; webhook/payment logs.",
+    "api":            "API keys &amp; live API status.",
 }
 
 # Total item count per category (all pages combined) — shown as a badge
@@ -477,13 +600,13 @@ def _tog_icon(key: str, default: bool) -> str:
 
 
 
-# Root panel groups — Primary (daily operations), Management (marketing &
+# Root panel groups — Primary (daily operations), Growth (marketing &
 # presentation), System (infrastructure & configuration). Purely a visual
-# grouping of the existing 12 categories; callback_data is untouched.
+# grouping of the 24 categories below; callback_data is untouched.
 _ROOT_GROUPS: list[tuple[str, list[str]]] = [
-    ("Primary",    ["dashboard", "products", "orders", "payments", "customers"]),
-    ("Management", ["marketing", "notifications", "ui_menu"]),
-    ("System",     ["store_settings", "security", "system", "tools"]),
+    ("Primary", ["dashboard", "analytics", "products", "orders", "payments", "users"]),
+    ("Growth",  ["coupons", "referral", "marketing", "appearance", "store", "notifications", "support"]),
+    ("System",  ["security", "system", "backup", "tools"]),
 ]
 
 
@@ -510,20 +633,34 @@ def build_acc_root_keyboard(maintenance_on: bool,
             return f"{base} ({tag})"
         return base
 
-    # ── Fixed 2-column grid, exact order from spec ────────────────────────────
+    # ── Fixed 2-column grid, 24 categories — Enterprise Marketplace Control
+    # Center layout. Every callback_data is an existing acc:cat:<name>
+    # route; only which bucket a feature is grouped under changed.
     _GRID: list[tuple[str, str, int, str]] = [
-        ("dashboard",      "📊 Dashboard",      0,               ""),
+        ("dashboard",      "⚡ Dashboard",      0,               ""),
         ("products",       "📦 Products",       low_stock,       "Low Stock"),
         ("orders",         "🛒 Orders",         pending_orders,  "Pending"),
         ("payments",       "💳 Payments",       pending_payments,"Pending"),
-        ("customers",      "👥 Users",          0,               ""),
-        ("marketing",      "📣 Marketing",      0,               ""),
-        ("notifications",  "🔔 Notifications",  open_tickets,    ""),
-        ("ui_menu",        "🎨 UI & Menu",      0,               ""),
-        ("store_settings", "🏪 Store",          0,               ""),
-        ("security",       "🔒 Security",       0,               ""),
+        ("users",          "👥 Customers",      0,               ""),
+        ("wallet",         "💰 Wallet",         0,               ""),
+        ("coupons",        "🎟 Coupons",        0,               ""),
+        ("referral",       "🎁 Referrals",      0,               ""),
+        ("marketing",      "📢 Marketing",      0,               ""),
+        ("support",        "🎫 Support",        open_tickets,    "Open"),
+        ("appearance",     "🎨 Appearance",     0,               ""),
+        ("store",          "🏪 Store",          0,               ""),
+        ("localization",   "🌍 Localization",   0,               ""),
+        ("notifications",  "🔔 Notifications",  0,               ""),
+        ("security",       "🔐 Security",       0,               ""),
+        ("admins",         "👨‍💼 Admins",        0,               ""),
         ("system",         "⚙️ System",         0,               ""),
         ("tools",          "🧰 Tools",          0,               ""),
+        ("backup",         "📂 Backup",         0,               ""),
+        ("analytics",      "📈 Analytics",      0,               ""),
+        ("templates",      "📝 Templates",      0,               ""),
+        ("automation",     "🤖 Automation",     0,               ""),
+        ("logs",           "📜 Logs",           0,               ""),
+        ("api",            "🌐 API Manager",    0,               ""),
     ]
 
     kb: list[list[IKB]] = []
@@ -537,24 +674,21 @@ def build_acc_root_keyboard(maintenance_on: bool,
     if row:
         kb.append(row)
 
-    # ── Store Settings — promoted to the home screen as a primary entry
-    # point (previously reachable only via 🏪 Store → Store Settings).
-    # Reuses the existing "admin_settings" callback/handler — no new menu,
-    # no new callback. The old path via the Store category still works.
-    kb.append([IKB("⚙️ Store Settings", callback_data="admin_settings")])
-
-    # ── Favorites & Recent — expose existing backend (unchanged logic) ────────
+    # ── Utility row 1 — Favorites doubles as Pinned Settings (acc:ui:favs
+    # already pins/unpins arbitrary callbacks); Recent shows last-visited
+    # screens. Both reuse existing, unchanged backend logic.
     kb.append([
-        IKB("⭐ Favorites", callback_data="acc:ui:favs"),
+        IKB("⭐ Favorites / 📌 Pinned", callback_data="acc:ui:favs"),
         IKB("🕐 Recent", callback_data="acc:ui:recent"),
     ])
 
-    # ── Search ────────────────────────────────────────────────────────────────
-    # "Search" = data search (orders/users/products) via existing Global Search.
-    # "Search Settings" = new, searches only _CAT_PAGES (admin settings/menus).
+    # ── Utility row 2 — Search ─────────────────────────────────────────────────
+    # "Global Search" = data search (orders/users/products) via existing
+    # Global Search module. "Search Settings" = searches only _CAT_PAGES
+    # (admin settings/menus).
     kb.append([
-        IKB("🔍 Search", callback_data="acc:ui:search"),
-        IKB("🔍 Search Settings", callback_data="acc:ui:ssearch"),
+        IKB("🔍 Global Search", callback_data="acc:ui:search"),
+        IKB("⚙️ Search Settings", callback_data="acc:ui:ssearch"),
     ])
 
     # ── Maintenance toggle ────────────────────────────────────────────────────

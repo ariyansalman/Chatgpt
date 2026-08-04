@@ -2,14 +2,11 @@
 
 Callback namespace: ``wda:*``
 
+Withdrawals are not available to users; this module now covers the admin
+side only (management of any historical/existing withdrawal requests).
+
 Features
 --------
-User:
-  • Full withdrawal creation flow: payment method → wallet address → amount → confirm
-  • Withdrawal history with status tracking
-  • Cancel a pending withdrawal
-  • Estimated processing time
-
 Admin:
   • Withdrawal Approval Manager: list, filter, detail, approve, reject, cancel, complete
   • Under-review marking and processing state
@@ -21,7 +18,6 @@ Admin:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -34,19 +30,14 @@ from telegram.ext import (
 )
 from telegram.error import BadRequest
 
-from database import get_db_session, User
 from utils.bot_config import cfg
 from utils.permissions import has_permission
-from utils import is_admin
 import services.withdrawal_approval as wda_svc
 from utils.update_proxy import with_data
 
 logger = logging.getLogger(__name__)
 
 # ── Conversation states (unique, non-colliding — 60..70) ──────────────────────
-WDA_METHOD           = 60
-WDA_ADDRESS          = 61
-WDA_AMOUNT           = 62
 WDA_ADM_REJECT       = 63
 WDA_ADM_NOTE         = 64
 WDA_ADM_PROC_TIME    = 65
@@ -101,407 +92,6 @@ async def _notify_user(
 def _processing_time_note() -> str:
     pt = cfg.get("withdrawal_approval_processing_time", "1-3 business days") or "1-3 business days"
     return f"⏱ Estimated: <b>{pt}</b>"
-
-
-def _back_to_dashboard_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🔙 My Dashboard", callback_data="refer")
-    ]])
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# User: resolve internal user ID
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _get_user_id(telegram_id: int) -> Optional[int]:
-    with get_db_session() as s:
-        u = s.query(User).filter_by(telegram_id=telegram_id).first()
-        return u.id if u else None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# User withdrawal creation flow
-# Entry: rd:withdraw → wda_start
-# ─────────────────────────────────────────────────────────────────────────────
-
-async def wda_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start withdrawal flow — check feature status and available balance."""
-    query = update.callback_query
-    await query.answer()
-    tid = update.effective_user.id
-
-    feature_status = wda_svc.get_feature_status()
-    if feature_status == "disabled":
-        await _safe_edit(
-            query,
-            "❌ <b>Withdrawals are currently disabled.</b>\n\nPlease try again later.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
-        )
-        return ConversationHandler.END
-
-    if feature_status == "maintenance":
-        await _safe_edit(
-            query,
-            "🔧 <b>Withdrawals are under maintenance.</b>\n\nPlease try again shortly.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
-        )
-        return ConversationHandler.END
-
-    # Resolve internal user ID
-    user_id = _get_user_id(tid)
-    if not user_id:
-        await _safe_edit(query, "❌ User not found.")
-        return ConversationHandler.END
-
-    # Block if user already has an active withdrawal
-    if wda_svc.has_pending_withdrawal(user_id):
-        await _safe_edit(
-            query,
-            "⚠️ <b>You already have an active withdrawal request.</b>\n\n"
-            "Please wait for it to be processed before submitting a new one.",
-            InlineKeyboardMarkup([
-                [InlineKeyboardButton("📋 View History", callback_data="wda:history")],
-                [InlineKeyboardButton("🔙 Back", callback_data="refer")],
-            ]),
-        )
-        return ConversationHandler.END
-
-    # Check minimum balance
-    min_amt = cfg.get_float("withdrawal_approval_min_amount", 5.0)
-    available = wda_svc.get_available_balance(user_id)
-    if available < min_amt:
-        await _safe_edit(
-            query,
-            f"💸 <b>Withdrawal</b>\n\n"
-            f"You need at least <b>${min_amt:.2f}</b> available commission.\n"
-            f"Your current available balance: <b>${available:.2f}</b>",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
-        )
-        return ConversationHandler.END
-
-    context.user_data["_wda_available"] = available
-    context.user_data["_wda_user_id"] = user_id
-
-    # Show payment method selection
-    max_amt = cfg.get_float("withdrawal_approval_max_amount", 0.0)
-    limit_note = f" (max ${max_amt:.2f})" if max_amt > 0 else ""
-    kb = []
-    for method_key, method_label in wda_svc.PAYMENT_METHODS.items():
-        kb.append([InlineKeyboardButton(method_label, callback_data=f"wda:m:{method_key}")])
-    kb.append([InlineKeyboardButton("❌ Cancel", callback_data="refer")])
-
-    await _safe_edit(
-        query,
-        f"💸 <b>Withdrawal Request</b>\n\n"
-        f"Available: <b>${available:.2f}</b>\n"
-        f"Minimum: <b>${min_amt:.2f}</b>{limit_note}\n"
-        f"{_processing_time_note()}\n\n"
-        f"<b>Select payment method:</b>",
-        InlineKeyboardMarkup(kb),
-    )
-    return WDA_METHOD
-
-
-async def wda_method_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """User selected a payment method; ask for wallet address."""
-    query = update.callback_query
-    await query.answer()
-
-    method_key = query.data.replace("wda:m:", "")
-    if method_key not in wda_svc.PAYMENT_METHODS:
-        await query.answer("❌ Invalid method. Please choose from the list.", show_alert=True)
-        return WDA_METHOD
-
-    context.user_data["_wda_method"] = method_key
-    method_label = _fmt_method(method_key)
-
-    # Prompt varies by method
-    if method_key == "mobile_banking":
-        prompt = (
-            f"🏦 <b>Mobile Banking Details</b>\n\n"
-            f"Please send your bank name, account number, and account holder name.\n"
-            f"Example: <code>bKash | 01XXXXXXXXX | John Doe</code>"
-        )
-    elif method_key in ("binance_pay", "bybit_pay"):
-        prompt = (
-            f"{method_label}\n\n"
-            f"Please send your Pay ID or registered email/phone."
-        )
-    else:
-        prompt = (
-            f"{method_label}\n\n"
-            f"Please send your wallet address:"
-        )
-
-    await _safe_edit(
-        query,
-        f"💸 <b>Withdrawal — {method_label}</b>\n\n{prompt}",
-        InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="refer")]]),
-    )
-    return WDA_ADDRESS
-
-
-async def wda_address_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Receive wallet address / payment details; ask for amount."""
-    address = (update.message.text or "").strip()
-    if not address or len(address) < 3:
-        await update.message.reply_text(
-            "❌ Invalid input. Please send your wallet address or payment details."
-        )
-        return WDA_ADDRESS
-
-    context.user_data["_wda_address"] = address
-    available = context.user_data.get("_wda_available", 0.0)
-    min_amt = cfg.get_float("withdrawal_approval_min_amount", 5.0)
-    max_amt = cfg.get_float("withdrawal_approval_max_amount", 0.0)
-    limit_note = f" (max ${max_amt:.2f})" if max_amt > 0 else ""
-
-    await update.message.reply_text(
-        f"💰 <b>Enter Amount</b>\n\n"
-        f"Available: <b>${available:.2f}</b>\n"
-        f"Minimum: <b>${min_amt:.2f}</b>{limit_note}\n\n"
-        f"How much do you want to withdraw?",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Cancel", callback_data="refer")
-        ]]),
-    )
-    return WDA_AMOUNT
-
-
-async def wda_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Receive amount, validate, create withdrawal, and notify."""
-    tid = update.effective_user.id
-    text = (update.message.text or "").strip()
-    available = context.user_data.get("_wda_available", 0.0)
-    min_amt = cfg.get_float("withdrawal_approval_min_amount", 5.0)
-    max_amt = cfg.get_float("withdrawal_approval_max_amount", 0.0)
-    method  = context.user_data.get("_wda_method", "")
-    address = context.user_data.get("_wda_address", "")
-
-    try:
-        amount = float(text)
-        if amount <= 0:
-            raise ValueError("non-positive")
-    except ValueError:
-        await update.message.reply_text(
-            "❌ Please enter a valid positive number (e.g. <code>25.00</code>).",
-            parse_mode="HTML",
-        )
-        return WDA_AMOUNT
-
-    if amount < min_amt:
-        await update.message.reply_text(
-            f"❌ Minimum withdrawal is <b>${min_amt:.2f}</b>.", parse_mode="HTML"
-        )
-        return WDA_AMOUNT
-
-    if max_amt > 0 and amount > max_amt:
-        await update.message.reply_text(
-            f"❌ Maximum withdrawal is <b>${max_amt:.2f}</b>.", parse_mode="HTML"
-        )
-        return WDA_AMOUNT
-
-    if amount > available:
-        await update.message.reply_text(
-            f"❌ Insufficient balance. Available: <b>${available:.2f}</b>.", parse_mode="HTML"
-        )
-        return WDA_AMOUNT
-
-    # Create the withdrawal
-    result = wda_svc.create_withdrawal(tid, amount, method, address)
-
-    if result is None:
-        await update.message.reply_text(
-            "❌ An error occurred. Please try again later."
-        )
-        return ConversationHandler.END
-
-    if isinstance(result, dict) and "error" in result:
-        err = result["error"]
-        if err == "duplicate":
-            msg = "⚠️ You already have an active withdrawal request."
-        elif err == "daily_limit":
-            msg = "⚠️ You've reached the daily withdrawal limit."
-        elif err == "insufficient":
-            msg = f"❌ Insufficient balance. Available: ${available:.2f}"
-        else:
-            msg = "❌ Withdrawal request failed. Please try again."
-        await update.message.reply_text(msg)
-        return ConversationHandler.END
-
-    wid     = result.get("id")
-    status  = result.get("status", "pending")
-    method_label = _fmt_method(method)
-    status_label = _fmt_status(status)
-
-    await update.message.reply_text(
-        f"✅ <b>Withdrawal Request Submitted</b>\n\n"
-        f"ID: <code>#{wid}</code>\n"
-        f"Amount: <b>${amount:.2f}</b>\n"
-        f"Method: {method_label}\n"
-        f"Status: {status_label}\n\n"
-        f"{_processing_time_note()}\n\n"
-        f"You'll be notified on every status update.",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 View History", callback_data="wda:history")],
-            [InlineKeyboardButton("🔙 My Dashboard", callback_data="refer")],
-        ]),
-    )
-
-    # Notify admins
-    try:
-        from services.notifications import notify_admins
-        from utils.notify_format import render as _render_notif, utc_now_str as _ts
-        from utils.helpers import format_withdrawal_id as _fmt_wid
-        await notify_admins(
-            context.bot,
-            event="manual_payment",
-            text=_render_notif("💸", "Withdrawal Requested", [
-                ("Withdrawal ID", _fmt_wid(wid)),
-                ("Customer", f"@{update.effective_user.username}" if update.effective_user.username else f"<code>{tid}</code>"),
-                ("Amount", f"${amount:.2f}"),
-                ("Method", method_label),
-                ("Address", address[:60]),
-            ], _ts()),
-        )
-    except Exception:
-        logger.debug("wda: admin notification failed (non-fatal)")
-
-    # Clean up user_data
-    for k in ("_wda_available", "_wda_user_id", "_wda_method", "_wda_address"):
-        context.user_data.pop(k, None)
-
-    return ConversationHandler.END
-
-
-async def wda_cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel the withdrawal conversation."""
-    for k in ("_wda_available", "_wda_user_id", "_wda_method", "_wda_address"):
-        context.user_data.pop(k, None)
-    q = update.callback_query
-    if q:
-        await q.answer()
-        await _safe_edit(
-            q,
-            "❌ Withdrawal cancelled.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
-        )
-    return ConversationHandler.END
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# User: withdrawal history
-# ─────────────────────────────────────────────────────────────────────────────
-
-async def wda_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show user withdrawal history (wda:history)."""
-    query = update.callback_query
-    await query.answer()
-    tid = update.effective_user.id
-    user_id = _get_user_id(tid)
-    if not user_id:
-        await _safe_edit(query, "❌ User not found.")
-        return
-
-    withdrawals = wda_svc.list_withdrawals(user_id=user_id, limit=10)
-    if not withdrawals:
-        await _safe_edit(
-            query,
-            "📋 <b>Withdrawal History</b>\n\nNo withdrawal requests yet.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="refer")]]),
-        )
-        return
-
-    lines = ["📋 <b>Withdrawal History</b>\n"]
-    kb = []
-    for w in withdrawals:
-        status_label = _fmt_status(w.get("status", ""))
-        method_label = _fmt_method(w.get("payment_method") or "")
-        dt = w["created_at"].strftime("%b %d, %H:%M") if w.get("created_at") else ""
-        lines.append(
-            f"• <code>#{w['id']}</code>  <b>${float(w['amount']):.2f}</b>  "
-            f"{status_label}  <i>{dt}</i>"
-        )
-        kb.append([InlineKeyboardButton(
-            f"📄 #{w['id']} — {_fmt_status(w['status'])}",
-            callback_data=f"wda:status:{w['id']}",
-        )])
-
-    kb.append([InlineKeyboardButton("🔙 Back", callback_data="refer")])
-    await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(kb))
-
-
-async def wda_status_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show detail of a single withdrawal (wda:status:<id>)."""
-    query = update.callback_query
-    await query.answer()
-    tid = update.effective_user.id
-
-    try:
-        wid = int(query.data.split(":")[-1])
-    except (ValueError, IndexError):
-        return
-
-    w = wda_svc.get_withdrawal(wid)
-    if not w or w.get("user_tg_id") != tid:
-        await query.answer("❌ Not found.", show_alert=True)
-        return
-
-    status_label = _fmt_status(w.get("status", ""))
-    method_label = _fmt_method(w.get("payment_method") or "—")
-    dt = w["created_at"].strftime("%Y-%m-%d %H:%M UTC") if w.get("created_at") else "—"
-    reason = w.get("reason") or ""
-
-    lines = [
-        f"📄 <b>Withdrawal #{wid}</b>\n",
-        f"Amount: <b>${float(w['amount']):.2f}</b>",
-        f"Method: {method_label}",
-        f"Status: {status_label}",
-        f"Submitted: <i>{dt}</i>",
-    ]
-    if reason:
-        lines.append(f"Reason: {reason}")
-
-    kb = []
-    if w.get("status") == "pending":
-        kb.append([InlineKeyboardButton("🚫 Cancel Withdrawal", callback_data=f"wda:cancel_user:{wid}")])
-    kb.append([InlineKeyboardButton("🔙 History", callback_data="wda:history")])
-
-    await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(kb))
-
-
-async def wda_cancel_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """User cancels their own pending withdrawal (wda:cancel_user:<id>)."""
-    query = update.callback_query
-    await query.answer()
-    tid = update.effective_user.id
-
-    try:
-        wid = int(query.data.split(":")[-1])
-    except (ValueError, IndexError):
-        return
-
-    w = wda_svc.get_withdrawal(wid)
-    if not w or w.get("user_tg_id") != tid:
-        await query.answer("❌ Not found.", show_alert=True)
-        return
-
-    if w.get("status") != "pending":
-        await query.answer("❌ Only pending withdrawals can be cancelled.", show_alert=True)
-        return
-
-    result = wda_svc.cancel_withdrawal(wid, reason="Cancelled by user")
-    if result:
-        await _safe_edit(
-            query,
-            f"🚫 Withdrawal <code>#{wid}</code> has been cancelled.\n\n"
-            f"Your commission balance has been restored.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔙 History", callback_data="wda:history")]]),
-        )
-    else:
-        await query.answer("❌ Could not cancel. Please try again.", show_alert=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1203,34 +793,6 @@ async def wda_adm_proc_time_input(update: Update, context: ContextTypes.DEFAULT_
 # Conversation handler builders
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_wda_withdraw_conv() -> ConversationHandler:
-    """Build the user-facing withdrawal conversation (replaces rd_withdraw_conv)."""
-    return ConversationHandler(
-        entry_points=[CallbackQueryHandler(wda_start, pattern=r"^rd:withdraw$")],
-        states={
-            WDA_METHOD: [
-                CallbackQueryHandler(wda_method_select, pattern=r"^wda:m:.+$"),
-                CallbackQueryHandler(wda_cancel_conv, pattern=r"^refer$"),
-            ],
-            WDA_ADDRESS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, wda_address_input),
-                CallbackQueryHandler(wda_cancel_conv, pattern=r"^refer$"),
-            ],
-            WDA_AMOUNT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, wda_amount_input),
-                CallbackQueryHandler(wda_cancel_conv, pattern=r"^refer$"),
-            ],
-        },
-        fallbacks=[
-            CallbackQueryHandler(wda_cancel_conv, pattern=r"^refer$"),
-            CommandHandler("cancel", wda_cancel_conv),
-        ],
-        per_user=True,
-        per_chat=True,
-        allow_reentry=True,
-    )
-
-
 def build_wda_admin_reject_conv() -> ConversationHandler:
     """Admin reject conversation."""
     return ConversationHandler(
@@ -1306,12 +868,6 @@ def register_handlers(application) -> None:
 
     Call this from bot.py to wire up the full withdrawal approval workflow.
     """
-    # ── User flow ────────────────────────────────────────────────────────────
-    application.add_handler(build_wda_withdraw_conv())
-    application.add_handler(CallbackQueryHandler(wda_history,      pattern=r"^wda:history$"))
-    application.add_handler(CallbackQueryHandler(wda_status_detail, pattern=r"^wda:status:\d+$"))
-    application.add_handler(CallbackQueryHandler(wda_cancel_user,   pattern=r"^wda:cancel_user:\d+$"))
-
     # ── Admin list / detail / actions ────────────────────────────────────────
     application.add_handler(CallbackQueryHandler(wda_adm_list,       pattern=r"^wda:adm:list(:(pending|under_review|approved|processing|completed|rejected|cancelled|expired|all))?$"))
     application.add_handler(CallbackQueryHandler(wda_adm_detail,     pattern=r"^wda:adm:detail:\d+$"))

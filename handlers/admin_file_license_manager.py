@@ -171,7 +171,7 @@ async def flm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
          InlineKeyboardButton("🔑 Key Manager", callback_data="flm:keys:menu")],
         [InlineKeyboardButton("📊 Statistics",  callback_data="flm:stats"),
          InlineKeyboardButton("⚙️ Settings",    callback_data="flm:settings")],
-        [InlineKeyboardButton("🔙 Back", callback_data="acc:root")],
+        [InlineKeyboardButton("🔙 Back", callback_data="acc:cat:products")],
     ])
     await _send(update, text, kb)
 

@@ -193,7 +193,7 @@ async def anc_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("✅ Mark All Read",       callback_data="anc:read_all"),
          InlineKeyboardButton("🗑 Delete All",         callback_data="anc:del_all:confirm")],
         [InlineKeyboardButton("⚙️ Settings",            callback_data="anc:settings")],
-        [InlineKeyboardButton("🔙 Back", callback_data="acc:root")],
+        [InlineKeyboardButton("🔙 Back", callback_data="acc:cat:notifications")],
     ])
     await _send(update, text, kb)
 

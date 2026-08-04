@@ -46,6 +46,13 @@ async def refer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         s = session.query(Settings).first()
         enabled = s.referral_enabled if s else True
 
+    from utils.user_prefs import get_hide_referral
+    hide_referral = get_hide_referral(telegram_id)
+    referral_link = None
+    if not hide_referral:
+        bot_username = (await context.bot.get_me()).username
+        referral_link = f"https://t.me/{bot_username}?start=ref_{telegram_id}"
+
     if not enabled:
         try:
             await query.edit_message_text(
@@ -70,7 +77,7 @@ async def refer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await query.edit_message_text(
             text,
-            reply_markup=create_refer_keyboard(lang),
+            reply_markup=create_refer_keyboard(lang, referral_link=referral_link, hide_referral=hide_referral),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -170,29 +177,20 @@ async def process_referral_reward(
             pass
 
 
-async def copy_ref_link_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Surface the referral link for Copy Link (copy_ref_link).
+async def copy_ref_link_locked_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Shown only when the user has hidden their referral link (⚙ Settings →
+    🎁 Referral Settings). In that case the button can't carry a real
+    ``copy_text`` payload, so it just explains how to re-enable it.
 
-    The main Invite message intentionally no longer prints the raw URL
-    (per spec: don't display the raw referral URL inside the message), so
-    this button is now the only place the link appears -- shown in a popup
-    alert the user can press-and-hold to copy, without sending a new chat
-    message or changing anything about how the link itself is generated.
+    When the link isn't hidden, the "Copy Referral Link" button uses
+    Telegram's native ``copy_text`` (CopyTextButton) and copies the link to
+    the clipboard directly -- no callback, no message, no page change.
     """
     query = update.callback_query
-    telegram_id = update.effective_user.id
-
-    from utils.user_prefs import get_hide_referral
-    if get_hide_referral(telegram_id):
-        await query.answer(
-            "🔒 Your referral link is hidden. Enable it in ⚙ Settings → 🎁 Referral Settings.",
-            show_alert=True,
-        )
-        return
-
-    bot_username = (await context.bot.get_me()).username
-    link = f"https://t.me/{bot_username}?start=ref_{telegram_id}"
-    await query.answer(f"🔗 Your referral link:\n{link}", show_alert=True)
+    await query.answer(
+        "🔒 Your referral link is hidden. Enable it in ⚙ Settings → 🎁 Referral Settings.",
+        show_alert=True,
+    )
 
 
 # ─── Admin: referral settings ───────────────────────────────────────────────

@@ -206,7 +206,7 @@ async def fsm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("📝 Drafts",            callback_data="fsm:list:draft:0"),
          InlineKeyboardButton("📊 Statistics",        callback_data="fsm:stats")],
         [InlineKeyboardButton("⚙️ Settings",          callback_data="fsm:settings")],
-        [InlineKeyboardButton("🔙 Back",              callback_data="acc:root")],
+        [InlineKeyboardButton("🔙 Back",              callback_data="acc:cat:marketing")],
     ])
     await _send(update, text, kb)
 

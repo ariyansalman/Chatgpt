@@ -2609,29 +2609,6 @@ def main():
     application.add_handler(CallbackQueryHandler(
         gift_purchase_handlers.gift_toggle_anon, pattern=r"^gp:toggle_anon$"))
 
-    # ── Gift Card redemption (user-facing conversation) ───────────────────────
-    from handlers import gift_card_handlers
-    gift_card_conv = ConversationHandler(
-        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
-        entry_points=[
-            CallbackQueryHandler(gift_card_handlers.redeem_start, pattern=r"^gc:redeem$"),
-        ],
-        states={
-            gift_card_handlers.GC_CODE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND,
-                               gift_card_handlers.redeem_code_input),
-            ],
-        },
-        fallbacks=[
-            CallbackQueryHandler(gift_card_handlers.redeem_cancel, pattern=r"^gc:cancel$"),
-            CommandHandler("cancel", gift_card_handlers.redeem_cancel),
-        ],
-        per_user=True, per_chat=True, allow_reentry=True,
-    )
-    application.add_handler(gift_card_conv)
-    application.add_handler(CallbackQueryHandler(
-        gift_card_handlers.redeem_history, pattern=r"^gc:history$"))
-
     # ── Admin Gift Purchase panel (agp:*) ─────────────────────────────────────
     from handlers import admin_gift_purchase
     application.add_handler(CallbackQueryHandler(
@@ -3055,7 +3032,7 @@ def main():
     )
     application.add_handler(CallbackQueryHandler(rd_commissions,              pattern=r"^rd:comm$"))
     application.add_handler(CallbackQueryHandler(rd_commissions_page,         pattern=r"^rd:comm:p:\d+$"))
-    application.add_handler(CallbackQueryHandler(referral_handlers.copy_ref_link_callback, pattern=r"^copy_ref_link$"))
+    application.add_handler(CallbackQueryHandler(referral_handlers.copy_ref_link_locked_callback, pattern=r"^copy_ref_link_locked$"))
     application.add_handler(CallbackQueryHandler(rd_admin_menu,               pattern=r"^rd:admin$"))
     application.add_handler(CallbackQueryHandler(rd_admin_toggle_lifetime,    pattern=r"^rd:adm:toggle_lifetime$"))
     application.add_handler(CallbackQueryHandler(rd_admin_withdrawals_list,   pattern=r"^rd:adm:withdrawals$"))
@@ -3064,9 +3041,10 @@ def main():
     for _rd_conv in build_rd_admin_convs():
         application.add_handler(_rd_conv)
 
-    # ── V29: Withdrawal Approval System ─────────────────────────────────────
-    # Replaces the old single-step rd:withdraw flow with the full approval
-    # workflow: payment method → wallet address → amount → admin approval panel.
+    # ── V29: Withdrawal Approval System (admin-only; no user-facing entry) ───
+    # Withdrawals are not part of the current product surface for users —
+    # this only registers the admin management/settings panel for any
+    # historical withdrawal requests already on file.
     from handlers.withdrawal_approval import register_handlers as _wda_register
     _wda_register(application)
 

@@ -269,7 +269,7 @@ async def rd_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔄 Lifetime: OFF" if lifetime else "🔄 Lifetime: ON",
             callback_data="rd:adm:toggle_lifetime"
         )],
-        [InlineKeyboardButton("🔙 Back", callback_data="acc:root")],
+        [InlineKeyboardButton("🔙 Back", callback_data="acc:cat:referral")],
     ]
     await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(kb))
 
