@@ -1,0 +1,61 @@
+# ─── Phase 4+: Monitoring stack ────────────────────────────
+# Prometheus + Grafana + custom bot exporter + postgres_exporter
+# Start with:  docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+
+services:
+  exporter:
+    build: .
+    container_name: tgbot-exporter
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-botuser}:${POSTGRES_PASSWORD:-botpass}@db:5432/${POSTGRES_DB:-botdb}
+    command: ["python", "-m", "monitoring.exporter"]
+    expose:
+      - "9100"
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: tgbot-pgexporter
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-botuser}:${POSTGRES_PASSWORD:-botpass}@db:5432/${POSTGRES_DB:-botdb}?sslmode=disable"
+    expose:
+      - "9187"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: tgbot-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: tgbot-grafana
+    restart: unless-stopped
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/ds.yml:ro
+      - ./monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dash.yml:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "3000:3000"
+
+volumes:
+  promdata:
+  grafanadata:
