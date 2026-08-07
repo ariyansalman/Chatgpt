@@ -806,7 +806,7 @@ _AMGR_BUILTIN_IDS = (
 
 _AMGR_MENU_LABELS: dict[str, str] = {
     "admin_menu":           "📋 Admin Main Menu",
-    "admin_products_menu":  "📦 Product Management",
+    "admin_products_menu":  "🛒 Product Management",
     "admin_category_menu":  "📁 Category Management",
     "admin_user_menu":      "👥 User Management",
     "admin_order_menu":     "🛍 Order Management",

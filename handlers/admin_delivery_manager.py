@@ -277,7 +277,7 @@ async def _dms_view(update: Update, record_id: int) -> None:
             f"{'─' * 30}\n"
             f"🆔 Secure ID : <code>{rec.secure_id}</code>\n"
             f"📦 Status    : {emoji} <b>{rec.status.upper()}</b>\n"
-            f"🛒 Order     : #{rec.order_id or '—'}\n"
+            f"📦 Order     : #{rec.order_id or '—'}\n"
             f"👤 User ID   : <code>{rec.user_id}</code>\n"
             f"🏷 Product   : #{rec.product_id or '—'}\n"
             f"📬 Type      : {rec.delivery_type}\n"

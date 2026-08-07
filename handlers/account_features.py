@@ -360,7 +360,7 @@ async def user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     lines = [
         f"👤 <b>{_html.escape(full_name)}</b>",
         f"🆔 User ID: <code>{user_id}</code>",
-        f"💰 Wallet Balance: <code>{format_price(wallet_balance)}</code>",
+        f"💳 Wallet Balance: <code>{format_price(wallet_balance)}</code>",
         f"📦 Total Orders: {order_count}",
         f"👥 Referrals: {referral_count}",
         f"⭐ Membership: {tier_label}",
@@ -376,7 +376,7 @@ async def user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     # reimplemented here -- every callback below is an existing,
     # unchanged handler.
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("👛 Wallet",          callback_data="wallet"),
+        [InlineKeyboardButton("💳 Wallet",          callback_data="wallet"),
          InlineKeyboardButton("📦 My Orders",       callback_data="order_history")],
         [InlineKeyboardButton("👥 Referrals",       callback_data="refer"),
          InlineKeyboardButton("🔑 Purchased Keys",  callback_data="ua:dl")],
@@ -669,7 +669,7 @@ async def order_timeline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         from utils.helpers import format_order_id as _fmt_oid_st
         _disp_st = _fmt_oid_st(order.id, order.created_at)
         lines = [
-            f"🧾 <b>Order ID</b>\n{_disp_st}",
+            f"📦 <b>Order ID</b>\n{_disp_st}",
             f"{st}",
             f"📅 {when}",
         ]
@@ -705,7 +705,7 @@ async def order_timeline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         receipt = s.query(OrderReceipt).filter_by(order_id=order.id).first()
         if receipt and _feat("feature_receipt_enabled"):
             kb.insert(0, [InlineKeyboardButton(
-                f"🧾 Order ID: {receipt.receipt_number}",
+                f"📦 Order ID: {receipt.receipt_number}",
                 callback_data=f"ua:rec:v:{receipt.id}",
             )])
 

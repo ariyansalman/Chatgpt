@@ -77,9 +77,9 @@ async def aana_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     kb = [
         [InlineKeyboardButton("💰 Revenue Report", callback_data="aana:revenue:30d"),
-         InlineKeyboardButton("🛒 Order Stats",    callback_data="aana:orders:30d")],
+         InlineKeyboardButton("📦 Order Stats",    callback_data="aana:orders:30d")],
         [InlineKeyboardButton("💳 Payment Methods", callback_data="aana:payments:30d"),
-         InlineKeyboardButton("👛 Wallet Stats",    callback_data="aana:wallet:30d")],
+         InlineKeyboardButton("💳 Wallet Stats",    callback_data="aana:wallet:30d")],
         [InlineKeyboardButton("🎟 Coupon Stats",    callback_data="aana:coupons:30d"),
          InlineKeyboardButton("👥 Referral Stats",  callback_data="aana:referrals:30d")],
         [InlineKeyboardButton("🏆 Top Products",    callback_data="aana:topprod:30d"),
@@ -210,7 +210,7 @@ async def aana_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conv_rate = f"{(completed / total * 100):.1f}%" if total else "0%"
 
     text = (
-        f"🛒 <b>Order Stats — {period}</b>\n"
+        f"📦 <b>Order Stats — {period}</b>\n"
         f"{'─' * 30}\n"
         f"Total Orders:    <b>{total:,}</b>\n"
         f"✅ Completed:    <b>{completed:,}</b>\n"
@@ -285,7 +285,7 @@ async def aana_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ledger_rows = []
 
     lines = [
-        f"👛 <b>Wallet Stats — {period}</b>\n{'─' * 30}",
+        f"💳 <b>Wallet Stats — {period}</b>\n{'─' * 30}",
         f"Total Balances: <b>{format_price(float(total_balance))}</b>",
         f"Users with wallet: <b>{users_with_wallet:,}</b>\n",
         "<b>Ledger Breakdown:</b>",

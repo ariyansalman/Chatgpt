@@ -1,5 +1,5 @@
 """
-Amount Selection UI — single, reusable "💳 Add Funds" amount screen.
+Amount Selection UI — single, reusable "💰 Add Funds" amount screen.
 ════════════════════════════════════════════════════════════════════════════
 
 This is the ONE screen every top-up flow shows first, before any payment
@@ -33,10 +33,10 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 # grid, in this exact order. Adding/removing a preset here is the ONLY
 # change ever needed to change the quick-pick amounts — every gateway
 # automatically inherits it.
-DEFAULT_PRESET_AMOUNTS: Tuple[float, ...] = (1, 2, 3, 5, 10, 15, 20, 25)
+DEFAULT_PRESET_AMOUNTS: Tuple[float, ...] = (1, 2, 3, 5, 10, 20, 25, 50, 100)
 
 # How many preset buttons per row in the grid.
-PRESETS_PER_ROW = 4
+PRESETS_PER_ROW = 3
 
 # Callback-data prefix for a preset amount button, e.g. "topup_amt_1".
 PRESET_CALLBACK_PREFIX = "topup_amt_"
@@ -72,7 +72,7 @@ def build_amount_selection_screen(
     min_deposit: "float | None" = None,
     currency: str = "USD",
 ) -> Tuple[str, InlineKeyboardMarkup]:
-    """Build the "💳 Add Funds" amount-selection screen (text + keyboard) —
+    """Build the "💰 Add Funds" amount-selection screen (text + keyboard) —
     a compact, premium marketplace-style layout: title, one-line subtitle,
     an optional minimum-deposit hint, a 4×2 preset grid, a full-width
     Custom Amount button, and a Back / Main Menu row.
@@ -84,9 +84,9 @@ def build_amount_selection_screen(
     the caller reads them from the existing admin-configured settings and
     passes them in; this module still never enforces or decides them.
     """
-    lines = ["💳 <b>Add Funds</b>", "Select the amount you want to add to your wallet."]
+    lines = ["💰 <b>ADD FUNDS</b>", "", "Select the amount you want to add."]
     if min_deposit is not None:
-        lines.append(f"📋 Minimum: ${min_deposit:.2f} {currency}")
+        lines.append(f"\nMinimum deposit: <b>${min_deposit:.2f}</b> {currency}")
     text = "\n".join(lines)
 
     rows: list[list[InlineKeyboardButton]] = []
@@ -95,7 +95,7 @@ def build_amount_selection_screen(
     row: list[InlineKeyboardButton] = []
     for amount in preset_amounts:
         row.append(InlineKeyboardButton(
-            f"💵 {_format_preset_label(amount)}",
+            _format_preset_label(amount),
             callback_data=f"{PRESET_CALLBACK_PREFIX}{_callback_amount(amount)}",
         ))
         if len(row) == PRESETS_PER_ROW:
@@ -104,10 +104,10 @@ def build_amount_selection_screen(
     if row:
         rows.append(row)
 
-    rows.append([InlineKeyboardButton("✏️ Custom Amount", callback_data=CUSTOM_AMOUNT_CALLBACK)])
+    rows.append([InlineKeyboardButton("✏️ CUSTOM AMOUNT", callback_data=CUSTOM_AMOUNT_CALLBACK)])
     rows.append([
-        InlineKeyboardButton("🔙 Back", callback_data=BACK_TO_WALLET_CALLBACK),
-        InlineKeyboardButton("🏠 Main Menu", callback_data=MAIN_MENU_CALLBACK),
+        InlineKeyboardButton("⬅️ BACK", callback_data=BACK_TO_WALLET_CALLBACK),
+        InlineKeyboardButton("🏠 MAIN MENU", callback_data=MAIN_MENU_CALLBACK),
     ])
 
     # No deposit/Transaction row exists yet at this point — Step 1 is

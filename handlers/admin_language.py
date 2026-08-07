@@ -73,7 +73,7 @@ async def alng_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_admin(update.effective_user.id):
         return
     if not _enabled():
-        await _safe_edit(query, "🌍 <b>Language System</b>\n\n❌ Feature disabled.", _back_kb("acc:root"))
+        await _safe_edit(query, "🌐 <b>Language System</b>\n\n❌ Feature disabled.", _back_kb("acc:root"))
         return
 
     default_lang = cfg.get_str("default_language", "en")

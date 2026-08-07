@@ -43,7 +43,7 @@
     "support": "🎧 Support",
     "refer": "👥 Einladen",
     "loyalty": "🎁 Treueprogramm",
-    "wallet": "👛 Wallet",
+    "wallet": "💳 Wallet",
     "admin_panel": "🛠 Admin-Panel",
     "account": "👤 Profil",
     "settings": "⚙ Einstellungen"
@@ -80,7 +80,7 @@
     "redeem_prompt": "♻️ Punkte einlösen\n\nDu hast {points} Punkte. Gib an, wie viele Punkte du einlösen möchtest (mind. {min_redeem}, Vielfache von {redeem_rate}):",
     "min_points": "❌ Mindestens {min_redeem} Punkte.",
     "not_enough_points_short": "❌ Du hast nicht genug Punkte.",
-    "redeemed": "✅ {points} Punkte eingelöst → {credit} dem Wallet gutgeschrieben.\n⭐ Verbleibende Punkte: {remaining}\n💰 Wallet: {wallet}"
+    "redeemed": "✅ {points} Punkte eingelöst → {credit} dem Wallet gutgeschrieben.\n⭐ Verbleibende Punkte: {remaining}\n💳 Wallet: {wallet}"
   },
   "cart": {
     "title": "🛒 <b>Dein Warenkorb</b>",
@@ -111,7 +111,7 @@
     "coupon_line": "🎟️ <b>Gutschein ({code}):</b> -{discount}",
     "discount_line": "🎟️ <b>Rabatt:</b> -{discount}",
     "total_label": "💳 <b>Gesamt:</b> {total}",
-    "wallet_balance_label": "👛 <b>Wallet-Guthaben:</b> {balance}",
+    "wallet_balance_label": "💳 <b>Wallet-Guthaben:</b> {balance}",
     "removed_header": "<b>⚠️ Aus der Bestellung entfernt:</b>",
     "confirm_button": "✅ Kauf bestätigen ({total})",
     "insufficient_balance": "❌ <b>Guthaben unzureichend</b> — {need} zusätzlich benötigt",

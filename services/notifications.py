@@ -81,7 +81,7 @@ _EVENTS = {
 # ``live=True`` events are actually emitted by a code path today;
 # ``live=False`` events are additive placeholders (see comments above).
 NOTIFICATION_CATALOG = [
-    ("orders", "🛒 Orders", [
+    ("orders", "📦 Orders", [
         ("new_order",       "New Order",        False),
         ("order_delivered", "Order Completed",  True),
         ("order_failed",    "Order Failed",     False),
@@ -108,7 +108,7 @@ NOTIFICATION_CATALOG = [
     ("inventory", "📦 Inventory", [
         ("low_stock", "Low Stock", True),
     ]),
-    ("support", "💬 Support", [
+    ("support", "🎧 Support", [
         ("ticket_reply", "Ticket Reply",  False),
         ("dispute",      "New Dispute",   False),
         ("sla_warning",  "SLA Warning",   True),

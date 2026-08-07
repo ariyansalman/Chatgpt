@@ -4630,3 +4630,146 @@ class ProductTagLink(Base):
 
     product = relationship("Product", back_populates="tag_links")
     tag     = relationship("ProductTag", back_populates="product_links")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# V40 — Dynamic Payment Networks (admin-managed, database-driven)
+# ══════════════════════════════════════════════════════════════════════════
+class PaymentNetwork(Base):
+    """One admin-managed payment network / coin.
+
+    This table is PURELY configuration + presentation metadata. It does not
+    implement or alter any payment logic: a row either points at an existing
+    code gateway (``gateway_key`` → the unchanged ``pay_<gateway_key>``
+    handler) or at an existing ManualPaymentMethod (``manual_method_id`` →
+    the unchanged ``pay_pm_<id>`` manual verification flow). Deposit
+    verification, wallet crediting and callback_data all stay exactly as
+    they are today.
+    """
+    __tablename__ = 'payment_networks'
+
+    id = Column(Integer, primary_key=True)
+
+    # ── Identity ────────────────────────────────────────────────────────
+    network_key = Column(String(64), unique=True, nullable=False, index=True)
+    name = Column(String(120), nullable=False)            # "Tron"
+    symbol = Column(String(32), nullable=True)            # "USDT"
+    display_name = Column(String(120), nullable=False)    # "USDT (TRC20)"
+    category = Column(String(32), nullable=False, default="USDT NETWORKS")
+    emoji = Column(String(16), nullable=True, default="💳")
+
+    # ── Deposit details ─────────────────────────────────────────────────
+    address = Column(String(255), nullable=True)
+    memo = Column(String(255), nullable=True)             # memo / tag / destination tag
+    instructions = Column(Text, nullable=True)
+    min_deposit = Column(Float, nullable=True, default=1.0)
+    max_deposit = Column(Float, nullable=True)            # NULL / 0 = no ceiling
+    bonus_percent = Column(Float, nullable=False, default=0.0)
+    confirmations = Column(Integer, nullable=False, default=1)
+
+    # ── Verification wiring (reuses existing flows only) ────────────────
+    api_provider = Column(String(64), nullable=True)
+    verification_type = Column(String(16), nullable=False, default="manual")  # api | manual
+    api_verification = Column(Boolean, default=False, nullable=False)
+    manual_verification = Column(Boolean, default=True, nullable=False)
+    gateway_key = Column(String(64), nullable=True, index=True)   # existing pay_<key>
+    manual_method_id = Column(Integer, ForeignKey('manual_payment_methods.id'),
+                              nullable=True, index=True)          # existing pay_pm_<id>
+
+    # ── Presentation / availability ─────────────────────────────────────
+    display_order = Column(Integer, nullable=False, default=0)
+    is_enabled = Column(Boolean, default=True, nullable=False, index=True)
+    is_visible = Column(Boolean, default=True, nullable=False)
+    is_featured = Column(Boolean, default=False, nullable=False)
+    is_recommended = Column(Boolean, default=False, nullable=False)
+    maintenance_mode = Column(Boolean, default=False, nullable=False)
+
+    # ── Admin only ──────────────────────────────────────────────────────
+    admin_notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    manual_method = relationship("ManualPaymentMethod")
+
+    # ── Convenience (no business logic) ─────────────────────────────────
+    @property
+    def callback_key(self) -> str:
+        """The EXISTING callback_data suffix this network routes through."""
+        if self.gateway_key:
+            return self.gateway_key
+        if self.manual_method_id:
+            return f"pm_{self.manual_method_id}"
+        return ""
+
+    def is_live(self) -> bool:
+        return bool(self.is_enabled and self.is_visible and not self.maintenance_mode)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# V41 — Dynamic LOCAL Payment Providers (admin-managed, database-driven)
+# ══════════════════════════════════════════════════════════════════════════
+class LocalPaymentProvider(Base):
+    """One admin-managed LOCAL payment provider (bKash, Nagad, Rocket, …).
+
+    CONFIGURATION + PRESENTATION ONLY. A row either points at an existing
+    code gateway (``gateway_key`` → unchanged ``pay_<gateway_key>`` handler)
+    or at an existing ManualPaymentMethod (``manual_method_id`` → unchanged
+    ``pay_pm_<id>`` deposit + manual verification flow). Deposit
+    verification, callbacks and wallet crediting stay exactly as they are.
+    """
+    __tablename__ = 'local_payment_providers'
+
+    id = Column(Integer, primary_key=True)
+
+    # ── Identity ────────────────────────────────────────────────────────
+    provider_key = Column(String(64), unique=True, nullable=False, index=True)
+    name = Column(String(120), nullable=False)             # "bKash"
+    display_name = Column(String(120), nullable=False)     # "BKASH"
+    emoji = Column(String(16), nullable=True, default="💳")
+
+    # ── Wallet details ──────────────────────────────────────────────────
+    wallet_number = Column(String(64), nullable=True)
+    account_type = Column(String(16), nullable=False, default="personal")  # personal|agent|merchant
+    account_holder = Column(String(120), nullable=True)
+    instructions = Column(Text, nullable=True)
+
+    # ── Amounts / pricing ───────────────────────────────────────────────
+    min_deposit = Column(Float, nullable=True, default=1.0)
+    max_deposit = Column(Float, nullable=True)             # NULL / 0 = no ceiling
+    bonus_percent = Column(Float, nullable=False, default=0.0)
+    exchange_rate = Column(Float, nullable=True)           # local currency per 1 USD
+    auto_rate = Column(Boolean, default=False, nullable=False)
+    rate_currency = Column(String(8), nullable=False, default="BDT")
+
+    # ── Routing (reuses existing flows only) ────────────────────────────
+    gateway_key = Column(String(64), nullable=True, index=True)   # existing pay_<key>
+    manual_method_id = Column(Integer, ForeignKey('manual_payment_methods.id'),
+                              nullable=True, index=True)          # existing pay_pm_<id>
+
+    # ── Presentation / availability ─────────────────────────────────────
+    display_order = Column(Integer, nullable=False, default=0)
+    is_default = Column(Boolean, default=False, nullable=False)
+    is_enabled = Column(Boolean, default=True, nullable=False, index=True)
+    is_visible = Column(Boolean, default=True, nullable=False)
+    maintenance_mode = Column(Boolean, default=False, nullable=False)
+
+    # ── Admin only ──────────────────────────────────────────────────────
+    admin_notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    manual_method = relationship("ManualPaymentMethod")
+
+    @property
+    def callback_key(self) -> str:
+        """The EXISTING callback_data suffix this provider routes through."""
+        if self.gateway_key:
+            return self.gateway_key
+        if self.manual_method_id:
+            return f"pm_{self.manual_method_id}"
+        return ""
+
+    def is_live(self) -> bool:
+        return bool(self.is_enabled and self.is_visible and not self.maintenance_mode)

@@ -106,6 +106,10 @@ def _btn(gw: dict, label: Optional[str] = None, emoji: Optional[str] = None,
          callback_key: Optional[str] = None) -> InlineKeyboardButton:
     display_emoji = emoji or gw.get("emoji", "💳")
     text = f'{display_emoji} {label or gw["label"]}'
+    if gw.get("_featured"):
+        text += " ⭐"
+    if gw.get("_recommended"):
+        text += " 👍"
     return InlineKeyboardButton(text, callback_data=f'pay_{callback_key or gw["key"]}')
 
 
@@ -116,14 +120,36 @@ def _display_btn(gw: dict, table: dict) -> InlineKeyboardButton:
     return _btn(gw, label=str(gw.get("label", gw["key"])).upper())
 
 
+def _apply_dynamic_config(gateways: Optional[Iterable[dict]]) -> List[dict]:
+    """Merge the admin-managed, database-driven payment networks
+    (services/payment_networks.py) into the gateway list. Presentation only:
+    every button still carries an EXISTING callback_data. Falls back to the
+    incoming list untouched when nothing is configured."""
+    try:
+        from services.payment_networks import overlay_gateways
+        return overlay_gateways(gateways)
+    except Exception:  # noqa: BLE001
+        return [dict(g) for g in (gateways or [])]
+
+
 def _split(gateways: Optional[Iterable[dict]]):
     """Bucket gateways into (top, usdt_networks, other_coins, local)."""
+    gateways = _apply_dynamic_config(gateways)
     top: List[dict] = []
     usdt: List[dict] = []
     coins: List[dict] = []
     mobile: List[dict] = []
     for gw in gateways or []:
-        bucket = classify(gw["key"], gw.get("label", ""))
+        bucket = gw.get("_bucket") or classify(gw["key"], gw.get("label", ""))
+        if bucket == "usdt":
+            usdt.append(gw)
+            continue
+        if bucket == "coins":
+            coins.append(gw)
+            continue
+        if bucket == "mobile":
+            mobile.append(gw)
+            continue
         if bucket == "crypto_network":
             if classify_crypto(gw["key"], gw.get("label", "")) == "usdt_network":
                 usdt.append(gw)
@@ -135,13 +161,26 @@ def _split(gateways: Optional[Iterable[dict]]):
             top.append(gw)
     # Binance Pay leads, then Bybit Pay (spec order).
     priority = {"binance_pay": 0, "bybit_pay": 1}
-    top.sort(key=lambda g: priority.get(g["key"], 2))
+    top.sort(key=lambda g: (
+        0 if g.get("_order") is not None else 1,
+        g.get("_order", 0),
+        priority.get(g["key"], 2),
+    ))
     return top, usdt, coins, mobile
 
 
 def _ordered(items: Sequence[dict], order: Tuple[str, ...]) -> List[dict]:
+    """Admin-defined display order wins; anything without one keeps the
+    legacy hardcoded spec order, then insertion order."""
     rank = {key: i for i, key in enumerate(order)}
-    return sorted(items, key=lambda g: rank.get(g["key"], len(rank)))
+    return sorted(
+        items,
+        key=lambda g: (
+            0 if g.get("_order") is not None else 1,
+            g.get("_order", 0),
+            rank.get(g["key"], len(rank)),
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -173,7 +212,7 @@ def build_payment_selection_screen(
         rows.append([InlineKeyboardButton("🌐 USDT NETWORKS", callback_data="topup_menu_crypto")])
     if coins:
         rows.append([InlineKeyboardButton("🪙 OTHER COINS", callback_data="topup_menu_coins")])
-    if mobile:
+    if mobile or _dynamic_local_rows():
         rows.append([InlineKeyboardButton("🇧🇩 LOCAL PAYMENT", callback_data="topup_menu_mobile")])
 
     rows.append([InlineKeyboardButton("⬅️ BACK", callback_data="topup_back_to_amount")])
@@ -234,6 +273,26 @@ _MOBILE_MONEY_DISPLAY = {
 }
 
 
+def _dynamic_local_rows() -> Optional[List[List[InlineKeyboardButton]]]:
+    """Rows generated from the admin-managed ``local_payment_providers``
+    table. Returns None when the admin has not configured any provider yet,
+    so the legacy rendering below keeps working untouched."""
+    try:
+        from services.local_payments import is_configured, local_buttons
+        if not is_configured():
+            return None
+        rows: List[List[InlineKeyboardButton]] = []
+        for b in local_buttons():
+            label = b["label"]
+            if b.get("_default"):
+                label += " ⭐"
+            rows.append([InlineKeyboardButton(
+                f'{b["emoji"]} {label}', callback_data=f'pay_{b["key"]}')])
+        return rows
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, InlineKeyboardMarkup]:
     """Render bKash / Nagad / Rocket / Upay as distinct buttons.
 
@@ -242,6 +301,12 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
     ``pay_zinipay_bkash`` / ``pay_zinipay_nagad`` / ``pay_zinipay_rocket`` /
     ``pay_zinipay_upay``. Only labels/emoji changed here.
     """
+    dynamic_rows = _dynamic_local_rows()
+    if dynamic_rows is not None:
+        dynamic_rows.append([InlineKeyboardButton("⬅️ BACK", callback_data="topup_menu_back")])
+        return ("🇧🇩 <b>SELECT LOCAL PAYMENT</b>\n\nChoose your provider.",
+                InlineKeyboardMarkup(dynamic_rows))
+
     _, _, _, mobile = _split(gateways)
     by_key = {gw["key"]: gw for gw in mobile}
     has_zinipay = "zinipay" in by_key

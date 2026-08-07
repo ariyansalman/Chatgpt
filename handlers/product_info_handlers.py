@@ -182,7 +182,7 @@ def _build_user_info_keyboard(product_id: int, settings: dict,
     back_cb = f"product_{product_id}"
     rows.append([
         InlineKeyboardButton("🔙 Back to Product", callback_data=back_cb),
-        InlineKeyboardButton("☎️ Support", callback_data="support_center"),
+        InlineKeyboardButton("🎧 Support", callback_data="support_center"),
     ])
     return InlineKeyboardMarkup(rows)
 

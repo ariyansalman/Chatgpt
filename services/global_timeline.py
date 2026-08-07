@@ -40,9 +40,9 @@ CAT_SYSTEM   = "system"
 
 CATEGORY_LABELS = {
     CAT_USER:     "👤 User",
-    CAT_WALLET:   "💰 Wallet",
-    CAT_ORDER:    "🧾 Order",
-    CAT_PRODUCT:  "📦 Product",
+    CAT_WALLET:   "💳 Wallet",
+    CAT_ORDER:    "📦 Order",
+    CAT_PRODUCT:  "🛒 Product",
     CAT_COUPON:   "🎟 Coupon",
     CAT_BROADCAST:"📢 Broadcast",
     CAT_FLASH:    "⚡ Flash Sale",

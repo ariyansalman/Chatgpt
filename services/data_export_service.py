@@ -37,8 +37,8 @@ EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 # ─── Export-type registry ─────────────────────────────────────────────────────
 EXPORT_TYPES: dict[str, dict] = {
     "users":            {"label": "👥 Users",              "emoji": "👥"},
-    "orders":           {"label": "🧾 Orders",             "emoji": "🧾"},
-    "products":         {"label": "📦 Products",           "emoji": "📦"},
+    "orders":           {"label": "📦 Orders",             "emoji": "🧾"},
+    "products":         {"label": "🛒 Products",           "emoji": "📦"},
     "categories":       {"label": "📂 Categories",         "emoji": "📂"},
     "transactions":     {"label": "💳 Transactions",       "emoji": "💳"},
     "deposits":         {"label": "⬇️ Deposits",            "emoji": "⬇️"},
@@ -51,7 +51,7 @@ EXPORT_TYPES: dict[str, dict] = {
     "subscriptions":    {"label": "🔄 Subscriptions",      "emoji": "🔄"},
     "vip_users":        {"label": "👑 VIP Users",          "emoji": "👑"},
     "customer_notes":   {"label": "📝 Customer Notes",     "emoji": "📝"},
-    "support_tickets":  {"label": "🎫 Support Tickets",    "emoji": "🎫"},
+    "support_tickets":  {"label": "🎧 Support Tickets",    "emoji": "🎫"},
     "activity_timeline":{"label": "📜 Activity Timeline",  "emoji": "📜"},
     "system_logs":      {"label": "🖥 System Logs",        "emoji": "🖥"},
     "statistics":       {"label": "📊 Statistics",         "emoji": "📊"},

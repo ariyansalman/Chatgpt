@@ -24,6 +24,8 @@ from .models import (
     # V15 (Flash Sales)
     FlashSale,
     # V17 (Telegram Stars)
+    # V40 (Dynamic Payment Networks)
+    PaymentNetwork,
     PaymentGatewayConfig, HeleketStaticWallet, HeleketDeposit, BinancePayTransaction,
     BybitPayTransaction,
     # ZiniPay duplicate-prevention
@@ -153,6 +155,7 @@ __all__ = [
     'AdminRole', 'AdminRoleType', 'ROLE_DEFAULT_PERMISSIONS',
     'MarketingTouch', 'MarketingCampaignType',
     'FlashSale',
+    'PaymentNetwork',
     'PaymentGatewayConfig', 'HeleketStaticWallet', 'HeleketDeposit', 'BinancePayTransaction',
     'BybitPayTransaction',
     'ZiniPayUsedTransaction',

@@ -251,7 +251,7 @@ async def aps_got_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if sched:
         await update.message.reply_text(
             f"✅ <b>Schedule Created</b>\n\n"
-            f"📦 Product: <b>{pname}</b>\n"
+            f"🛒 Product: <b>{pname}</b>\n"
             f"🔧 Type: <b>{label}</b>\n"
             f"📅 Execute at: <b>{_fmt_dt(execute_at)}</b>\n"
             f"🆔 Schedule ID: <b>{sched.id}</b>",
@@ -382,7 +382,7 @@ async def aps_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     text = (
         f"🗓 <b>Schedule #{sched['id']}</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 Product: <b>{sched['product_name']}</b> (ID:{sched['product_id']})\n"
+        f"🛒 Product: <b>{sched['product_name']}</b> (ID:{sched['product_id']})\n"
         f"🔧 Type: <b>{label}</b>\n"
         f"📅 Execute at: <b>{_fmt_dt(sched['execute_at'])}</b>\n"
         f"🌐 Timezone: <b>{sched['timezone_name']}</b>\n"

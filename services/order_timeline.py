@@ -193,7 +193,7 @@ def render_user_timeline(order_id: int) -> str:
     current_status = rows[-1]["to_status"]
 
     lines = [
-        "📋 <b>Order Timeline</b>",
+        "📦 <b>Order Timeline</b>",
         "",
         progress_bar(current_status),
         "",

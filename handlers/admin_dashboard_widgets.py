@@ -410,7 +410,7 @@ def _build_stats_text(stats: dict[str, Any]) -> str:
         f"  Avg Order:     <b>{_fp(aov)}</b>\n"
         f"  7d Trend: <code>{spark}</code>\n"
         "\n"
-        "🛒 <b>Orders</b>\n"
+        "📦 <b>Orders</b>\n"
         f"  New:       <b>{orders_new}</b>\n"
         f"  Completed: <b>{orders_done}</b>\n"
         f"  Cancelled: <b>{orders_cancel}</b>\n"

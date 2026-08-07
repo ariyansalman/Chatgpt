@@ -112,7 +112,7 @@ async def asf_reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📅 Monthly Report", callback_data="asf:report:monthly"),
          InlineKeyboardButton("📅 Yearly Report",  callback_data="asf:report:yearly")],
         [InlineKeyboardButton("💵 Revenue Report", callback_data="asf:report:revenue"),
-         InlineKeyboardButton("🛒 Orders Report",  callback_data="asf:report:orders")],
+         InlineKeyboardButton("📦 Orders Report",  callback_data="asf:report:orders")],
         [InlineKeyboardButton("👤 Customer Report",callback_data="asf:report:customer"),
          InlineKeyboardButton("👥 Referral Report",callback_data="asf:report:referral")],
         [InlineKeyboardButton("💳 Payment Report", callback_data="asf:report:payment")],

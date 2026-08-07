@@ -64,7 +64,7 @@ ABT_VAR_VALUE     = 5   # receiving override for a variable
 
 BROADCAST_TYPES: Dict[str, Dict[str, Any]] = {
     "coupon": {
-        "label":   "🎯 Coupon Broadcast",
+        "label":   "🎟 Coupon Broadcast",
         "desc":    "Send exclusive coupon codes to targeted users.",
         "template": (
             "🎟 <b>Exclusive Coupon Just For You, {first_name}!</b>\n\n"
@@ -137,10 +137,10 @@ BROADCAST_TYPES: Dict[str, Dict[str, Any]] = {
         ),
     },
     "wallet_bonus": {
-        "label":   "💰 Wallet Bonus Alert",
+        "label":   "💳 Wallet Bonus Alert",
         "desc":    "Promote a wallet top-up bonus to users.",
         "template": (
-            "💰 <b>Wallet Bonus Alert, {first_name}!</b>\n\n"
+            "💳 <b>Wallet Bonus Alert, {first_name}!</b>\n\n"
             "Your current balance: <b>{wallet_balance}</b>\n\n"
             "Top up now and get <b>{bonus}</b> extra bonus credited instantly!\n\n"
             "🎁 Limited-time offer — don't miss it!"

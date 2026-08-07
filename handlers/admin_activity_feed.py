@@ -59,11 +59,11 @@ _STATUS_LABELS = {
 # (config_key_suffix, label)
 _ALL_EVENTS: List[tuple] = [
     ("new_order",          "🛒 New Order"),
-    ("wallet_topup",       "💰 Wallet Top-Up"),
+    ("wallet_topup",       "💳 Wallet Top-Up"),
     ("refund",             "💸 Refund"),
     ("delivery_completed", "📦 Delivery Completed"),
     ("order_cancelled",    "❌ Order Cancelled"),
-    ("coupon_used",        "🎁 Coupon Used"),
+    ("coupon_used",        "🎟 Coupon Used"),
     ("referral_reward",    "👥 Referral Reward"),
     ("review_submitted",   "⭐ Review Submitted"),
     ("product_restocked",  "🔑 Product Restocked"),
@@ -73,7 +73,7 @@ _ALL_EVENTS: List[tuple] = [
     ("login_alert",        "🔐 Login Alert"),
     ("failed_payment",     "⚠️ Failed Payment"),
     ("fraud_detected",     "🚫 Fraud Detected"),
-    ("support_ticket",     "🎫 Support Ticket"),
+    ("support_ticket",     "🎧 Support Ticket"),
     ("admin_action",       "🛠 Admin Action"),
 ]
 

@@ -158,7 +158,7 @@ async def mm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     colors_on = bool(get_menu_layout(audience).get("colors_enabled", True))
     rows.append([
         InlineKeyboardButton(
-            f"👥 Profile: {MENU_AUDIENCE_LABELS[audience]}",
+            f"👤 Profile: {MENU_AUDIENCE_LABELS[audience]}",
             callback_data="mm:profile",
         ),
     ])
@@ -245,7 +245,7 @@ async def mm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     text = (
         "📋 <b>Main Menu Manager</b>\n\n"
-        f"👥 Profile: <b>{MENU_AUDIENCE_LABELS[audience]}</b>\n"
+        f"👤 Profile: <b>{MENU_AUDIENCE_LABELS[audience]}</b>\n"
         f"🔹 Status: <b>{status_label}</b>\n"
         f"🎨 Colors: <b>{'ON' if colors_on else 'OFF (showing default color everywhere)'}</b>\n\n"
         "<b>Menu Items:</b>\n"

@@ -1,6 +1,6 @@
 """Product search handlers — /search command and Search menu button.
 
-Results mirror the flat "🛍 Products" catalog: every matching active
+Results mirror the flat "🛒 Products" catalog: every matching active
 product is rendered in ONE message with ONE inline keyboard (one button per
 product, no pagination, no category filter), using the same real available
 stock, per-user currency price, and out-of-stock emoji override.

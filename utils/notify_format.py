@@ -171,7 +171,7 @@ def render_order_notification(
     Args:
         status: one of "new_order", "completed", "pending", "manual",
             "failed" — picks the header icon/title. Unknown values fall
-            back to a generic "🛒 Order Update" header so new statuses
+            back to a generic "📦 Order Update" header so new statuses
             never crash the caller.
         order_id: the customer-facing order id (e.g. "ORD-20260726-000051"),
             never the raw internal database primary key.
@@ -230,7 +230,7 @@ def render_order_notification(
         coupon_value = (
             f"{coupon_code} ({coupon_discount_label})" if coupon_discount_label else coupon_code
         )
-        extra_fields.append(f"🏷 Coupon: {coupon_value}")
+        extra_fields.append(f"🎟 Coupon: {coupon_value}")
     if referral_commission:
         extra_fields.append(f"🤝 Referral: {referral_commission}")
     if extra_fields:

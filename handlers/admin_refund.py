@@ -93,7 +93,7 @@ async def aref_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Rejected", callback_data="aref:list:rejected:0"),
          InlineKeyboardButton("📋 All Refunds", callback_data="aref:list:all:0")],
         [InlineKeyboardButton("➕ Manual Refund", callback_data="aref:manual")],
-        [InlineKeyboardButton("⚙ Settings", callback_data="aref:settings")],
+        [InlineKeyboardButton("⚙️ Settings", callback_data="aref:settings")],
         [InlineKeyboardButton("🔙 Back", callback_data="acc:root")],
     ]
     await _safe_edit(query, text, InlineKeyboardMarkup(kb))

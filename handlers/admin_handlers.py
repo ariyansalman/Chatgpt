@@ -785,7 +785,7 @@ async def admin_products_callback(update: Update, context: ContextTypes.DEFAULT_
     try:
         try:
             await query.edit_message_text(
-                "📦 Product Management\n\nSelect an option:",
+                "🛒 Product Management\n\nSelect an option:",
                 reply_markup=create_admin_product_menu_keyboard()
             )
         except BadRequest as e:
@@ -1689,7 +1689,7 @@ async def admin_order_detail_callback(update: Update, context: ContextTypes.DEFA
 
         # Build message
         username = user.username if user and user.username else f"ID:{user.telegram_id if user else 'Unknown'}"
-        message = f"📋 Order Details\n\n"
+        message = f"📦 Order Details\n\n"
         message += f"Order ID: #{order.id}\n"
         message += f"Status: {status_emoji} {order.status.value}\n"
         message += f"User: @{username} ({user.telegram_id if user else 'Unknown'})\n"

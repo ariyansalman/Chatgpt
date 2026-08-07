@@ -196,7 +196,7 @@ async def _show_gift_confirmation(update: Update, context: ContextTypes.DEFAULT_
 
     lines = [
         "🎁 <b>Gift Purchase Confirmation</b>\n",
-        f"🛍 Product: <b>{product_name}</b>",
+        f"🛒 Product: <b>{product_name}</b>",
         f"💰 Price: <b>${product_price:.2f}</b>",
         f"👤 To: {recipient_str}",
     ]
@@ -401,7 +401,7 @@ async def process_completed_gifts(context: ContextTypes.DEFAULT_TYPE) -> None:
                 lines.append("\n📦 <b>Your delivery:</b>")
                 for dl in gift["delivery_lines"][:3]:
                     lines.append(f"<code>{dl[:400]}</code>")
-            lines.append(f"\n📋 Order reference: #{gift['order_id']}")
+            lines.append(f"\n📦 Order reference: #{gift['order_id']}")
 
             try:
                 await context.bot.send_message(

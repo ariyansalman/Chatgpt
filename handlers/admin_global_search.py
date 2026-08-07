@@ -440,7 +440,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
         if r:
             st = _safe_str(r.status.value if hasattr(r.status, "value") else r.status)
             lines = [
-                f"🧾 Order ID: <code>{r.id}</code>",
+                f"📦 Order ID: <code>{r.id}</code>",
                 f"👤 User ID: <code>{r.user_id}</code>",
                 f"💰 Total: <b>${r.total_amount:.2f}</b>",
                 f"💳 Payment Method: {_safe_str(getattr(r, 'payment_method', None))}",
@@ -470,7 +470,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
         if r:
             price = r.sale_price if (r.sale_price and r.sale_price > 0) else r.price
             lines = [
-                f"📦 Product: <b>{r.name}</b>",
+                f"🛒 Product: <b>{r.name}</b>",
                 f"🆔 ID: <code>{r.id}</code>",
                 f"🔖 Type: {_safe_str(r.product_type.value if hasattr(r.product_type, 'value') else r.product_type)}",
                 f"💰 Price: <b>${price:.2f}</b>",
@@ -577,7 +577,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
                     f"⭐ Review ID: <code>{r.id}</code>",
                     f"🌟 Rating: {'★' * r.rating}{'☆' * (5 - r.rating)} ({r.rating}/5)",
                     f"👤 User ID: <code>{r.user_id}</code>",
-                    f"📦 Product ID: <code>{getattr(r, 'product_id', '—')}</code>",
+                    f"🛒 Product ID: <code>{getattr(r, 'product_id', '—')}</code>",
                     f"💬 Comment: {(r.comment or '')[:300]}",
                     f"👁 Visibility: {'🙈 Hidden' if r.is_hidden else '👁 Visible'}",
                     f"📅 Created: {_dt(r.created_at)}",
@@ -610,10 +610,10 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
             if r:
                 lines = [
                     f"🔐 Key ID: <code>{r.id}</code>",
-                    f"📦 Product ID: <code>{r.product_id}</code>",
+                    f"🛒 Product ID: <code>{r.product_id}</code>",
                     f"🔑 Value: <code>{(r.key_value or '')[:60]}</code>",
                     f"✅ Sold: {'Yes' if r.is_sold else 'No'}",
-                    f"🧾 Order ID: <code>{r.order_id or '—'}</code>",
+                    f"📦 Order ID: <code>{r.order_id or '—'}</code>",
                     f"📅 Created: {_dt(getattr(r, 'created_at', None))}",
                     f"📅 Sold at: {_dt(getattr(r, 'sold_at', None))}",
                 ]
@@ -630,7 +630,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
                     f"📝 Value: <code>{(getattr(r, 'key_value', '') or '')[:60]}</code>",
                     f"📊 Status: {_safe_str(getattr(r, 'status', None))}",
                     f"🏷 Type: {_safe_str(getattr(r, 'key_type', None))}",
-                    f"📦 Product ID: {_safe_str(getattr(r, 'product_id', None))}",
+                    f"🛒 Product ID: {_safe_str(getattr(r, 'product_id', None))}",
                     f"📅 Created: {_dt(getattr(r, 'created_at', None))}",
                     f"📅 Used at: {_dt(getattr(r, 'used_at', None))}",
                 ]
@@ -646,7 +646,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
                     f"📁 File ID: <code>{r.id}</code>",
                     f"📄 Filename: {getattr(r, 'filename', '—')}",
                     f"📏 Size: {getattr(r, 'file_size', 0) or 0} bytes",
-                    f"📦 Product ID: {_safe_str(getattr(r, 'product_id', None))}",
+                    f"🛒 Product ID: {_safe_str(getattr(r, 'product_id', None))}",
                     f"📅 Created: {_dt(getattr(r, 'created_at', None))}",
                 ]
         except Exception as e:
@@ -727,7 +727,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
                         f"👥 Commission ID: <code>{r.id}</code>",
                         f"👤 Referrer ID: <code>{r.referrer_id}</code>",
                         f"👤 Referred ID: <code>{r.referred_id}</code>",
-                        f"🧾 Order ID: <code>{r.order_id or '—'}</code>",
+                        f"📦 Order ID: <code>{r.order_id or '—'}</code>",
                         f"💰 Commission: ${r.commission_amount:.2f} ({r.commission_rate*100:.1f}%)",
                         f"📊 Status: {r.status}",
                         f"📅 Created: {_dt(r.created_at)}",
@@ -740,7 +740,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
                         f"👥 Referral Reward ID: <code>{r.id}</code>",
                         f"👤 Referrer ID: <code>{r.referrer_id}</code>",
                         f"👤 Referred ID: <code>{r.referred_id}</code>",
-                        f"🧾 Order ID: <code>{r.order_id or '—'}</code>",
+                        f"📦 Order ID: <code>{r.order_id or '—'}</code>",
                         f"💰 Reward: ${r.amount:.2f}",
                         f"📅 Created: {_dt(r.created_at)}",
                     ]
@@ -754,7 +754,7 @@ def _fetch_detail_inner(session, module: str, rec_id: str) -> list[str]:  # noqa
             if r:
                 lines = [
                     f"📬 Delivery ID: <code>{r.id}</code>",
-                    f"🧾 Order ID: <code>{getattr(r, 'order_id', '—')}</code>",
+                    f"📦 Order ID: <code>{getattr(r, 'order_id', '—')}</code>",
                     f"📊 Status: {_safe_str(getattr(r, 'status', None))}",
                     f"🔄 Retries: {_safe_str(getattr(r, 'retry_count', None))}",
                     f"📅 Created: {_dt(getattr(r, 'created_at', None))}",

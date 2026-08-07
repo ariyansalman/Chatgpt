@@ -90,7 +90,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
         ("📈 Growth & LTV",        "admin_analytics_cohort"),
     ]],
 
-    # ── 📦 Products — catalog, discovery, inventory & suppliers all live
+    # ── 🛒 Products — catalog, discovery, inventory & suppliers all live
     # under one roof. Unchanged from v46 other than a "Badges & Featured"
     # entry, which reuses the existing per-product toggle (there's no
     # separate badges list screen in the codebase).
@@ -98,7 +98,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
     # request — overrides the "≤8 items/page" guideline for this category only.
     "products": [
         [
-            ("📦 Product List",        "admin_products"),
+            ("🛒 Product List",        "admin_products"),
             ("🗂 Categories",          "admin_manage_categories"),
             ("🎀 Bundles",             "abn:menu"),
             ("🎟 Gift Cards",          "agc:menu"),
@@ -122,11 +122,11 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
         ],
     ],
 
-    # ── 🛒 Orders — order lifecycle, incl. disputes. Resend Delivery and
+    # ── 📦 Orders — order lifecycle, incl. disputes. Resend Delivery and
     # Manual Complete are per-order actions inside Orders / Delivery Queue,
     # not separate top-level buttons.
     "orders": [[
-        ("🧾 Orders (All / Pending / Completed)", "admin_orders"),
+        ("📦 Orders (All / Pending / Completed)", "admin_orders"),
         ("🔎 Search Orders",       "aos:menu"),
         ("📬 Delivery Queue",      "acc:sec:delivery"),
         ("💰 Refunds / Cancellations", "aref:menu"),
@@ -135,7 +135,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
     ]],
 
     # ── 💳 Payments — gateways & deposits. Wallet balances/manual credit and
-    # multi-currency/FX now live in their own 💰 Wallet category (below);
+    # multi-currency/FX now live in their own 💳 Wallet category (below);
     # log-style screens (webhooks/payment logs) moved to 📜 Logs so this
     # category stays focused on "how customers pay", not history/records.
     "payments": [[
@@ -144,7 +144,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
         ("🧾 Deposit Requests",    "pd:list:0:desc"),
     ]],
 
-    # ── 💰 Wallet — customer wallet balances, manual credit/debit,
+    # ── 💳 Wallet — customer wallet balances, manual credit/debit,
     # multi-currency wallets and FX rates. Split out of Payments so wallet
     # administration has its own front door, matching the customer-facing
     # Wallet feature.
@@ -255,7 +255,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
     ]],
 
     # ── 🎧 Support — split out of "users" into its own top-level home.
-    # Product FAQ stays single-parented under 📦 Products (it's product-
+    # Product FAQ stays single-parented under 🛒 Products (it's product-
     # specific, not a general store FAQ). Support Categories exist in the
     # ticket flow (category picker) but aren't yet admin-editable; a
     # general Store FAQ, Auto Reply and Canned Replies don't exist in the
@@ -401,7 +401,7 @@ _CAT_DESC: dict[str, str] = {
 }
 
 # Total item count per category (all pages combined) — shown as a badge
-# next to the button on the root panel, e.g. "📦 Products · 18".
+# next to the button on the root panel, e.g. "🛒 Products · 18".
 _CAT_COUNT: dict[str, int] = {
     _cat: sum(len(_page) for _page in _pages)
     for _cat, _pages in _CAT_PAGES.items()
@@ -635,15 +635,15 @@ def build_acc_root_keyboard(maintenance_on: bool,
     # route; only which bucket a feature is grouped under changed.
     _GRID: list[tuple[str, str, int, str]] = [
         ("dashboard",      "⚡ Dashboard",      0,               ""),
-        ("products",       "📦 Products",       low_stock,       "Low Stock"),
-        ("orders",         "🛒 Orders",         pending_orders,  "Pending"),
+        ("products",       "🛒 Products",       low_stock,       "Low Stock"),
+        ("orders",         "📦 Orders",         pending_orders,  "Pending"),
         ("payments",       "💳 Payments",       pending_payments,"Pending"),
         ("users",          "👥 Customers",      0,               ""),
-        ("wallet",         "💰 Wallet",         0,               ""),
+        ("wallet",         "💳 Wallet",         0,               ""),
         ("coupons",        "🎟 Coupons",        0,               ""),
         ("referral",       "🎁 Referrals",      0,               ""),
         ("marketing",      "📢 Marketing",      0,               ""),
-        ("support",        "🎫 Support",        open_tickets,    "Open"),
+        ("support",        "🎧 Support",        open_tickets,    "Open"),
         ("appearance",     "🎨 Appearance",     0,               ""),
         ("store",          "🏪 Store",          0,               ""),
         ("localization",   "🌍 Localization",   0,               ""),
@@ -1302,7 +1302,7 @@ async def _render_button_color_manager(update: Update, context: ContextTypes.DEF
 
     text_ = (
         "🎨 <b>Button Color Manager</b>\n\n"
-        f"👥 Profile: <b>{MENU_AUDIENCE_LABELS[audience]}</b>\n"
+        f"👤 Profile: <b>{MENU_AUDIENCE_LABELS[audience]}</b>\n"
         f"🎨 This profile's menu colors: <b>{'ON' if colors_on else 'OFF'}</b>\n"
         f"🌈 All bot buttons (every keyboard): <b>{'ON' if all_colors_on else 'OFF'}</b>\n\n"
         "Toggle colors on/off instantly, or reset back to defaults. "

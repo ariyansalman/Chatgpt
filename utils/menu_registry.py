@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 # Matches one-or-more leading emoji already baked into a label, so that
 # applying an emoji override never duplicates it (e.g. "🛒 Products" with
-# override "🛍" becomes "🛍 Products", not "🛍 🛒 Products").
+# override "🛍" becomes "🛒 Products", not "🛍 🛒 Products").
 # This is the single shared definition — utils.menu_builder reuses it so
 # every menu in the bot (main menu and admin sub-menus alike) strips
 # leading emoji the same way.
@@ -67,7 +67,7 @@ DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
     # NOTE: 💳 Deposit (key "topup", callback "topup") used to be its own
     # top-level button. Wallet is now the complete financial center --
     # "Add Funds" (the same "topup" flow, unchanged) lives one level down
-    # as a button inside 👛 Wallet (see handlers/wallet_handlers.py), so it
+    # as a button inside 💳 Wallet (see handlers/wallet_handlers.py), so it
     # no longer competes for space on the Main Menu. Every other entry
     # point that used to say "Deposit" now redirects into Wallet / Add
     # Funds; the "topup" callback itself is untouched for compatibility.
@@ -81,7 +81,7 @@ DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
      "row": 2, "order": 1, "emoji": "🎧"},
 
     # Row 3 — Invite | Profile
-    # ⚙ Settings has been retired as a top-level button in favor of 👤
+    # ⚙️ Settings has been retired as a top-level button in favor of 👤
     # Profile -- a single hub for everything account-related (see
     # handlers/account_features.py: user_profile, callback "ua:profile",
     # unchanged). Settings' own sub-pages (Notifications / Currency /
@@ -93,7 +93,7 @@ DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
      "row": 3, "order": 1, "emoji": "👤"},
 
     # Row 4 — Language (full-width)
-    # 🌐 Language previously lived one level down inside ⚙ Settings. It
+    # 🌐 Language previously lived one level down inside ⚙️ Settings. It
     # stays its own top-level button (the "language_menu" callback and its
     # handler in handlers/user_handlers.py are unchanged) so language
     # selection doesn't require opening Profile first.

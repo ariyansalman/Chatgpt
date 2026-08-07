@@ -429,11 +429,11 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
 
     # ── Order History & Order Details ────────────────────────────────────────
     ("order_history_status", "str", "enabled", "orders",
-     "📋 Order History Status",
+     "📦 Order History Status",
      "Feature status for Order History & Details: enabled | maintenance | disabled. "
      "Maintenance shows a notice to users; disabled hides history entirely."),
     ("orders_per_page", "int", 10, "orders",
-     "📋 Orders Per Page",
+     "📦 Orders Per Page",
      "Maximum orders shown per page (3–20). Default: 10. "
      "Changes take effect immediately without restart."),
     ("order_history_enable_timeline", "bool", True, "orders",
@@ -464,11 +464,11 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
 
     # ── Product Pagination (paginated flat catalog) ──────────────────────────
     ("product_pagination_status", "str", "enabled", "catalog",
-     "🛍 Product List Status",
+     "🛒 Product List Status",
      "Feature status: enabled | maintenance | disabled. "
      "Maintenance shows a notice to users; disabled hides the list entirely."),
     ("products_per_page", "int", 20, "catalog",
-     "🛍 Products Per Page",
+     "🛒 Products Per Page",
      "Maximum products shown per page (1–50). Default: 20. "
      "Changes take effect immediately without restart."),
     ("product_list_allow_pagination", "bool", True, "catalog",
@@ -485,7 +485,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
     ("product_list_show_counter", "bool", True, "catalog",
      "🛍 Show Product Counter",
      "Display the total available product count in the header, "
-     "e.g. '🛍 Products (42 Available)'."),
+     "e.g. '🛒 Products (42 Available)'."),
 
     # -- Catalog Badges -------------------------------------------------------
     ("new_product_days", "int", 7, "catalog",
@@ -738,22 +738,22 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
 
     # ── Order Timeline System (V25) ──────────────────────────────────────────
     ("ots_status", "str", "enabled", "ops",
-     "📋 Order Timeline: Status",
+     "📦 Order Timeline: Status",
      "3-state status for the Order Timeline feature: enabled / maintenance / disabled."),
     ("ots_show_to_users", "bool", True, "ops",
-     "📋 Order Timeline: Show to Users",
+     "📦 Order Timeline: Show to Users",
      "When ON, users can view the full order timeline from their order detail page."),
     ("ots_show_processing_time", "bool", True, "ops",
-     "📋 Order Timeline: Show Processing Time",
+     "📦 Order Timeline: Show Processing Time",
      "When ON, the timeline shows elapsed time from order creation to current status."),
     ("ots_show_estimated_delivery", "bool", False, "ops",
-     "📋 Order Timeline: Show Estimated Delivery",
+     "📦 Order Timeline: Show Estimated Delivery",
      "When ON, an estimated delivery time is shown on the timeline (if configured)."),
     ("ots_allow_manual_status", "bool", True, "ops",
-     "📋 Order Timeline: Allow Admin Manual Status Update",
+     "📦 Order Timeline: Allow Admin Manual Status Update",
      "When ON, admins can manually change an order's lifecycle status from the timeline panel."),
     ("ots_notify_users", "bool", True, "ops",
-     "📋 Order Timeline: Notify Users on Status Change",
+     "📦 Order Timeline: Notify Users on Status Change",
      "When ON, users receive a Telegram DM whenever their order status changes."),
 
     # ── Product FAQ System (V25) ──────────────────────────────────────────────
@@ -908,13 +908,13 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
 
     # ── V20: Enhanced Support Tickets ──────────────────────────────────────────
     ("feature_support_categories_enabled", "bool", True, "features",
-     "🎫 Support Ticket Categories: Enabled",
+     "🎧 Support Ticket Categories: Enabled",
      "When ON, users pick a category (General, Payment, Order, etc.) when opening a ticket."),
     ("feature_support_file_uploads", "bool", True, "features",
-     "🎫 Support Ticket File Uploads: Enabled",
+     "🎧 Support Ticket File Uploads: Enabled",
      "When ON, users and admins can attach photos to ticket messages."),
     ("feature_support_assign_enabled", "bool", True, "features",
-     "🎫 Support Ticket Assignment: Enabled",
+     "🎧 Support Ticket Assignment: Enabled",
      "When ON, admins can assign tickets to specific admin accounts."),
 
     # ── V20: Advanced Low-Stock Monitoring ─────────────────────────────────────
@@ -1559,7 +1559,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
      "Audience: all, admin, user, or premium."),
     ("menu_item_support_enabled", "bool", True, "main_menu",
      "📋 Menu Item: Support",
-     "Whether the 💬 Support button remains actionable."),
+     "Whether the 🎧 Support button remains actionable."),
     ("menu_item_support_visible", "bool", True, "main_menu",
      "👁 Menu Item: Support Visibility",
      "Show or hide the Support button."),
@@ -1647,7 +1647,7 @@ DEFAULTS: List[Tuple[str, str, Any, str, str, str]] = [
      "Button color for 📜 Orders (none/success/primary/danger)."),
     ("menu_item_support_style", "str", _menu_style("support"), "main_menu",
      "🎨 Menu Item: Support Color",
-     "Button color for 💬 Support (none/success/primary/danger)."),
+     "Button color for 🎧 Support (none/success/primary/danger)."),
     ("menu_item_refer_style", "str", _menu_style("refer"), "main_menu",
      "🎨 Menu Item: Refer & Earn Color",
      "Button color for 🎁 Refer & Earn (none/success/primary/danger)."),
@@ -1835,10 +1835,10 @@ CATEGORIES = [
     ("wallets",           "💰 Wallets"),
     ("exchange_rates",    "🔄 Exchange Rates"),
     ("invoicing",         "🧾 Invoicing"),
-    # ── 📋 Orders  ────────────────────────────────────────────────────────
-    ("orders",            "📋 Order History & Details"),
-    # ── 📦 Products & Inventory  (38 settings) ───────────────────────────
-    ("products",          "📦 Products"),
+    # ── 📦 Orders  ────────────────────────────────────────────────────────
+    ("orders",            "📦 Order History & Details"),
+    # ── 🛒 Products & Inventory  (38 settings) ───────────────────────────
+    ("products",          "🛒 Products"),
     ("inventory",         "📊 Inventory & Delivery"),
     ("catalog",           "🏷 Catalog & Display"),
     # ── 🔧 Operations  (40 settings) ─────────────────────────────────────
@@ -1867,7 +1867,7 @@ CATEGORIES = [
     ("backups",           "💾 Backups"),
     ("diagnostics",       "🩺 Diagnostics"),
     ("admin",             "📊 Analytics & Dashboard"),
-    ("admin_ui",          "🔧 Admin Panel UI"),
+    ("admin_ui",          "🛠 Admin Panel UI"),
     ("main_menu",         "📋 Main Menu Manager"),
     ("activity_feed",     "📡 Activity Feed"),
     ("accdel",            "📧 Account Delivery"),

@@ -178,7 +178,7 @@ async def process_referral_reward(
 
 
 async def copy_ref_link_locked_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shown only when the user has hidden their referral link (⚙ Settings →
+    """Shown only when the user has hidden their referral link (⚙️ Settings →
     🎁 Referral Settings). In that case the button can't carry a real
     ``copy_text`` payload, so it just explains how to re-enable it.
 
@@ -188,7 +188,7 @@ async def copy_ref_link_locked_callback(update: Update, context: ContextTypes.DE
     """
     query = update.callback_query
     await query.answer(
-        "🔒 Your referral link is hidden. Enable it in ⚙ Settings → 🎁 Referral Settings.",
+        "🔒 Your referral link is hidden. Enable it in ⚙️ Settings → 🎁 Referral Settings.",
         show_alert=True,
     )
 

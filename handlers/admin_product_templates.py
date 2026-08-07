@@ -1123,7 +1123,7 @@ async def apt_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"🗄 Archived:            <b>{archived}</b>\n"
         f"⭐ Default Templates:   <b>{defaults}</b>\n"
         f"🔢 Total Uses:          <b>{total_use}</b>\n"
-        f"📦 Products Created:    <b>{total_prd}</b>\n\n"
+        f"🛒 Products Created:    <b>{total_prd}</b>\n\n"
         f"📊 <b>By Type:</b>\n{type_lines}\n\n"
         f"🏆 <b>Most Used:</b>\n{top_lines}"
     )

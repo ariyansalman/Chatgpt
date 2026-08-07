@@ -176,7 +176,7 @@ def _search_orders(session, q: str, filters: dict) -> list[dict]:
             status_str = str(o.status.value if hasattr(o.status, "value") else o.status or "")
             results.append({
                 "module": "orders", "id": o.id,
-                "label": f"🧾 Order #{o.id} — User {o.user_id}",
+                "label": f"📦 Order #{o.id} — User {o.user_id}",
                 "summary": f"${o.total_amount:.2f} | {status_str}",
                 "status": status_str, "created_at": o.created_at,
                 "cb_detail": f"gse:det:orders:{o.id}",

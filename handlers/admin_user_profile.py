@@ -575,7 +575,7 @@ def _build_profile_kb(uid: int, is_banned: bool) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("👥 Referrals",     callback_data=f"up:ref:{uid}:0"),
-            InlineKeyboardButton("💰 Wallet History",callback_data=f"up:wal:{uid}:0"),
+            InlineKeyboardButton("💳 Wallet History",callback_data=f"up:wal:{uid}:0"),
         ],
         [
             InlineKeyboardButton("🎟 Coupons",       callback_data=f"up:coup:{uid}:0"),
@@ -898,7 +898,7 @@ async def up_wallet_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except (IndexError, ValueError):
         return
 
-    lines = ["💰 <b>Wallet History</b>", ""]
+    lines = ["💳 <b>Wallet History</b>", ""]
     nav   = []
 
     with get_db_session() as session:
@@ -906,7 +906,7 @@ async def up_wallet_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not user:
             await _safe_edit(query, "❌ User not found.", _back_to_profile_kb(uid))
             return
-        lines[0] = f"💰 <b>Wallet History</b> — {_name_esc(user)}"
+        lines[0] = f"💳 <b>Wallet History</b> — {_name_esc(user)}"
 
         total = (
             session.query(func.count(WalletLedger.id))

@@ -191,7 +191,7 @@ async def fsm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"• 🔴 Ended: <b>{stats['ended']}</b>\n"
         f"• 📝 Draft: <b>{stats['draft']}</b>\n\n"
         f"💰 Revenue: <b>${stats['revenue']:.2f}</b>\n"
-        f"🧾 Orders: <b>{stats['total_orders']}</b>\n"
+        f"📦 Orders: <b>{stats['total_orders']}</b>\n"
     )
     if best:
         text += f"\n🏆 Best Sale: <b>{best['name']}</b> ({best['order_count']} orders)"
@@ -616,7 +616,7 @@ async def fsm_stats_single(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"Countdown: <b>{fse.countdown()}</b>\n\n"
             f"👁 Views: <b>{fse.view_count}</b>\n"
             f"🖱 Clicks: <b>{fse.click_count}</b>\n"
-            f"🧾 Orders: <b>{fse.order_count}</b>\n"
+            f"📦 Orders: <b>{fse.order_count}</b>\n"
             f"💰 Revenue: <b>${fse.revenue:.2f}</b>\n\n"
             f"<b>Broadcasts Sent:</b>\n"
         )

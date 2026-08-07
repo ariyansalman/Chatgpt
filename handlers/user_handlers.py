@@ -122,7 +122,7 @@ def _build_home_message(lang: str, balance_str: str, total_orders: int = 0,
         Premium digital products with secure payments and instant automated
         delivery.
 
-        💰 Wallet Balance: {balance}
+        💳 Wallet Balance: {balance}
 
     {shop_name} is read fresh from Bot Configuration on every call (the
     "shop_name" key, category Operations → Home) so an admin renaming the
@@ -140,7 +140,7 @@ def _build_home_message(lang: str, balance_str: str, total_orders: int = 0,
     return (
         f"🛍 Welcome to {shop_name}!\n\n"
         "Premium digital products with secure payments and instant automated delivery.\n\n"
-        f"💰 Wallet Balance: {shown_balance}"
+        f"💳 Wallet Balance: {shown_balance}"
     )
 
 
@@ -609,7 +609,7 @@ def build_all_products_keyboard(rows, page=0, total_pages=1,
 
 async def render_all_products_catalog(query, context, telegram_id,
                                        notice=None, page=0):
-    """THE canonical renderer for the paginated flat "🛍 Products" screen.
+    """THE canonical renderer for the paginated flat "🛒 Products" screen.
 
     Reused by the Products button, Refresh, pagination, and Back-to-Products.
     Reads admin-configurable settings (products_per_page, pagination toggle,
@@ -723,7 +723,7 @@ async def render_all_products_catalog(query, context, telegram_id,
     # ── Build header text ─────────────────────────────────────────────────────
     header_lines = ["🛍️ Live Digital Products ✨"]
     if show_counter:
-        header_lines.append(f"📦 Products: <b>{total_count}</b>")
+        header_lines.append(f"🛒 Products: <b>{total_count}</b>")
     text = "\n".join(header_lines)
 
     if notice:
@@ -884,7 +884,7 @@ async def category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from telegram import InlineKeyboardMarkup
             keyboard = subcat_buttons + [[
                 InlineKeyboardButton("🔙 Back", callback_data="back_to_products"),
-                InlineKeyboardButton("☎️ Support", callback_data="support_center")
+                InlineKeyboardButton("🎧 Support", callback_data="support_center")
             ]]
 
             try:
@@ -998,7 +998,7 @@ async def show_products_list(query, category_id=None, subcategory_id=None, page=
 
     total_count = len(rows)
 
-    header_lines = ["🛍️ Live Digital Products ✨", f"📦 Products: <b>{total_count}</b>"]
+    header_lines = ["🛍️ Live Digital Products ✨", f"🛒 Products: <b>{total_count}</b>"]
     text = "\n".join(header_lines)
 
     try:
@@ -1539,7 +1539,7 @@ async def _do_render_order_detail(query, context, order_id: int, telegram_id: in
 
     from utils.helpers import format_order_id as _fmt_oid
     _display_order_id = _fmt_oid(order_id, o_created)
-    lines: list = [f"🧾 <b>Order ID</b>\n{_display_order_id}"]
+    lines: list = [f"📦 <b>Order ID</b>\n{_display_order_id}"]
     lines.append(f"{s_emoji} <b>{s_label}</b>{dispute_note}")
 
     # Product(s)
@@ -1547,7 +1547,7 @@ async def _do_render_order_detail(query, context, order_id: int, telegram_id: in
         lines.append(f"🎁 {_html.escape(items_snap[0]['product_name'])}")
         lines.append(f"📦 Qty: {items_snap[0]['quantity']}")
     else:
-        lines.append("🎁 <b>Products</b>")
+        lines.append("🛒 <b>Products</b>")
         for it in items_snap:
             lines.append(
                 f"• {_html.escape(it['product_name'])} ×{it['quantity']}"
@@ -1868,7 +1868,7 @@ async def user_order_detail_callback(update: Update, context: ContextTypes.DEFAU
         ]])
         try:
             await query.edit_message_text(
-                "📋 Order Details\n\n🔴 Order details are currently unavailable.",
+                "📦 Order Details\n\n🔴 Order details are currently unavailable.",
                 reply_markup=kb,
             )
         except BadRequest as e:
@@ -1881,7 +1881,7 @@ async def user_order_detail_callback(update: Update, context: ContextTypes.DEFAU
         ]])
         try:
             await query.edit_message_text(
-                "📋 Order Details\n\n🟡 Order details are temporarily under maintenance.",
+                "📦 Order Details\n\n🟡 Order details are temporarily under maintenance.",
                 reply_markup=kb,
             )
         except BadRequest as e:

@@ -115,9 +115,9 @@ async def support_center_callback(update: Update, context: ContextTypes.DEFAULT_
         "Need help? Open a support ticket and our team will reply here.\n\n"
     )
     if support_username:
-        text += f"📞 Support: @{support_username}"
+        text += f"🎧 Support: @{support_username}"
     else:
-        text += "📞 Support username not configured."
+        text += "🎧 Support username not configured."
 
     await safe_edit_message_text(query, 
         text,
@@ -494,7 +494,7 @@ async def admin_tickets_callback(update: Update, context: ContextTypes.DEFAULT_T
                 callback_data=f"adm_tk_view_{tk.id}",
             )])
     rows.append([InlineKeyboardButton("🔙 Back", callback_data="acc:root")])
-    body = "🎫 <b>Support Tickets</b>" if tickets else "📭 No tickets."
+    body = "🎧 <b>Support Tickets</b>" if tickets else "📭 No tickets."
     await safe_edit_message_text(q, body, reply_markup=InlineKeyboardMarkup(rows), parse_mode="HTML")
 
 

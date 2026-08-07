@@ -330,7 +330,7 @@ def _render_order_detail(order: Order, session) -> str:  # noqa: C901
     display_order_id = _fmt_oid(order.id, order.created_at)
 
     lines += [
-        f"🧾 <b>Order ID:</b> {display_order_id}",
+        f"📦 <b>Order ID:</b> {display_order_id}",
         f"📊 <b>Order Status:</b> {order_status_emoji} {order_status_name}",
         f"💳 <b>Payment Status:</b> {pay_status_name}",
         "",
@@ -356,7 +356,7 @@ def _render_order_detail(order: Order, session) -> str:  # noqa: C901
     total_delivered_assets = 0
     delivery_type = "—"
 
-    lines.append("📦 <b>Product(s)</b>")
+    lines.append("🛒 <b>Product(s)</b>")
     for item in items:
         product: Optional[Product] = (
             session.query(Product).filter_by(id=item.product_id).first()

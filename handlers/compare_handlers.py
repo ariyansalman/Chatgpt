@@ -168,7 +168,7 @@ async def cmp_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "📭 <b>Your comparison list is empty.</b>\n\n"
                 "Browse products and tap <b>⚖️ Add to Compare</b> to get started.",
                 InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🛍 Products", callback_data="products"),
+                    InlineKeyboardButton("🛒 Products", callback_data="products"),
                     InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
                 ]]),
             )
@@ -181,7 +181,7 @@ async def cmp_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"You currently have <b>1</b> product in your list.\n"
                 f"Browse products and add more!",
                 InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🛍 Products", callback_data="products")],
+                    [InlineKeyboardButton("🛒 Products", callback_data="products")],
                     [InlineKeyboardButton(
                         "🗑 Clear List", callback_data="cmp:clear"
                     )],

@@ -132,7 +132,7 @@ async def sla_report(update, context, page: int = 0):
     t = [
         "⏱ <b>Sla Compliance Report</b>",
         "",
-        "<b>🎫 Support Tickets</b>",
+        "<b>🎧 Support Tickets</b>",
         f"  Open (SLA-tracked): {open_tickets_with_sla}  ·  Currently breached: {breached_open_tickets}",
         f"  Resolved (with SLA): {tk_total}  ·  Missed: {tk_late}  ·  <b>Compliance: {tk_rate}%</b>",
         "",

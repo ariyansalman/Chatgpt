@@ -66,7 +66,7 @@ async def abiz_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💰 Revenue Dashboard",   callback_data="abiz:dash"),
          InlineKeyboardButton("📈 Sales Forecast",      callback_data="asf:menu")],
         [InlineKeyboardButton("🏆 Business Insights",   callback_data="abiz:insights"),
-         InlineKeyboardButton("📦 Product Insights",    callback_data="abiz:products")],
+         InlineKeyboardButton("🛒 Product Insights",    callback_data="abiz:products")],
         [InlineKeyboardButton("📑 Reports",             callback_data="asf:reports"),
          InlineKeyboardButton("⚙️ Settings",            callback_data="abiz:settings")],
         [InlineKeyboardButton("🔙 Back",               callback_data="acc:root")],
@@ -282,7 +282,7 @@ async def abiz_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Back", callback_data="abiz:menu")],
     ])
     text = (
-        "📦 <b>Product Insights</b>\n\n"
+        "🛒 <b>Product Insights</b>\n\n"
         f"❌ Out of stock:  <b>{len(insights['out_of_stock'])}</b>\n"
         f"⚠️ Low stock:     <b>{len(insights['low_stock'])}</b>\n"
         f"🐢 Slow selling:  <b>{len(insights['slow_selling'])}</b>\n"

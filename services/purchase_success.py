@@ -321,7 +321,7 @@ def build_success_text(
         "",
         f"🆔 Order ID\n{receipt_number}",
         "",
-        f"📦 Product\n{product_name}",
+        f"🛒 Product\n{product_name}",
         f"🔢 Quantity\n{quantity}",
         "",
         f"💰 Amount Paid\n{format_price(total)}",

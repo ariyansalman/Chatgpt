@@ -3,7 +3,7 @@
 Adds a "📢 Broadcast" section to the existing Admin Control Center
 (``handlers/admin_control_center.py``) with three tools:
 
-  1. 📦 Product Broadcast          — pick an existing *active* product,
+  1. 🛒 Product Broadcast          — pick an existing *active* product,
      preview a dynamically generated announcement (name / price /
      description / live stock) with a "🛒 Buy now" button, then confirm
      before it goes out.
@@ -205,7 +205,7 @@ def _menu_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton("⚠️ Failed",                 callback_data="bca:history:filter:failed"),
         ],
         # ── Quick-send tools (existing) ──────────────────────────────────────
-        [InlineKeyboardButton("📦 Product Broadcast",          callback_data="acc:bc:prod:menu:0")],
+        [InlineKeyboardButton("🛒 Product Broadcast",          callback_data="acc:bc:prod:menu:0")],
         [InlineKeyboardButton("✍️ Custom Broadcast",           callback_data="acc:bc:custom:start")],
         [InlineKeyboardButton("⚙️ Restock Settings",           callback_data="acc:bc:restock:menu")],
         [InlineKeyboardButton("🛒 Marketing Automation",       callback_data="acc:bc:mkt:menu")],
@@ -310,9 +310,9 @@ async def _show_product_list(update: Update, context: ContextTypes.DEFAULT_TYPE,
         rows.append(nav)
     rows.append([InlineKeyboardButton("🔙 Back", callback_data="acc:sec:broadcast")])
 
-    text = "📦 <b>Product Broadcast</b>\n\nSelect an active product to broadcast:"
+    text = "🛒 <b>Product Broadcast</b>\n\nSelect an active product to broadcast:"
     if not products:
-        text = "📦 <b>Product Broadcast</b>\n\nNo active products found."
+        text = "🛒 <b>Product Broadcast</b>\n\nNo active products found."
 
     await _safe_edit(query, text, reply_markup=InlineKeyboardMarkup(rows))
 

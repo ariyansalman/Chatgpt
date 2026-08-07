@@ -290,7 +290,7 @@ def create_refer_keyboard(lang: str, referral_link: str = None, hide_referral: b
     button (Bot API 7.1+ via ``CopyTextButton``) so tapping it copies the
     user's personal referral link straight to the clipboard — no message
     is sent and no page is opened. When the user has hidden their referral
-    link (⚙ Settings → 🎁 Referral Settings), we fall back to a locked
+    link (⚙️ Settings → 🎁 Referral Settings), we fall back to a locked
     button that just explains how to re-enable it, matching prior behavior.
     """
     if referral_link and not hide_referral:
@@ -340,7 +340,7 @@ def create_back_support_keyboard():
     keyboard = [
         [
             InlineKeyboardButton("🔙 Back", callback_data="back"),
-            InlineKeyboardButton("☎️ Support", callback_data="support_center")
+            InlineKeyboardButton("🎧 Support", callback_data="support_center")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -367,7 +367,7 @@ def create_pagination_keyboard(items, page, total_pages, callback_prefix, back_b
     if back_button:
         keyboard.append([
             InlineKeyboardButton("🔙 Back", callback_data="back"),
-            InlineKeyboardButton("☎️ Support", callback_data="support_center")
+            InlineKeyboardButton("🎧 Support", callback_data="support_center")
         ])
 
     return InlineKeyboardMarkup(keyboard)
@@ -563,7 +563,7 @@ def create_product_detail_keyboard(
         _back_text, _support_text = button_text("back"), button_text("support")
     except Exception:
         _back_visible, _support_visible = True, True
-        _back_text, _support_text = "🔙 Back", "☎️ Support"
+        _back_text, _support_text = "🔙 Back", "🎧 Support"
     _last_row = []
     if _back_visible:
         _last_row.append(InlineKeyboardButton(_back_text, callback_data=back_callback))
@@ -816,6 +816,18 @@ def create_admin_gateways_menu_keyboard(status: dict):
     keyboard.append([InlineKeyboardButton(
         f"{bybit_on} 💙 Bybit Pay", callback_data="admin_bybit_view"
     )])
+    # V40 — Dynamic, database-driven payment networks (add / remove / reorder
+    # every network or coin from the panel, no code changes needed).
+    keyboard.append([InlineKeyboardButton("💳 Payment Networks (Dynamic)",
+                                          callback_data="apn_menu")])
+    keyboard.append([InlineKeyboardButton("➕ Add Payment Network",
+                                          callback_data="apn_add")])
+    # V41 — Dynamic, database-driven LOCAL payment providers (bKash, Nagad,
+    # Rocket, Upay, … unlimited; add / edit / delete / reorder from the panel).
+    keyboard.append([InlineKeyboardButton("🇧🇩 Local Payments (Dynamic)",
+                                          callback_data="alp_menu")])
+    keyboard.append([InlineKeyboardButton("➕ Add Local Payment",
+                                          callback_data="alp_add")])
     keyboard.append([InlineKeyboardButton("💰 Deposit Settings", callback_data="admin_deposit_view")])
     keyboard.append([InlineKeyboardButton("🗑 Delete/Disable All", callback_data="admin_gw_disable_all_confirm")])
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="acc:root")])

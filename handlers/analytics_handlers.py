@@ -99,7 +99,7 @@ async def admin_analytics_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         f"• 7d : {line(o_7d, rev_7d, top_7d)}\n"
         f"• 30d: {line(o_30d, rev_30d, top_30d)}\n"
         f"• All: {line(o_all, rev_all, top_all)}\n\n"
-        "🏷 Coupons\n"
+        "🎟 Coupons\n"
         f"• {coupon_redemptions} redemptions · {format_price(coupon_discount)} discount given\n\n"
         "👑 Referrals\n"
         f"• {ref_rewards} rewards · {format_price(ref_paid)} paid out\n"

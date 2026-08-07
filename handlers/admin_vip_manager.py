@@ -233,7 +233,7 @@ async def vip_tier_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if t.withdrawal_limit_multiplier != 1.0:
             benefits.append(f"💸 Withdrawal Limit: ×{t.withdrawal_limit_multiplier:.1f}")
         if t.wallet_limit_multiplier != 1.0:
-            benefits.append(f"👛 Wallet Limit: ×{t.wallet_limit_multiplier:.1f}")
+            benefits.append(f"💳 Wallet Limit: ×{t.wallet_limit_multiplier:.1f}")
         custom = []
         if t.custom_benefits:
             try:
@@ -766,10 +766,10 @@ async def vip_reward_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE
         return _S_RWD_NAME
     context.user_data["new_reward"]["name"] = name
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💰 Wallet Credit", callback_data="rwd_type:wallet"),
+        [InlineKeyboardButton("💳 Wallet Credit", callback_data="rwd_type:wallet"),
          InlineKeyboardButton("🎟 Coupon", callback_data="rwd_type:coupon")],
         [InlineKeyboardButton("🏷 Discount", callback_data="rwd_type:discount"),
-         InlineKeyboardButton("🎁 Product", callback_data="rwd_type:product")],
+         InlineKeyboardButton("🛒 Product", callback_data="rwd_type:product")],
     ])
     await update.message.reply_text(
         "Step 2/4: Choose <b>reward type</b>:", reply_markup=kb, parse_mode="HTML"

@@ -225,7 +225,7 @@ def deposit_cancelled_keyboard(
     """Buttons shown under the "✅ Payment cancelled successfully." card:
     start a brand-new deposit immediately, or go back."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add Funds", callback_data=new_deposit_cb)],
+        [InlineKeyboardButton("💰 Add Funds", callback_data=new_deposit_cb)],
         [InlineKeyboardButton("🔙 Back", callback_data=back_cb)],
     ])
 
@@ -624,7 +624,7 @@ def pending_deposit_card(
         lines.append("")
     if secondary_amount:
         lines += [
-            "💰 <b>Wallet Credit</b>",
+            "💳 <b>Wallet Credit</b>",
             f"<code>{amount}</code>",
             "",
             "💸 <b>Amount to Send</b>",
@@ -870,7 +870,7 @@ def mobile_money_invoice(
     )
     lines = [f"{provider_emoji} <b>{provider_label} Payment</b>", ""]
     if wallet_credit:
-        lines.append(f"👛 <b>Wallet Credit:</b> <code>{wallet_credit}</code>")
+        lines.append(f"💳 <b>Wallet Credit:</b> <code>{wallet_credit}</code>")
         lines.append(f"💰 <b>Amount to Send:</b> <code>{amount}</code>")
     else:
         lines.append(f"💰 <b>Amount:</b> <code>{amount}</code>")
@@ -1562,7 +1562,7 @@ def binance_verifying_card(*, order_id: str, deposit_id: Optional[str] = None) -
         "",
         "Please wait while we verify your transaction.",
         "",
-        f"🧾 <b>Order ID:</b> {copy_code(order_id)}",
+        f"📦 <b>Order ID:</b> {copy_code(order_id)}",
     ]
     if deposit_id:
         lines.append(f"🧾 <b>Payment ID:</b> {copy_code(deposit_id)}")
@@ -1670,7 +1670,7 @@ def bybit_verifying_card(
     lines.append("Please wait while we verify your transaction.")
     lines.append("")
     if order_id:
-        lines.append(f"🧾 <b>Order ID:</b> <code>{order_id}</code>")
+        lines.append(f"📦 <b>Order ID:</b> <code>{order_id}</code>")
     if deposit_id:
         lines.append(f"🧾 <b>Payment ID:</b> <code>{deposit_id}</code>")
     lines.append("")
@@ -1776,7 +1776,7 @@ def binance_verification_pending_card(
         "Your payment is currently under review. You will receive an "
         "automated notification as soon as your wallet is credited.",
         "",
-        f"🧾 <b>Order ID:</b> {copy_code(order_id)}",
+        f"📦 <b>Order ID:</b> {copy_code(order_id)}",
     ]
     if deposit_id:
         lines.append(f"🧾 <b>Payment ID:</b> {copy_code(deposit_id)}")
@@ -1826,7 +1826,7 @@ def still_pending_keyboard(
     if resubmit_cb:
         rows.append([InlineKeyboardButton(resubmit_label, callback_data=resubmit_cb)])
     rows.append([InlineKeyboardButton("👛 My Wallet", callback_data="wallet"),
-                 InlineKeyboardButton("📞 Support", callback_data="support")])
+                 InlineKeyboardButton("🎧 Support", callback_data="support")])
     rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     return InlineKeyboardMarkup(rows)
 
@@ -1836,7 +1836,7 @@ def payment_expired_keyboard() -> InlineKeyboardMarkup:
     💳 Create New Deposit · 🔄 Generate New Payment · 📜 Deposit History ·
     👛 My Wallet · 🏠 Back to Menu."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add Funds", callback_data="topup")],
+        [InlineKeyboardButton("💰 Add Funds", callback_data="topup")],
         [InlineKeyboardButton("🔄 Generate New Payment", callback_data="topup")],
         [InlineKeyboardButton("📜 Payment History", callback_data="wallet_history"),
          InlineKeyboardButton("👛 My Wallet", callback_data="wallet")],

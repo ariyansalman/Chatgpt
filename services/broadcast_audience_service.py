@@ -34,7 +34,7 @@ SEGMENTS: Dict[str, str] = {
     "wallet_no":        "💸 Users Without Wallet Balance",
     "buyers":           "🛒 Buyers Only",
     "non_buyers":       "🚫 Non-Buyers",
-    "product_buyers":   "📦 Product Buyers",
+    "product_buyers":   "🛒 Product Buyers",
     "category_buyers":  "📂 Category Buyers",
     "sub_expiring":     "⏳ Subscription Expiring",
     "sub_expired":      "❌ Expired Subscription",

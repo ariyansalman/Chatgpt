@@ -168,7 +168,7 @@ def validate_amount(amount_str: str) -> tuple[bool, float, str]:
 
 
 def catalog_stock_emoji(configured_emoji, available_stock: int) -> str:
-    """Emoji shown on the flat "🛍 Products" catalog / search rows.
+    """Emoji shown on the flat "🛒 Products" catalog / search rows.
 
     ``configured_emoji`` is the raw ``Product.product_emoji`` value (string
     or None) — pass ``product.product_emoji`` directly. Out-of-stock

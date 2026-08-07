@@ -25,7 +25,7 @@ def H(icon: str, title: str) -> str:
 
 
 def breadcrumb(icon: str, title: str, parent: str = "Admin") -> str:
-    """Breadcrumb nav line: ``🏠 Admin  ›  📦 Products``"""
+    """Breadcrumb nav line: ``🏠 Admin  ›  🛒 Products``"""
     return f"🏠 {parent}  ›  {icon} <b>{title}</b>"
 
 

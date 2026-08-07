@@ -124,7 +124,7 @@ def _render_dashboard_text(stats: dict) -> str:
 
     Layout:
       ⚡ Admin Dashboard
-      👥 Users: N  📦 Products: N  🛒 Orders: N  💰 Sales: $N
+      👥 Users: N  🛒 Products: N  📦 Orders: N  💰 Sales: $N
       🚨 Alerts: N • 📦 Low Stock: N
     """
     alerts   = stats.get("system_alerts", 0)
@@ -133,8 +133,8 @@ def _render_dashboard_text(stats: dict) -> str:
     return (
         "⚡ <b>Admin Dashboard</b>\n"
         f"👥 Users: <b>{stats['users']:,}</b>  "
-        f"📦 Products: <b>{stats['products']:,}</b>  "
-        f"🛒 Orders: <b>{stats['orders']:,}</b>  "
+        f"🛒 Products: <b>{stats['products']:,}</b>  "
+        f"📦 Orders: <b>{stats['orders']:,}</b>  "
         f"💰 Sales: <b>{format_price(stats['total_sales'])}</b>\n"
         f"🚨 Alerts: <b>{alerts}</b>  •  📦 Low Stock: <b>{low_stock}</b>"
     )
@@ -219,7 +219,7 @@ async def admin_low_stock_view(update: Update, context: ContextTypes.DEFAULT_TYP
 def _preview_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("👋 Welcome Message", callback_data="admin_preview_welcome")],
-        [InlineKeyboardButton("📦 Product Card", callback_data="admin_preview_product")],
+        [InlineKeyboardButton("🛒 Product Card", callback_data="admin_preview_product")],
         [InlineKeyboardButton("🧾 Receipt Footer", callback_data="admin_preview_receipt")],
         [InlineKeyboardButton("💳 Payment Instructions", callback_data="admin_preview_payment")],
         [InlineKeyboardButton("🔙 Back", callback_data="acc:root")],
@@ -280,7 +280,7 @@ async def admin_preview_product(update: Update, context: ContextTypes.DEFAULT_TY
             text = "📦 No active product to preview yet."
         else:
             text = (
-                "📦 <b>Product Card Preview</b>\n\n"
+                "🛒 <b>Product Card Preview</b>\n\n"
                 f"🏷 <b>{p.name}</b>\n"
                 f"💰 Price: <b>{format_price(p.price)}</b>\n"
                 f"📦 Stock: <b>{p.stock_count}</b>\n"

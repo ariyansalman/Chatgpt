@@ -975,7 +975,7 @@ async def purchase_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         try:
             await query.edit_message_text(
-                f"🧾 <b>Purchase History</b>\nUser: {username}\nTotal Orders: {total}",
+                f"🛍 <b>Purchase History</b>\nUser: {username}\nTotal Orders: {total}",
                 reply_markup=InlineKeyboardMarkup(kb),
                 parse_mode="HTML",
             )

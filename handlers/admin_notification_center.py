@@ -92,7 +92,7 @@ _SETTINGS_BOOL_KEYS = [
     ("notif_nc_withdrawal_request",     "💸 Withdrawal Request"),
     ("notif_nc_withdrawal_approved",    "✅ Withdrawal Approved"),
     ("notif_nc_withdrawal_rejected",    "❌ Withdrawal Rejected"),
-    ("notif_nc_product_delivered",      "📦 Product Delivered"),
+    ("notif_nc_product_delivered",      "🛒 Product Delivered"),
     ("notif_nc_refund_request",         "↩️ Refund Request"),
     ("notif_nc_support_ticket",         "🎧 Support Ticket"),
     ("notif_nc_low_stock",              "⚠️ Low Stock Alert"),

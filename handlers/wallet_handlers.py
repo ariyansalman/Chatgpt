@@ -162,7 +162,7 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dep_str   = format_price_for_user(dep,   tg_id)
     spent_str = format_price_for_user(spent, tg_id)
     text = (
-        "👛 <b>Wallet</b>\n\n"
+        "💳 <b>WALLET</b>\n\n"
         f"💰 Current Balance: <b>{bal_str}</b>\n"
         f"📥 Total Added: <b>{dep_str}</b>\n"
         f"🛒 Total Spent: <b>{spent_str}</b>\n\n"
@@ -170,9 +170,9 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     kb_rows = [
-        [InlineKeyboardButton("➕ Add Funds",       callback_data="topup"),
-         InlineKeyboardButton("📜 Payment History", callback_data="wallet_history")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],
+        [InlineKeyboardButton("💰 ADD FUNDS", callback_data="topup"),
+         InlineKeyboardButton("📜 PAYMENT HISTORY", callback_data="wallet_history")],
+        [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")],
     ]
     kb = InlineKeyboardMarkup(kb_rows)
     if q:

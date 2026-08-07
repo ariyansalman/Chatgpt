@@ -133,7 +133,7 @@ async def vip_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     _Order
                 ).filter_by(user_id=user.id).scalar() or 0
                 bar = _progress_bar(total_orders, next_tier.min_orders)
-                progress_items.append(f"  🛒 Orders: {bar} ({total_orders}/{next_tier.min_orders})")
+                progress_items.append(f"  📦 Orders: {bar} ({total_orders}/{next_tier.min_orders})")
             if next_tier.min_spending > 0:
                 bar = _progress_bar(spent, next_tier.min_spending)
                 progress_items.append(
@@ -145,8 +145,8 @@ async def vip_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     + "\n".join(progress_items)
                 )
 
-    _type_label = {"wallet": "💰 Wallet", "coupon": "🎟 Coupon",
-                   "discount": "🏷 Discount", "product": "🎁 Product"}
+    _type_label = {"wallet": "💳 Wallet", "coupon": "🎟 Coupon",
+                   "discount": "🏷 Discount", "product": "🛒 Product"}
     benefits = []
     if current_tier:
         if current_tier.discount_pct > 0:

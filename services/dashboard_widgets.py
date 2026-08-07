@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 WIDGET_DEFS: list[tuple[str, str, str]] = [
     # (id,                label,                      category)
     ("revenue_today",     "💰 Today's Revenue",       "revenue"),
-    ("wallet_balance",    "💵 Wallet Balance",         "revenue"),
+    ("wallet_balance",    "💳 Wallet Balance",         "revenue"),
     ("revenue_weekly",    "📈 Weekly Revenue",         "revenue"),
     ("revenue_monthly",   "📊 Monthly Revenue",        "revenue"),
     ("orders_today",      "🛒 Today's Orders",         "orders"),

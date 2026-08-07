@@ -303,7 +303,7 @@ Status: {status_emoji} {dispute.status.value}
 Priority: {_priority_icon(dispute.priority)} {dispute.priority.value.upper()}
 {_sla_line(dispute)}
 
-📋 Order Information:
+📦 Order Information:
 Order ID: #{order.id}
 Order Status: {order.status.value}
 Total Amount: {format_price(order.total_amount)}

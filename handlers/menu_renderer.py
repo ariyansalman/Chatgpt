@@ -73,7 +73,7 @@ def build_item_markup(
         ],
         [
             InlineKeyboardButton(
-                f"👥 Profile: {MENU_AUDIENCE_LABELS[aud]}",
+                f"👤 Profile: {MENU_AUDIENCE_LABELS[aud]}",
                 callback_data="mm:profile",
             ),
         ],

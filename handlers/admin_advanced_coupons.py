@@ -160,7 +160,7 @@ async def acpn_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     type_icon = {"manual": "🏷", "automatic": "⚡", "referral": "👥", "birthday": "🎂"}.get(coupon_type or "manual", "🏷")
     text = (
-        f"🏷 <b>Coupon: <code>{c.code}</code></b>\n\n"
+        f"🎟 <b>Coupon: <code>{c.code}</code></b>\n\n"
         f"<b>Type:</b> {type_icon} {coupon_type}  |  "
         f"<b>Status:</b> {'✅ Active' if c.is_active else '❌ Inactive'}\n"
         f"<b>Discount:</b> {disc_str}"

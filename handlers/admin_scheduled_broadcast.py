@@ -89,7 +89,7 @@ TARGET_DEFS: List[Tuple[str, str, str]] = [
     ("all",              "👥 Everyone",                "All non-banned users"),
     ("buyers",           "🛍 Buyers",                  "Users who placed at least one order"),
     ("non_buyers",       "👤 Non-Buyers",              "Users who never placed an order"),
-    ("wallet_users",     "💰 Wallet Balance",          "Users with wallet balance > 0"),
+    ("wallet_users",     "💳 Wallet Balance",          "Users with wallet balance > 0"),
     ("no_balance",       "🪙 No Balance",              "Users with zero wallet balance"),
     ("premium",          "⭐ Premium/Subscribers",     "Users with active subscriptions"),
     ("no_orders",        "🆕 No Orders",               "Users who never ordered"),

@@ -489,13 +489,13 @@ def get_menu_keyboard(
 # Admin main menu
 # ---------------------------------------------------------------------------
 register_menu("admin_menu", [
-    {"key": "admin_products",  "label": "📦 Product Management", "callback": "admin_products",
+    {"key": "admin_products",  "label": "🛒 Product Management", "callback": "admin_products",
      "row": 1, "order": 0, "full_width": True},
     {"key": "admin_users",     "label": "👥 User Management",    "callback": "admin_users",
      "row": 2, "order": 0, "full_width": True},
-    {"key": "admin_orders",    "label": "🛒 Order Management",   "callback": "admin_orders",
+    {"key": "admin_orders",    "label": "📦 Order Management",   "callback": "admin_orders",
      "row": 3, "order": 0, "full_width": True},
-    {"key": "admin_tickets",   "label": "🎫 Support Tickets",    "callback": "admin_tickets",
+    {"key": "admin_tickets",   "label": "🎧 Support Tickets",    "callback": "admin_tickets",
      "row": 4, "order": 0, "full_width": True},
     {"key": "admin_analytics", "label": "📊 Analytics",          "callback": "admin_analytics",
      "row": 5, "order": 0, "full_width": True},
@@ -604,7 +604,7 @@ register_menu("admin_settings_menu", [
      "row": 1,  "order": 0, "full_width": True},
     {"key": "store_logo",        "label": "🖼 Store Logo",                  "callback": "admin_store_logo",
      "row": 2,  "order": 0, "full_width": True},
-    {"key": "support_username",  "label": "📞 Support Username",            "callback": "admin_support_username",
+    {"key": "support_username",  "label": "🎧 Support Username",            "callback": "admin_support_username",
      "row": 3,  "order": 0, "full_width": True},
     {"key": "channel_username",  "label": "📢 Channel Username",            "callback": "admin_channel_username",
      "row": 4,  "order": 0, "full_width": True},

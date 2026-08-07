@@ -57,7 +57,7 @@ DEFAULT_TEMPLATE = (
     "✅ Payment Successful\n"
     "\n"
     "🆔 Order ID: {order_id}\n"
-    "📦 Product: {product_name}\n"
+    "🛒 Product: {product_name}\n"
     "🔢 Qty: {quantity}\n"
     "💰 Paid: {amount}\n"
     "🕒 {purchase_time}\n"

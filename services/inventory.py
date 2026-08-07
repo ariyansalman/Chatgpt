@@ -505,7 +505,7 @@ def count_available_bulk(product_ids: List[int]) -> dict:
     """Bulk version of ``count_available`` for product-level (no variant)
     stock — returns ``{product_id: available_stock}``.
 
-    Used by the flat "🛍 Products" catalog, which renders every active
+    Used by the flat "🛒 Products" catalog, which renders every active
     product in one screen and would otherwise issue one ``get_db_session``
     round-trip per row (N+1). Runs a handful of aggregate queries total
     instead, all inside a single session/transaction.

@@ -108,7 +108,7 @@
     "checkout_title": "🧾 <b>Résumé de la commande</b>",
     "item_line": "• {name} × {qty} — {total}",
     "subtotal_label": "💰 <b>Sous-total :</b> {subtotal}",
-    "coupon_line": "🎟️ <b>Coupon ({code}) :</b> -{discount}",
+    "coupon_line": "🎟 <b>Coupon ({code}) :</b> -{discount}",
     "discount_line": "🎟️ <b>Remise :</b> -{discount}",
     "total_label": "💳 <b>Total :</b> {total}",
     "wallet_balance_label": "👛 <b>Solde du portefeuille :</b> {balance}",

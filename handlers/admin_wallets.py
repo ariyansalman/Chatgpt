@@ -64,7 +64,7 @@ async def render_ledger(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         tg_id = u.telegram_id
         balance = float(u.wallet_balance or 0.0)
         username = u.username or "—"
-    lines = [f"💰 <b>Wallet ledger</b> — @{username} (tg <code>{tg_id}</code>)",
+    lines = [f"💳 <b>Wallet ledger</b> — @{username} (tg <code>{tg_id}</code>)",
              f"Balance: <b>{format_price(balance)}</b>",
              ""]
     if not entries:
@@ -123,7 +123,7 @@ async def _adjust_start(update, context, *, sign: int):
     verb = "credit" if sign > 0 else "debit"
     try:
         await query.edit_message_text(
-            f"💰 <b>Wallet {verb}</b>\n\n"
+            f"💳 <b>Wallet {verb}</b>\n\n"
             f"Enter the amount in USD. Max: "
             f"<b>{format_price(cfg.get_float('wallet_max_manual_adjust', 1000.0))}</b>\n\n"
             f"Send /cancel to abort.",

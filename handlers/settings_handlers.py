@@ -1,4 +1,4 @@
-"""Settings menu (⚙ Settings on the Main Menu).
+"""Settings menu (⚙️ Settings on the Main Menu).
 
 Callback namespace: ``uset:*`` (new -- does not collide with any existing
 namespace in this project).
@@ -16,7 +16,7 @@ namespace in this project).
 
 This module does not change any existing business logic, database schema,
 callback_data, or handler -- it only adds a new navigational layer that the
-Main Menu's ⚙ Settings button opens into. 🌐 Language is its own top-level
+Main Menu's ⚙️ Settings button opens into. 🌐 Language is its own top-level
 Main Menu button again (``language_menu`` callback, handlers/user_handlers.py,
 unchanged) and is no longer nested inside Settings. The existing USD/BDT
 currency toggle (``utils.currency.toggle_user_currency``) is reused as-is
@@ -56,7 +56,7 @@ def _back_row(callback: str, label: str = "⬅ Back") -> list:
 
 
 async def settings_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """⚙ Settings — root menu."""
+    """⚙️ Settings — root menu."""
     query = update.callback_query
     await query.answer()
     tid = update.effective_user.id
@@ -227,7 +227,7 @@ async def about_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/about — footer/help entry point for Privacy, Terms, and About Store.
 
-    These three pages used to sit in the primary ⚙ Settings menu; they now
+    These three pages used to sit in the primary ⚙️ Settings menu; they now
     live here instead, reached via /about (or the "ℹ️ About & Legal" row
     inside Settings) so the primary Settings menu only surfaces real,
     functional settings. Every underlying handler/callback (uset:privacy,

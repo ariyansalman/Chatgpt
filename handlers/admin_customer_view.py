@@ -169,12 +169,12 @@ def _build_profile(session, user: User) -> str:
         f"📅 Joined: {reg}   |   🌐 Lang: {html.escape(user.language or 'en')}",
         f"Status: {ban_line}",
         "",
-        "💰 <b>Wallet</b>",
+        "💳 <b>Wallet</b>",
         f"  Balance: <b>{format_price(float(user.wallet_balance or 0.0))}</b>",
         f"  Total Top-ups: {format_price(float(total_topups))}",
         f"  Referral Earnings: {format_price(float(user.referral_earnings or 0.0))}",
         "",
-        "🛒 <b>Orders</b>",
+        "📦 <b>Orders</b>",
         f"  Total Spent (completed): <b>{format_price(total_spent)}</b>",
         f"  Orders: {total_orders} total | "
         f"✅ {status_breakdown.get(OrderStatus.COMPLETED, 0)} completed | "
@@ -198,7 +198,7 @@ def _build_profile(session, user: User) -> str:
         f"  Referred by: {referrer_line}",
         f"  Users Referred: {referral_count}",
         "",
-        "🎫 <b>Support Tickets</b>",
+        "🎧 <b>Support Tickets</b>",
         f"  Total: {total_tickets} | 🟢 Open: {open_tickets}",
     ]
     if last_ticket:

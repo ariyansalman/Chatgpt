@@ -755,6 +755,20 @@ def main():
         logger.error(f"Configuration error: {e}")
         return
 
+    # ── Dynamic Payment Networks: make sure the admin-managed config table
+    #    exists. Purely additive — no existing table is touched.
+    try:
+        from services.payment_networks import ensure_table as _ensure_payment_networks
+        _ensure_payment_networks()
+    except Exception:  # noqa: BLE001
+        logger.exception("payment_networks table bootstrap failed (non-fatal)")
+
+    try:
+        from services.local_payments import ensure_table as _ensure_local_payments
+        _ensure_local_payments()
+    except Exception:
+        logger.exception("local_payment_providers table bootstrap failed (non-fatal)")
+
     # ── Payment Gateway Registry: register every gateway once so the rest
     # of the payment stack (creation, auto-verification, the Pending
     # Deposits queue, admin approve/reject) can look gateways up by
@@ -886,7 +900,7 @@ def main():
         conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
         entry_points=[CallbackQueryHandler(payment_handlers.topup_start, pattern="^topup$")],
         states={
-            # Shared "💳 Add Funds" amount screen (services/amount_selection_ui.py) —
+            # Shared "💰 Add Funds" amount screen (services/amount_selection_ui.py) —
             # the very first thing shown, before any gateway/method is picked.
             # Every current and future payment gateway reaches the method
             # screen only after this state, already knowing the amount.
@@ -1060,16 +1074,6 @@ def main():
     application.add_handler(CallbackQueryHandler(payment_handlers.topup_show_mobile_money, pattern="^topup_menu_mobile$"))
     application.add_handler(CallbackQueryHandler(payment_handlers.topup_back_to_methods, pattern="^topup_menu_back$"))
     application.add_handler(CallbackQueryHandler(payment_handlers.topup_back_to_amount_selection, pattern="^topup_back_to_amount$"))
-    # Navigation bookkeeping only (separate handler group, so it never
-    # intercepts, blocks or alters any real "pay_*" payment handler): it
-    # records that the user moved from a menu onto a gateway screen, so the
-    # gateway screen's "⬅️ Back" returns to the submenu it was opened from
-    # (USDT Networks / Other Coins / Local Payment) instead of always
-    # jumping straight to the main payment menu.
-    application.add_handler(
-        CallbackQueryHandler(payment_handlers.topup_track_gateway_screen, pattern="^pay_"),
-        group=-1,
-    )
     # "🔙 Back" on the "✅ Deposit cancelled successfully." confirmation
     # (see payment_handlers.deposit_cancel / services/payment_ui.py:
     # deposit_cancelled_keyboard) is shown AFTER deposit_cancel has already
@@ -1569,7 +1573,7 @@ def main():
     # separate "Buy Now" step is skipped entirely.
     application.add_handler(CallbackQueryHandler(user_handlers.availability_callback, pattern="^availability$"))
     application.add_handler(CallbackQueryHandler(user_handlers.flash_sales_callback, pattern="^flash_sales$"))
-    # Legacy "☎️ Support" buttons (still on old sent messages) route to the
+    # Legacy "🎧 Support" buttons (still on old sent messages) route to the
     # same Support Center ticket flow as the main-menu "support_center"
     # button, so the flow is identical everywhere instead of showing the
     # old "My Shop is Open 24/7" contact-only page.
@@ -1978,6 +1982,193 @@ def main():
         allow_reentry=True,
     )
     application.add_handler(pm_edit_conv)
+
+    # ─── V40: Dynamic Payment Networks (database-driven config panel) ───
+    #  UI + configuration only — every network still routes through an
+    #  EXISTING payment callback (pay_<gateway_key> / pay_pm_<id>), so
+    #  verification, deposit processing and wallet crediting are untouched.
+    from handlers import admin_payment_networks as admin_pnet
+
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_networks_menu,
+                                                  pattern="^apn_menu$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_networks_noop,
+                                                  pattern="^apn_noop$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_network_view,
+                                                  pattern="^apn_view_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_network_toggle,
+                                                  pattern="^apn_tgl_(enabled|visible|featured|recommended|maint|api|manual)_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_network_move,
+                                                  pattern="^apn_(up|dn)_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_network_category,
+                                                  pattern="^apn_cat_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_network_category,
+                                                  pattern="^apn_catset_\\d+_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_network_stats,
+                                                  pattern="^apn_stats_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_network_test,
+                                                  pattern="^apn_test_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_network_delete_confirm,
+                                                  pattern="^apn_del_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_network_delete,
+                                                  pattern="^apn_delgo_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_pnet.admin_networks_import,
+                                                  pattern="^apn_import$"))
+
+    _admin_text = filters.TEXT & ~filters.COMMAND & filters.User(settings.ADMIN_TELEGRAM_ID)
+    _apn_cancel = CallbackQueryHandler(admin_pnet.admin_network_cancel, pattern="^apn_menu$")
+
+    apn_edit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
+        entry_points=[CallbackQueryHandler(
+            admin_pnet.admin_network_edit_start,
+            pattern="^apn_edit_(name|display|symbol|emoji|address|memo|instr|min|max|bonus|conf|order|notes|provider)_\\d+$")],
+        states={
+            admin_pnet.APN_EDIT_VALUE: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_edit_value),
+                CallbackQueryHandler(admin_pnet.admin_network_view, pattern="^apn_view_\\d+$"),
+            ],
+        },
+        fallbacks=[_apn_cancel],
+        allow_reentry=True,
+    )
+    application.add_handler(apn_edit_conv)
+
+    apn_add_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
+        entry_points=[CallbackQueryHandler(admin_pnet.admin_network_add_start,
+                                            pattern="^apn_add$")],
+        states={
+            admin_pnet.APN_ADD_NAME: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_name)],
+            admin_pnet.APN_ADD_SYMBOL: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_symbol),
+                CallbackQueryHandler(admin_pnet.admin_network_add_symbol, pattern="^apn_skip_symbol$")],
+            admin_pnet.APN_ADD_DISPLAY: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_display),
+                CallbackQueryHandler(admin_pnet.admin_network_add_display, pattern="^apn_skip_display$")],
+            admin_pnet.APN_ADD_CATEGORY: [
+                CallbackQueryHandler(admin_pnet.admin_network_add_category, pattern="^apn_addcat_\\d+$")],
+            admin_pnet.APN_ADD_EMOJI: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_emoji),
+                CallbackQueryHandler(admin_pnet.admin_network_add_emoji, pattern="^apn_skip_emoji$")],
+            admin_pnet.APN_ADD_ADDRESS: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_address),
+                CallbackQueryHandler(admin_pnet.admin_network_add_address, pattern="^apn_skip_address$")],
+            admin_pnet.APN_ADD_MEMO: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_memo),
+                CallbackQueryHandler(admin_pnet.admin_network_add_memo, pattern="^apn_skip_memo$")],
+            admin_pnet.APN_ADD_PROVIDER: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_provider),
+                CallbackQueryHandler(admin_pnet.admin_network_add_provider, pattern="^apn_skip_provider$")],
+            admin_pnet.APN_ADD_VERIFICATION: [
+                CallbackQueryHandler(admin_pnet.admin_network_add_verification,
+                                     pattern="^apn_addver_(api|manual)$")],
+            admin_pnet.APN_ADD_MIN: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_min),
+                CallbackQueryHandler(admin_pnet.admin_network_add_min, pattern="^apn_skip_min$")],
+            admin_pnet.APN_ADD_MAX: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_max),
+                CallbackQueryHandler(admin_pnet.admin_network_add_max, pattern="^apn_skip_max$")],
+            admin_pnet.APN_ADD_BONUS: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_bonus),
+                CallbackQueryHandler(admin_pnet.admin_network_add_bonus, pattern="^apn_skip_bonus$")],
+            admin_pnet.APN_ADD_CONFIRMATIONS: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_confirmations),
+                CallbackQueryHandler(admin_pnet.admin_network_add_confirmations, pattern="^apn_skip_conf$")],
+            admin_pnet.APN_ADD_ORDER: [
+                MessageHandler(_admin_text, admin_pnet.admin_network_add_order),
+                CallbackQueryHandler(admin_pnet.admin_network_add_order, pattern="^apn_skip_order$")],
+            admin_pnet.APN_ADD_ENABLED: [
+                CallbackQueryHandler(admin_pnet.admin_network_add_finish, pattern="^apn_adden_(0|1)$")],
+        },
+        fallbacks=[_apn_cancel],
+        allow_reentry=True,
+    )
+    application.add_handler(apn_add_conv)
+
+    # ─── V41: Dynamic LOCAL Payment Providers (database-driven config panel) ───
+    #  UI + configuration only — every provider still routes through an
+    #  EXISTING payment callback (pay_<gateway_key> / pay_pm_<id>), so
+    #  verification, deposit processing and wallet crediting are untouched.
+    from handlers import admin_local_payments as admin_lp
+
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_menu,
+                                                  pattern="^alp_menu$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_noop,
+                                                  pattern="^alp_noop$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_view,
+                                                  pattern="^alp_view_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_toggle,
+                                                  pattern="^alp_tgl_(enabled|visible|maint|autorate)_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_default,
+                                                  pattern="^alp_default_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_move,
+                                                  pattern="^alp_(up|dn)_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_type,
+                                                  pattern="^alp_type_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_type,
+                                                  pattern="^alp_typeset_\\d+_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_stats,
+                                                  pattern="^alp_stats_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_test,
+                                                  pattern="^alp_test_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_preview,
+                                                  pattern="^alp_preview$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_preview_button,
+                                                  pattern="^alp_pvb_\\d+_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_delete_confirm,
+                                                  pattern="^alp_del_\\d+$"))
+    application.add_handler(CallbackQueryHandler(admin_lp.admin_local_delete,
+                                                  pattern="^alp_delgo_\\d+$"))
+
+    _alp_cancel = CallbackQueryHandler(admin_lp.admin_local_cancel, pattern="^alp_menu$")
+
+    alp_edit_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
+        entry_points=[CallbackQueryHandler(
+            admin_lp.admin_local_edit_start,
+            pattern="^alp_edit_(name|display|emoji|wallet|holder|instr|min|max|bonus|rate|curr|order|notes)_\\d+$")],
+        states={
+            admin_lp.ALP_EDIT_VALUE: [
+                MessageHandler(_admin_text, admin_lp.admin_local_edit_value),
+                CallbackQueryHandler(admin_lp.admin_local_view, pattern="^alp_view_\\d+$"),
+            ],
+        },
+        fallbacks=[_alp_cancel],
+        allow_reentry=True,
+    )
+    application.add_handler(alp_edit_conv)
+
+    alp_add_conv = ConversationHandler(
+        conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
+        entry_points=[CallbackQueryHandler(admin_lp.admin_local_add_start,
+                                            pattern="^alp_add$")],
+        states={
+            admin_lp.ALP_ADD_NAME: [
+                MessageHandler(_admin_text, admin_lp.admin_local_add_name),
+                CallbackQueryHandler(admin_lp.admin_local_add_name, pattern="^alp_preset_\\d+$")],
+            admin_lp.ALP_ADD_DISPLAY: [
+                MessageHandler(_admin_text, admin_lp.admin_local_add_display),
+                CallbackQueryHandler(admin_lp.admin_local_add_display, pattern="^alp_skip_display$")],
+            admin_lp.ALP_ADD_EMOJI: [
+                MessageHandler(_admin_text, admin_lp.admin_local_add_emoji),
+                CallbackQueryHandler(admin_lp.admin_local_add_emoji, pattern="^alp_skip_emoji$")],
+            admin_lp.ALP_ADD_WALLET: [
+                MessageHandler(_admin_text, admin_lp.admin_local_add_wallet),
+                CallbackQueryHandler(admin_lp.admin_local_add_wallet, pattern="^alp_skip_wallet$")],
+            admin_lp.ALP_ADD_TYPE: [
+                CallbackQueryHandler(admin_lp.admin_local_add_type, pattern="^alp_newtype_\\d+$")],
+            admin_lp.ALP_ADD_HOLDER: [
+                MessageHandler(_admin_text, admin_lp.admin_local_add_holder),
+                CallbackQueryHandler(admin_lp.admin_local_add_holder, pattern="^alp_skip_holder$")],
+            admin_lp.ALP_ADD_INSTR: [
+                MessageHandler(_admin_text, admin_lp.admin_local_add_instr),
+                CallbackQueryHandler(admin_lp.admin_local_add_instr, pattern="^alp_skip_instr$")],
+        },
+        fallbacks=[_alp_cancel],
+        allow_reentry=True,
+    )
+    application.add_handler(alp_add_conv)
 
     # ─── Admin Deposit Settings (Global Minimum Deposit) ────────────────────
     from handlers import admin_deposit_settings as admin_dep
@@ -2953,7 +3144,7 @@ def main():
     )
     application.add_handler(custom_broadcast_conv)
 
-    # "📦 Product Broadcast" → "✏️ Edit Message" — replace the generated
+    # "🛒 Product Broadcast" → "✏️ Edit Message" — replace the generated
     # product-broadcast text with admin-supplied text.
     prod_broadcast_edit_conv = ConversationHandler(
         conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
