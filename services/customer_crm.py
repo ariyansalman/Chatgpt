@@ -817,7 +817,7 @@ async def reminder_check_job(context) -> None:
     if not _is_active() or not _allow_reminders():
         return
     try:
-        from utils.settings import settings
+        from config.settings import settings
         admin_id = getattr(settings, "ADMIN_TELEGRAM_ID", None)
         if not admin_id:
             return

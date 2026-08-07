@@ -47,7 +47,7 @@ def _fmt_product(p: dict, idx: int) -> str:
 
 
 def _product_btn(p: dict) -> InlineKeyboardButton:
-    return InlineKeyboardButton(p["name"][:30], callback_data=f"product:{p['id']}")
+    return InlineKeyboardButton(p["name"][:30], callback_data=f"product_{p['id']}")
 
 
 # ─── Trending Now ─────────────────────────────────────────────────────────────
@@ -167,7 +167,7 @@ async def urec_related(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lines.append(_fmt_product(p, i))
     text = "\n".join(lines)
     kb_rows = [[_product_btn(p)] for p in items[:5]]
-    kb_rows.append([InlineKeyboardButton("🔙 Back", callback_data=f"product:{product_id}")])
+    kb_rows.append([InlineKeyboardButton("🔙 Back", callback_data=f"product_{product_id}")])
     try:
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb_rows),
                                   parse_mode="HTML")

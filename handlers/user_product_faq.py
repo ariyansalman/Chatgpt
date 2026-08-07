@@ -43,7 +43,7 @@ async def pfaq_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "❓ FAQ is not available.",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔙 Back",
-                                         callback_data=f"prod_{product_id}")
+                                         callback_data=f"product_{product_id}")
                 ]]),
             )
         except BadRequest:
@@ -56,7 +56,7 @@ async def pfaq_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "⚠️ Product FAQ is currently under maintenance. Please check back soon.",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔙 Back",
-                                         callback_data=f"prod_{product_id}")
+                                         callback_data=f"product_{product_id}")
                 ]]),
             )
         except BadRequest:
@@ -74,7 +74,7 @@ async def pfaq_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             callback_data=f"pfaq:search:{product_id}",
         )])
     kb.append([InlineKeyboardButton("🔙 Back to Product",
-                                     callback_data=f"prod_{product_id}")])
+                                     callback_data=f"product_{product_id}")])
 
     try:
         await query.edit_message_text(

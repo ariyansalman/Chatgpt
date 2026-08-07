@@ -140,6 +140,8 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
     # category stays focused on "how customers pay", not history/records.
     "payments": [[
         ("💳 Payment Gateways",    "admin_gateways"),
+        ("🌐 Payment Networks",    "apn_menu"),
+        ("🇧🇩 Local Payments",      "alp_menu"),
         ("🏦 Manual Payment Methods", "admin_payment_methods"),
         ("🧾 Deposit Requests",    "pd:list:0:desc"),
     ]],

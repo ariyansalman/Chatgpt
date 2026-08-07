@@ -157,12 +157,12 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_user_language(tg_id)
     bal, dep, spent = _totals(tg_id)
 
-    # Premium marketplace wallet card — no dividers, clean spacing
+    # Premium marketplace wallet card — clean, minimal, single-column buttons
     bal_str   = format_price_for_user(bal,   tg_id)
     dep_str   = format_price_for_user(dep,   tg_id)
     spent_str = format_price_for_user(spent, tg_id)
     text = (
-        "💳 <b>WALLET</b>\n\n"
+        "💗 <b>WALLET</b>\n\n"
         f"💰 Current Balance: <b>{bal_str}</b>\n"
         f"📥 Total Added: <b>{dep_str}</b>\n"
         f"🛒 Total Spent: <b>{spent_str}</b>\n\n"
@@ -170,8 +170,8 @@ async def wallet_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     kb_rows = [
-        [InlineKeyboardButton("💰 ADD FUNDS", callback_data="topup"),
-         InlineKeyboardButton("📜 PAYMENT HISTORY", callback_data="wallet_history")],
+        [InlineKeyboardButton("➕ ADD FUNDS", callback_data="topup")],
+        [InlineKeyboardButton("📜 PAYMENT HISTORY", callback_data="wallet_history")],
         [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")],
     ]
     kb = InlineKeyboardMarkup(kb_rows)

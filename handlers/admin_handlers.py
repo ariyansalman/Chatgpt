@@ -1804,6 +1804,57 @@ async def admin_complete_order_callback(update: Update, context: ContextTypes.DE
     await admin_order_detail_callback(update, context)
 
 
+async def admin_reactivate_order_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reactivate a cancelled order (callback: reactivate_order_<id>).
+
+    Moves the order back to PROCESSING through the centralized lifecycle
+    transition so ``Order.status`` stays in sync via the legacy map.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    if not has_permission(update.effective_user.id, "manage_orders"):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+
+    try:
+        order_id = int(query.data.split("_")[2])
+    except (IndexError, ValueError):
+        await query.answer("❌ Invalid order reference.", show_alert=True)
+        return
+
+    with get_db_session() as session:
+        order = session.query(Order).filter_by(id=order_id).first()
+        found = order is not None
+        already_active = bool(order and order.status != OrderStatus.CANCELLED)
+
+    if not found:
+        try:
+            await query.edit_message_text("❌ Order not found.")
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
+        return
+
+    if already_active:
+        await query.answer("ℹ️ This order is not cancelled.", show_alert=True)
+        return
+
+    try:
+        from services.order_lifecycle import transition
+        from database.models import OrderLifecycleStatus
+        transition(order_id, OrderLifecycleStatus.PROCESSING,
+                   actor_type="admin", admin_id=update.effective_user.id,
+                   reason="admin reactivated cancelled order", bot=context.bot)
+    except Exception:
+        logger.exception("reactivate transition failed for order %s", order_id)
+        await query.answer("❌ Could not reactivate this order.", show_alert=True)
+        return
+
+    await query.answer("🔄 Order reactivated.", show_alert=True)
+    await admin_order_detail_callback(update, context)
+
+
 async def admin_confirm_order_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Payments panel — Admin Panel → Payments.
 

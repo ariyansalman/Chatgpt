@@ -84,14 +84,11 @@ def build_amount_selection_screen(
     the caller reads them from the existing admin-configured settings and
     passes them in; this module still never enforces or decides them.
     """
-    lines = ["💰 <b>ADD FUNDS</b>", "", "Select the amount you want to add."]
-    if min_deposit is not None:
-        lines.append(f"\nMinimum deposit: <b>${min_deposit:.2f}</b> {currency}")
+    lines = ["💳 <b>ADD FUNDS</b>", "", "Select the amount you want to add."]
     text = "\n".join(lines)
 
     rows: list[list[InlineKeyboardButton]] = []
-    # Preset buttons in a compact grid, PRESETS_PER_ROW per row, in the
-    # order given.
+    # Preset buttons in a uniform 3-column grid.
     row: list[InlineKeyboardButton] = []
     for amount in preset_amounts:
         row.append(InlineKeyboardButton(
@@ -110,12 +107,6 @@ def build_amount_selection_screen(
         InlineKeyboardButton("🏠 MAIN MENU", callback_data=MAIN_MENU_CALLBACK),
     ])
 
-    # No deposit/Transaction row exists yet at this point — Step 1 is
-    # purely picking an amount, before any payment method or gateway has
-    # even been chosen — so this screen shows only "🔙 Back" / "🏠 Main
-    # Menu" above, never a destructive "❌ Cancel" row (see
-    # services/payment_ui.py:with_deposit_cancel, which is reserved for
-    # screens reached only after a Deposit ID/active session exists).
     return text, InlineKeyboardMarkup(rows)
 
 

@@ -739,6 +739,7 @@ def create_admin_payment_methods_menu_keyboard(methods):
             callback_data=f"admin_pm_view_{m.id}"
         )])
     keyboard.append([InlineKeyboardButton("➕ Add Payment Method", callback_data="admin_pm_add")])
+    keyboard.append([InlineKeyboardButton("🌐 Payment Networks", callback_data="apn_menu")])
     if methods:
         keyboard.append([InlineKeyboardButton("🗑 Delete All", callback_data="admin_pm_delete_all_confirm")])
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="acc:cat:payments")])

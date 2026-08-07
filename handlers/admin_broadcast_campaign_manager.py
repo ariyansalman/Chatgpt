@@ -1412,6 +1412,153 @@ async def bcm_settings_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE
     await bcm_settings(update, context)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Template group filter  (bcm:templates:group:<group>)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def bcm_templates_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List every template inside one group (callback: bcm:templates:group:<grp>)."""
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(update.effective_user.id):
+        await query.answer("⛔ Permission denied.", show_alert=True)
+        return
+
+    group = query.data.split(":", 3)[3]
+    items = [t for t in get_all_templates() if (t.group_name or "") == group]
+
+    lines = [f"📂 <b>{group}</b> — {len(items)} templates\n"]
+    rows: List[List[InlineKeyboardButton]] = []
+    for t in items[:20]:
+        fav = "⭐" if t.is_favorite else ""
+        lines.append(f"{fav} <b>{t.name}</b>")
+        rows.append([InlineKeyboardButton(f"{fav} {t.name}",
+                                          callback_data=f"bcm:template:view:{t.id}")])
+    if not items:
+        lines.append("This group has no templates.")
+
+    rows.append([InlineKeyboardButton("🔙 Groups", callback_data="bcm:templates:groups")])
+    await _safe_edit(query, "\n".join(lines), InlineKeyboardMarkup(rows))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Template edit  (bcm:template:edit:<id>)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def bcm_template_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Entry for editing a template's message text (callback: bcm:template:edit:<id>)."""
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    template_id = int(query.data.split(":")[-1])
+    t = get_template(template_id)
+    if not t:
+        await query.answer("❌ Template not found.", show_alert=True)
+        return ConversationHandler.END
+    if t.is_default:
+        await query.answer("🔒 Built-in templates cannot be edited.", show_alert=True)
+        return ConversationHandler.END
+
+    context.user_data["_bcm_edit"] = {"template_id": template_id}
+    await _safe_edit(query,
+        f"✏️ <b>Edit Template</b> — {t.name}\n\n"
+        f"<b>Current message:</b>\n{t.message_text[:800]}\n\n"
+        "Send the new message text.\n"
+        "Supported variables:\n"
+        + "  ".join(SUPPORTED_VARIABLES[:8]) + "\n"
+        + "  ".join(SUPPORTED_VARIABLES[8:]),
+        InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="bcm:cancel")]])
+    )
+    return BCM_EDIT_FIELD
+
+
+async def bcm_template_edit_recv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = (update.message.text or "").strip()
+    if not text:
+        await update.message.reply_text("⚠️ Message cannot be empty. Try again:")
+        return BCM_EDIT_FIELD
+
+    data = context.user_data.pop("_bcm_edit", {})
+    template_id = data.get("template_id")
+    if not template_id:
+        return ConversationHandler.END
+
+    update_template(template_id, message_text=text)
+    log_admin_action(update.effective_user.id, "template_edit", f"ID {template_id}")
+    await update.message.reply_text(
+        "✅ <b>Template updated.</b>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 View Template", callback_data=f"bcm:template:view:{template_id}")],
+            [InlineKeyboardButton("🔙 Templates",     callback_data="bcm:templates:0")],
+        ]),
+    )
+    return ConversationHandler.END
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Campaign schedule  (bcm:campaign:schedule:<id>)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def bcm_campaign_schedule_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Entry for scheduling a draft campaign (callback: bcm:campaign:schedule:<id>)."""
+    query = update.callback_query
+    await query.answer()
+    if not _is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    campaign_id = int(query.data.split(":")[-1])
+    c = get_campaign(campaign_id)
+    if not c:
+        await query.answer("❌ Campaign not found.", show_alert=True)
+        return ConversationHandler.END
+
+    context.user_data["_bcm_sched"] = {"campaign_id": campaign_id}
+    await _safe_edit(query,
+        f"📅 <b>Schedule Campaign</b> — {c.name}\n\n"
+        "Send the send time in UTC using this format:\n"
+        "<code>YYYY-MM-DD HH:MM</code>\n\n"
+        "Example: <code>2026-08-15 18:30</code>",
+        InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="bcm:cancel")]])
+    )
+    return BCM_CAMPAIGN_SCHED
+
+
+async def bcm_campaign_schedule_recv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = (update.message.text or "").strip()
+    try:
+        when = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+    except ValueError:
+        await update.message.reply_text(
+            "⚠️ Invalid format. Use <code>YYYY-MM-DD HH:MM</code> (UTC).",
+            parse_mode="HTML")
+        return BCM_CAMPAIGN_SCHED
+
+    if when <= datetime.utcnow():
+        await update.message.reply_text("⚠️ That time is in the past. Send a future time:")
+        return BCM_CAMPAIGN_SCHED
+
+    data = context.user_data.pop("_bcm_sched", {})
+    campaign_id = data.get("campaign_id")
+    if not campaign_id:
+        return ConversationHandler.END
+
+    update_campaign(campaign_id, start_date=when, next_run_at=when, status="scheduled")
+    log_admin_action(update.effective_user.id, "campaign_schedule",
+                     f"ID {campaign_id} @ {when:%Y-%m-%d %H:%M} UTC")
+    await update.message.reply_text(
+        f"✅ <b>Campaign scheduled</b> for <b>{when:%Y-%m-%d %H:%M}</b> UTC.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 View Campaign", callback_data=f"bcm:campaign:view:{campaign_id}")],
+            [InlineKeyboardButton("🔙 Campaigns",     callback_data="bcm:campaigns:0")],
+        ]),
+    )
+    return ConversationHandler.END
+
+
 # ── Cancel helper ──────────────────────────────────────────────────────────────
 
 async def bcm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1422,6 +1569,8 @@ async def bcm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data.pop("_bcm_new", None)
         context.user_data.pop("_bcm_tmpl", None)
         context.user_data.pop("_bcm_rule", None)
+        context.user_data.pop("_bcm_edit", None)
+        context.user_data.pop("_bcm_sched", None)
         await _safe_edit(query, "❌ Cancelled.", _back_kb("bcm:menu"))
     return ConversationHandler.END
 
@@ -1436,6 +1585,8 @@ def build_bcm_conv() -> ConversationHandler:
             CallbackQueryHandler(bcm_template_new_start,    pattern=r"^bcm:template:new$"),
             CallbackQueryHandler(bcm_template_search_start, pattern=r"^bcm:template:search$"),
             CallbackQueryHandler(bcm_rule_new_start,        pattern=r"^bcm:rule:new$"),
+            CallbackQueryHandler(bcm_template_edit_start,   pattern=r"^bcm:template:edit:\d+$"),
+            CallbackQueryHandler(bcm_campaign_schedule_start, pattern=r"^bcm:campaign:schedule:\d+$"),
         ],
         states={
             BCM_CAMPAIGN_NAME:   [MessageHandler(filters.TEXT & ~filters.COMMAND, bcm_campaign_recv_name)],
@@ -1447,6 +1598,8 @@ def build_bcm_conv() -> ConversationHandler:
             ],
             BCM_TEMPLATE_NAME:   [MessageHandler(filters.TEXT & ~filters.COMMAND, bcm_template_recv_name)],
             BCM_TEMPLATE_MSG:    [MessageHandler(filters.TEXT & ~filters.COMMAND, bcm_template_recv_msg)],
+            BCM_EDIT_FIELD:      [MessageHandler(filters.TEXT & ~filters.COMMAND, bcm_template_edit_recv)],
+            BCM_CAMPAIGN_SCHED:  [MessageHandler(filters.TEXT & ~filters.COMMAND, bcm_campaign_schedule_recv)],
             BCM_SEARCH_INPUT:    [MessageHandler(filters.TEXT & ~filters.COMMAND, bcm_template_search_recv)],
             BCM_RULE_NAME:       [MessageHandler(filters.TEXT & ~filters.COMMAND, bcm_rule_recv_name)],
             BCM_RULE_TRIGGER:    [CallbackQueryHandler(bcm_rule_recv_trigger,    pattern=r"^bcm:rule:trigger:.+$")],
@@ -1486,6 +1639,7 @@ def register_handlers(application) -> None:
     application.add_handler(CallbackQueryHandler(bcm_templates,          pattern=r"^bcm:templates:\d+$"))
     application.add_handler(CallbackQueryHandler(bcm_templates_fav,      pattern=r"^bcm:templates:fav$"))
     application.add_handler(CallbackQueryHandler(bcm_templates_groups,   pattern=r"^bcm:templates:groups$"))
+    application.add_handler(CallbackQueryHandler(bcm_templates_group,    pattern=r"^bcm:templates:group:.+$"))
     application.add_handler(CallbackQueryHandler(bcm_template_view,      pattern=r"^bcm:template:view:\d+$"))
     application.add_handler(CallbackQueryHandler(bcm_template_fav,       pattern=r"^bcm:template:fav:\d+$"))
     application.add_handler(CallbackQueryHandler(bcm_template_dup,       pattern=r"^bcm:template:dup:\d+$"))
