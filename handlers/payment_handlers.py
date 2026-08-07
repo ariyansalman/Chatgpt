@@ -347,10 +347,84 @@ def _build_crypto_networks_screen():
     return psel.build_crypto_networks_screen(gateways)
 
 
+def _build_other_coins_screen():
+    """Build the "🪙 SELECT COIN" submenu (text + keyboard)."""
+    gateways, _ = _collect_topup_gateways()
+    return psel.build_other_coins_screen(gateways)
+
+
 def _build_mobile_money_screen():
     """Build the "🇧🇩 Mobile Banking" submenu (text + keyboard)."""
     gateways, _ = _collect_topup_gateways()
     return psel.build_mobile_money_screen(gateways)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Payment-menu navigation state (UI only)
+# ──────────────────────────────────────────────────────────────────────────
+# Remembers which parent screen the user is currently standing on inside the
+# redesigned payment menu, so every "⬅️ Back" tap returns to the *correct*
+# parent: a gateway screen opened from a submenu goes back to that submenu,
+# and a submenu goes back to the main "💰 SELECT PAYMENT METHOD" screen.
+# Purely presentational bookkeeping — no payment, wallet, deposit,
+# verification or callback_data behaviour depends on it.
+_TOPUP_SUBMENU_CBS = ("topup_menu_crypto", "topup_menu_coins", "topup_menu_mobile")
+
+_TOPUP_SUBMENU_BUILDERS = {
+    "topup_menu_crypto": _build_crypto_networks_screen,
+    "topup_menu_coins": _build_other_coins_screen,
+    "topup_menu_mobile": _build_mobile_money_screen,
+}
+
+
+def _topup_enter_submenu(context, cb: str) -> None:
+    """User opened one of the payment submenus."""
+    try:
+        context.user_data['topup_submenu'] = cb
+        context.user_data['topup_screen'] = 'submenu'
+    except Exception:
+        pass
+
+
+def _topup_enter_main_menu(context) -> None:
+    """User is back on (or freshly on) the main payment-method screen."""
+    try:
+        context.user_data.pop('topup_submenu', None)
+        context.user_data['topup_screen'] = 'methods'
+    except Exception:
+        pass
+
+
+def _topup_parent_submenu(context):
+    """Return the submenu callback a Back tap should go to, or None for the
+    main payment-method screen."""
+    try:
+        if context.user_data.get('topup_screen') == 'gateway':
+            sub = context.user_data.get('topup_submenu')
+            if sub in _TOPUP_SUBMENU_BUILDERS:
+                return sub
+    except Exception:
+        pass
+    return None
+
+
+async def topup_track_gateway_screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Navigation bookkeeping for every "pay_*" tap (registered in a separate
+    handler group in bot.py, so it never intercepts or alters the real
+    payment handler that runs right after it).
+
+    It only records that the user left a menu and is now on a gateway
+    screen, so the gateway screen's "⬅️ Back" returns to the submenu it was
+    opened from instead of always jumping to the main menu.
+    """
+    try:
+        query = update.callback_query
+        if query and (query.data or "").startswith("pay_"):
+            context.user_data['topup_screen'] = 'gateway'
+    except Exception:
+        pass
+    return None
+
 
 
 @guarded_callback(fallback_state=ConversationHandler.END)
@@ -366,6 +440,7 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('topup_amount', None)
     context.user_data.pop('topup_method', None)
     context.user_data.pop('zinipay_provider', None)
+    _topup_enter_main_menu(context)
 
     # If nothing is configured at all, skip straight to the same "no
     # payment methods available" message the method screen would show —
@@ -409,6 +484,7 @@ async def topup_amount_selected(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data['topup_amount'] = amount
     context.user_data.pop('topup_method', None)
     context.user_data.pop('zinipay_provider', None)
+    _topup_enter_main_menu(context)
 
     text, keyboard, is_empty = await run_db(_build_topup_method_screen, amount=amount)
     try:
@@ -463,7 +539,25 @@ async def topup_show_crypto_networks(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await safe_answer(query)
 
+    _topup_enter_submenu(context, "topup_menu_crypto")
     text, keyboard = await run_db(_build_crypto_networks_screen)
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+    return METHOD
+
+
+@guarded_callback(fallback_state=ConversationHandler.END)
+async def topup_show_other_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"🪙 OTHER COINS" tapped on the payment menu — show the coin submenu.
+    Pure navigation: no payment is created here."""
+    query = update.callback_query
+    await safe_answer(query)
+
+    _topup_enter_submenu(context, "topup_menu_coins")
+    text, keyboard = await run_db(_build_other_coins_screen)
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -479,6 +573,7 @@ async def topup_show_mobile_money(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await safe_answer(query)
 
+    _topup_enter_submenu(context, "topup_menu_mobile")
     text, keyboard = await run_db(_build_mobile_money_screen)
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -495,7 +590,22 @@ async def topup_back_to_methods(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await safe_answer(query)
 
+    # Correct parent: a gateway screen opened from a submenu goes back to
+    # that submenu; a submenu (or anything else) goes back to the main
+    # payment-method screen.
+    parent = _topup_parent_submenu(context)
+    if parent:
+        text, keyboard = await run_db(_TOPUP_SUBMENU_BUILDERS[parent])
+        _topup_enter_submenu(context, parent)
+        try:
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
+        return METHOD
+
     text, keyboard, is_empty = await run_db(_build_topup_method_screen, amount=context.user_data.get('topup_amount'))
+    _topup_enter_main_menu(context)
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
     except BadRequest as e:
@@ -539,6 +649,7 @@ async def topup_back_to_wallet(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.pop('topup_amount', None)
     context.user_data.pop('topup_method', None)
     context.user_data.pop('zinipay_provider', None)
+    _topup_enter_main_menu(context)
 
     await wallet_menu(update, context)
     return ConversationHandler.END
@@ -565,6 +676,7 @@ async def topup_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('topup_amount', None)
     context.user_data.pop('topup_method', None)
     context.user_data.pop('zinipay_provider', None)
+    _topup_enter_main_menu(context)
     from handlers.user_handlers import main_menu_callback
     await main_menu_callback(update, context)
     return ConversationHandler.END
@@ -4270,6 +4382,7 @@ async def pending_deposit_continue(update: Update, context: ContextTypes.DEFAULT
                 _build_topup_method_screen,
                 amount=context.user_data.get('topup_amount'),
             )
+            _topup_enter_main_menu(context)
             await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
             return ConversationHandler.END if is_empty else METHOD
         if tx.user.telegram_id != update.effective_user.id:
@@ -5904,6 +6017,7 @@ async def _redraw_as_payment_method_screen(update: Update, context: ContextTypes
     """
     query = update.callback_query
     text, keyboard, is_empty = await run_db(_build_topup_method_screen, amount=context.user_data.get('topup_amount'))
+    _topup_enter_main_menu(context)
 
     deleted = False
     try:

@@ -2,29 +2,22 @@
 Payment Selection UI — single, reusable "choose a payment method" component.
 ════════════════════════════════════════════════════════════════════════════
 
-Every screen a user sees while picking how to add funds (the top-level
-selector, the Crypto Networks submenu, the Mobile Money (BD) submenu) is
-rendered by the three builder functions in this module, from the exact same
-``gateways`` list that ``handlers/payment_handlers.py`` already builds today.
+Presentation-only module. It never decides which gateways are enabled or
+configured, never creates a payment, never touches wallets/deposits/DB, and
+never invents a new callback_data for an existing gateway: every button is
+still ``pay_<gateway_key>`` / ``pay_pm_<manual_method_id>``, exactly as
+before, so every existing CallbackQueryHandler keeps routing unmodified.
 
-This module is presentation-only — same contract as services/payment_ui.py:
-it never decides which gateways are enabled/configured, never creates a
-payment, and never invents a new callback_data value for an existing
-gateway. Every button's callback_data is still ``pay_<gateway_key>`` or
-``pay_pm_<manual_method_id>``, exactly as before, so every existing
-CallbackQueryHandler in bot.py keeps routing unmodified.
+Screens (redesigned menu structure only):
+  1. 💰 SELECT PAYMENT METHOD  — Binance Pay, Bybit Pay, 🌐 USDT Networks,
+     🪙 Other Coins, 🇧🇩 Local Payment, ⬅️ Back
+  2. 🌐 SELECT USDT NETWORK    — TRON (TRC20), BNB Smart Chain (BEP20),
+     Ethereum (ERC20), … any other USDT network, ⬅️ Back
+  3. 🪙 SELECT COIN            — BTC, LTC, TON, BNB, SOL, POL, … , ⬅️ Back
+  4. 🇧🇩 SELECT LOCAL PAYMENT  — bKash, Nagad, Rocket, …, ⬅️ Back
 
-Scaling story — why a new gateway never needs a UI change:
-  • ``classify()`` buckets a gateway key/label into "top" (its own button,
-    e.g. Bybit Pay / Binance Pay), "crypto_network" (collapses into the
-    🔗 Crypto Networks submenu), or "mobile_money_bd" (collapses into the
-    🇧🇩 Mobile Money (BD) submenu) — purely from keyword hints, the same
-    technique services/payment_ui.py already uses to auto-assign emoji to
-    an unknown gateway.
-  • Registering a brand-new gateway in services/payment_gateway_bootstrap.py
-    and adding its key to the ``gateways`` list built by
-    handlers/payment_handlers.py is the only step required for it to show
-    up in the right screen here automatically.
+A brand-new gateway still shows up automatically: ``classify()`` buckets it
+from keyword hints, exactly as before.
 """
 from __future__ import annotations
 
@@ -32,20 +25,12 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-# Full checkout flows that are always their own top-level button. Note that
-# a couple of these are registered with payment_type="crypto" in the
-# gateway registry (services/payment_gateway_bootstrap.py) — that field
-# describes settlement currency, not "is this an on-chain network picker",
-# so it isn't what decides placement here.
+# Full checkout flows that are always their own top-level button.
 _TOP_LEVEL_KEYS = {"bybit_pay", "binance_pay"}
 
-# Keyword hints — mirrors the _EMOJI_HINTS table in services/payment_ui.py
-# so classification and emoji-inference stay in sync without a shared
-# lookup table. A brand-new gateway key/label is matched the same way an
-# unknown gateway already gets a sensible emoji today.
 _CRYPTO_NETWORK_HINTS: Tuple[str, ...] = (
     "usdt", "usdc", "trc20", "bep20", "erc20", "ton", "sol", "avax", "avaxc",
-    "matic", "arb", "op", "base", "ltc", "litecoin", "crypto", "coin",
+    "matic", "pol", "arb", "op", "base", "ltc", "litecoin", "crypto", "coin",
     "bitcoin", "btc", "eth", "trx", "bnb", "cryptomus", "nowpayments",
     "heleket", "cryptobot",
 )
@@ -53,17 +38,54 @@ _MOBILE_MONEY_BD_HINTS: Tuple[str, ...] = (
     "bkash", "nagad", "rocket", "upay", "zinipay", "mobile money", "bdt",
 )
 
-# Preferred display order for the well-known crypto networks (spec order).
-# Anything not listed here is appended after, in the order it was received —
-# so a brand-new network still appears, just at the end of the list.
-_CRYPTO_NETWORK_ORDER: Tuple[str, ...] = (
+# A crypto gateway is a "USDT network" when it settles in USDT on a chain.
+_USDT_HINTS: Tuple[str, ...] = ("usdt", "usdc", "trc20", "bep20", "erc20")
+
+# Preferred display order inside each crypto submenu (spec order). Anything
+# not listed is appended after, in the order it was received.
+_USDT_NETWORK_ORDER: Tuple[str, ...] = (
     "bybit_trc20", "bybit_bep20", "bybit_erc20", "bybit_ton",
-    "bybit_sol", "bybit_avaxc", "bybit_ltc",
+    "bybit_sol", "bybit_matic", "bybit_base", "bybit_arb",
+    "bybit_op", "bybit_avaxc",
 )
+_OTHER_COIN_ORDER: Tuple[str, ...] = (
+    "bybit_btc", "bybit_ltc", "bybit_ton_coin", "bybit_bnb",
+    "bybit_sol_coin", "bybit_pol",
+)
+
+# Canonical (emoji, LABEL) overrides for the redesigned submenus. Keys not
+# listed keep whatever label/emoji the gateway data already carries.
+_USDT_NETWORK_DISPLAY = {
+    "bybit_trc20": ("🔘", "TRON (TRC20)"),
+    "bybit_bep20": ("🟢", "BNB SMART CHAIN (BEP20)"),
+    "bybit_erc20": ("🔵", "ETHEREUM (ERC20)"),
+    "bybit_ton":   ("🟣", "TON (USDT)"),
+    "bybit_sol":   ("🟢", "SOLANA (USDT)"),
+    "bybit_matic": ("🟪", "POLYGON (USDT)"),
+    "bybit_base":  ("🔷", "BASE (USDT)"),
+    "bybit_arb":   ("🔵", "ARBITRUM (USDT)"),
+    "bybit_op":    ("🔴", "OPTIMISM (USDT)"),
+    "bybit_avaxc": ("🔺", "AVALANCHE (USDT)"),
+}
+_OTHER_COIN_DISPLAY = {
+    "bybit_btc": ("⚫", "BITCOIN (BTC)"),
+    "bybit_ltc": ("⚪", "LITECOIN (LTC)"),
+    "bybit_bnb": ("🟡", "BNB"),
+    "bybit_pol": ("🟪", "POLYGON (POL)"),
+}
+
+_TOP_LEVEL_DISPLAY = {
+    "binance_pay": ("🟡", "BINANCE PAY"),
+    "bybit_pay": ("⚫", "BYBIT PAY"),
+}
 
 
 def classify(key: str, label: str = "") -> str:
-    """Return "top" | "crypto_network" | "mobile_money_bd" for one gateway."""
+    """Return "top" | "crypto_network" | "mobile_money_bd" for one gateway.
+
+    Unchanged public contract — the crypto bucket is further split into
+    USDT networks vs. other coins by :func:`classify_crypto`.
+    """
     if key in _TOP_LEVEL_KEYS:
         return "top"
     text = f"{key} {label}".lower()
@@ -74,43 +96,56 @@ def classify(key: str, label: str = "") -> str:
     return "top"
 
 
-# Canonical display emoji for the top-level checkout buttons, applied
-# regardless of whatever emoji happens to be stored on the gateway dict —
-# keeps iconography consistent across the whole Add Funds flow without
-# touching the underlying gateway data or its callback_data.
-_TOP_LEVEL_DISPLAY_EMOJI = {
-    "bybit_pay": "💳",
-    "binance_pay": "💳",
-}
+def classify_crypto(key: str, label: str = "") -> str:
+    """Return "usdt_network" or "other_coin" for an already-crypto gateway."""
+    text = f"{key} {label}".lower()
+    return "usdt_network" if any(h in text for h in _USDT_HINTS) else "other_coin"
 
 
 def _btn(gw: dict, label: Optional[str] = None, emoji: Optional[str] = None,
          callback_key: Optional[str] = None) -> InlineKeyboardButton:
-    display_emoji = emoji or _TOP_LEVEL_DISPLAY_EMOJI.get(gw["key"]) or gw.get("emoji", "💳")
+    display_emoji = emoji or gw.get("emoji", "💳")
     text = f'{display_emoji} {label or gw["label"]}'
     return InlineKeyboardButton(text, callback_data=f'pay_{callback_key or gw["key"]}')
 
 
+def _display_btn(gw: dict, table: dict) -> InlineKeyboardButton:
+    override = table.get(gw["key"])
+    if override:
+        return _btn(gw, label=override[1], emoji=override[0])
+    return _btn(gw, label=str(gw.get("label", gw["key"])).upper())
+
+
 def _split(gateways: Optional[Iterable[dict]]):
+    """Bucket gateways into (top, usdt_networks, other_coins, local)."""
     top: List[dict] = []
-    crypto: List[dict] = []
+    usdt: List[dict] = []
+    coins: List[dict] = []
     mobile: List[dict] = []
     for gw in gateways or []:
         bucket = classify(gw["key"], gw.get("label", ""))
         if bucket == "crypto_network":
-            crypto.append(gw)
+            if classify_crypto(gw["key"], gw.get("label", "")) == "usdt_network":
+                usdt.append(gw)
+            else:
+                coins.append(gw)
         elif bucket == "mobile_money_bd":
             mobile.append(gw)
         else:
             top.append(gw)
-    # Bybit Pay / Binance Pay always lead, in that order, when present.
-    priority = {"bybit_pay": 0, "binance_pay": 1}
+    # Binance Pay leads, then Bybit Pay (spec order).
+    priority = {"binance_pay": 0, "bybit_pay": 1}
     top.sort(key=lambda g: priority.get(g["key"], 2))
-    return top, crypto, mobile
+    return top, usdt, coins, mobile
+
+
+def _ordered(items: Sequence[dict], order: Tuple[str, ...]) -> List[dict]:
+    rank = {key: i for i, key in enumerate(order)}
+    return sorted(items, key=lambda g: rank.get(g["key"], len(rank)))
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Screen 1 — 💳 Add Funds (top-level selector)
+# Screen 1 — 💰 SELECT PAYMENT METHOD
 # ─────────────────────────────────────────────────────────────────────────
 
 def build_payment_selection_screen(
@@ -119,124 +154,98 @@ def build_payment_selection_screen(
     amount: "float | None" = None,
     currency: str = "USD",
 ) -> Tuple[str, InlineKeyboardMarkup]:
-    """Build the redesigned Add Funds screen: one row per top-level
-    gateway/manual method, a Crypto Networks row (only if any crypto-network
-    gateway is available), a Mobile Banking row (only if any is
-    available), and Main Menu.
+    top, usdt, coins, mobile = _split(gateways)
 
-    ``amount``/``currency`` are purely informational — when the caller
-    already knows the deposit amount (it was chosen on Step 1), this
-    module renders it back to the user for confirmation; it never decides
-    or validates the amount itself.
-    """
-    top, crypto, mobile = _split(gateways)
-
-    rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in top]
+    rows: List[List[InlineKeyboardButton]] = []
+    for gw in top:
+        override = _TOP_LEVEL_DISPLAY.get(gw["key"])
+        if override:
+            rows.append([_btn(gw, label=override[1], emoji=override[0])])
+        else:
+            rows.append([_btn(gw, label=str(gw.get("label", gw["key"])).upper())])
 
     for m in (methods or []):
         rows.append([InlineKeyboardButton(
-            f"{m.emoji or '💳'} {m.name}", callback_data=f"pay_pm_{m.id}",
+            f"{m.emoji or '💳'} {str(m.name).upper()}", callback_data=f"pay_pm_{m.id}",
         )])
 
-    if crypto:
-        rows.append([InlineKeyboardButton("₿ Crypto Networks", callback_data="topup_menu_crypto")])
+    if usdt:
+        rows.append([InlineKeyboardButton("🌐 USDT NETWORKS", callback_data="topup_menu_crypto")])
+    if coins:
+        rows.append([InlineKeyboardButton("🪙 OTHER COINS", callback_data="topup_menu_coins")])
     if mobile:
-        rows.append([InlineKeyboardButton("🇧🇩 Mobile Banking", callback_data="topup_menu_mobile")])
+        rows.append([InlineKeyboardButton("🇧🇩 LOCAL PAYMENT", callback_data="topup_menu_mobile")])
 
-    # Back to the Amount Selection screen (Step 1) — distinct from
-    # "topup_menu_back", which returns from the Crypto Networks / Mobile
-    # Banking submenus to *this* screen. Always shown: this screen is only
-    # ever reached after an amount has already been picked, so there is
-    # always a previous step to return to.
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_back_to_amount")])
-    rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
+    rows.append([InlineKeyboardButton("⬅️ BACK", callback_data="topup_back_to_amount")])
 
-    # Payment Method Selection — no deposit/Transaction row exists yet at
-    # this point (a gateway hasn't even been picked), so this screen shows
-    # only "⬅️ Back" / "🏠 Main Menu", never a destructive "❌ Cancel" row
-    # — see services/payment_ui.py:with_deposit_cancel, reserved for
-    # screens reached only after a Deposit ID/active session exists.
     keyboard = InlineKeyboardMarkup(rows)
 
     if amount is not None:
         text = (
-            "💳 <b>Add Funds</b>\n\n"
-            "Deposit Amount:\n"
-            f"💵 ${amount:.2f} {currency}\n\n"
-            "Select your preferred payment method."
+            "💰 <b>SELECT PAYMENT METHOD</b>\n\n"
+            f"Deposit Amount: <b>${amount:.2f} {currency}</b>\n\n"
+            "Choose how you'd like to pay."
         )
     else:
-        text = "💳 <b>Add Funds</b>\n\nSelect your preferred payment method."
+        text = "💰 <b>SELECT PAYMENT METHOD</b>\n\nChoose how you'd like to pay."
     return text, keyboard
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Screen 2 — 🔗 Crypto Networks
+# Screen 2 — 🌐 SELECT USDT NETWORK
 # ─────────────────────────────────────────────────────────────────────────
 
 def build_crypto_networks_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, InlineKeyboardMarkup]:
-    _, crypto, _ = _split(gateways)
-    order = {key: i for i, key in enumerate(_CRYPTO_NETWORK_ORDER)}
-    crypto_sorted = sorted(crypto, key=lambda g: order.get(g["key"], len(order)))
+    """USDT network submenu (same callback entry point as before)."""
+    _, usdt, _, _ = _split(gateways)
+    rows = [[_display_btn(gw, _USDT_NETWORK_DISPLAY)]
+            for gw in _ordered(usdt, _USDT_NETWORK_ORDER)]
+    rows.append([InlineKeyboardButton("⬅️ BACK", callback_data="topup_menu_back")])
+    text = "🌐 <b>SELECT USDT NETWORK</b>\n\nChoose the network you'll send USDT on."
+    return text, InlineKeyboardMarkup(rows)
 
-    rows: List[List[InlineKeyboardButton]] = [[_btn(gw)] for gw in crypto_sorted]
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
 
-    # Crypto Network Selection — still no deposit/Transaction row exists
-    # yet (a specific network hasn't been picked), so only "⬅️ Back" is
-    # shown here, never a destructive "❌ Cancel" row — see
-    # services/payment_ui.py:with_deposit_cancel.
-    text = "₿ <b>Crypto Networks</b>\n\nSelect your preferred network."
+# Backwards-compatible alias for any caller that used the old name.
+build_usdt_networks_screen = build_crypto_networks_screen
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Screen 3 — 🪙 SELECT COIN
+# ─────────────────────────────────────────────────────────────────────────
+
+def build_other_coins_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, InlineKeyboardMarkup]:
+    _, _, coins, _ = _split(gateways)
+    rows = [[_display_btn(gw, _OTHER_COIN_DISPLAY)]
+            for gw in _ordered(coins, _OTHER_COIN_ORDER)]
+    rows.append([InlineKeyboardButton("⬅️ BACK", callback_data="topup_menu_back")])
+    text = "🪙 <b>SELECT COIN</b>\n\nChoose the coin you'd like to pay with."
     return text, InlineKeyboardMarkup(rows)
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Screen 3 — 🇧🇩 Mobile Money (BD)
+# Screen 4 — 🇧🇩 SELECT LOCAL PAYMENT
 # ─────────────────────────────────────────────────────────────────────────
 
-# Canonical (emoji, display label) for the three BD mobile-money providers,
-# per the redesign spec — applied regardless of which underlying gateway
-# key currently serves that provider.
 _MOBILE_MONEY_DISPLAY = {
-    "bkash":  ("🩷", "bKash"),
-    "nagad":  ("🧡", "Nagad"),
-    "rocket": ("💜", "Rocket"),
-    "upay":   ("🔵", "Upay"),
+    "bkash":  ("🩷", "BKASH"),
+    "nagad":  ("🟠", "NAGAD"),
+    "rocket": ("🔵", "ROCKET"),
+    "upay":   ("🔵", "UPAY"),
 }
 
 
 def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, InlineKeyboardMarkup]:
     """Render bKash / Nagad / Rocket / Upay as distinct buttons.
 
-    bKash and Nagad each route to their own standalone gateway
-    (``pay_bkash`` / ``pay_nagad``) when that gateway is configured, and
-    fall back to the combined ZiniPay flow when the standalone one isn't.
-    Rocket has no standalone flow today, so it always routes through
-    ZiniPay. Any other BD mobile-money gateway added in the future (not
-    bkash/nagad/zinipay) still appears automatically, using its own
-    label/emoji, after these three.
-
-    IMPORTANT: each ZiniPay-backed provider button gets its OWN callback_data
-    — ``pay_zinipay_bkash`` / ``pay_zinipay_nagad`` /
-    ``pay_zinipay_rocket`` / ``pay_zinipay_upay`` — instead of all providers
-    sharing the plain ``pay_zinipay`` callback. Telegram has no notion of
-    "which button in this row was tapped" beyond callback_data, so three
-    buttons pointing at the same callback_data are indistinguishable to the
-    bot and it can only ever show one (previously: always bKash). The
-    generic ``pay_zinipay`` callback is left untouched for any other caller
-    that still uses it.
+    Routing is unchanged: standalone ``pay_bkash`` / ``pay_nagad`` when those
+    gateways are configured, otherwise the per-provider ZiniPay callbacks
+    ``pay_zinipay_bkash`` / ``pay_zinipay_nagad`` / ``pay_zinipay_rocket`` /
+    ``pay_zinipay_upay``. Only labels/emoji changed here.
     """
-    _, _, mobile = _split(gateways)
+    _, _, _, mobile = _split(gateways)
     by_key = {gw["key"]: gw for gw in mobile}
     has_zinipay = "zinipay" in by_key
 
-    # Each ZiniPay-routed provider (bKash / Nagad / Rocket / Upay) must only
-    # reach the customer when the admin has actually set a wallet number for
-    # it in the Wallet Manager. A provider with no wallet number is
-    # "Not Configured" and must never appear here — see
-    # services/zinipay_payment.configured_providers(), read fresh on every
-    # call so a Wallet Manager edit takes effect immediately, no restart
-    # required.
     zini_configured = {}
     if has_zinipay:
         try:
@@ -273,16 +282,11 @@ def build_mobile_money_screen(gateways: Optional[Sequence[dict]]) -> Tuple[str, 
             rows.append([_btn(by_key["zinipay"], label=label, emoji=emoji, callback_key="zinipay_upay")])
         used_keys.add("zinipay")
 
-    # Any future BD mobile-money gateway that isn't bkash/nagad/zinipay.
     for key, gw in by_key.items():
         if key not in used_keys:
-            rows.append([_btn(gw)])
+            rows.append([_btn(gw, label=str(gw.get("label", key)).upper())])
 
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="topup_menu_back")])
+    rows.append([InlineKeyboardButton("⬅️ BACK", callback_data="topup_menu_back")])
 
-    # Mobile Banking Provider Selection — still no deposit/Transaction row
-    # exists yet (a specific provider hasn't been picked), so only
-    # "⬅️ Back" is shown here, never a destructive "❌ Cancel" row — see
-    # services/payment_ui.py:with_deposit_cancel.
-    text = "🇧🇩 <b>Mobile Banking</b>\n\nSelect your preferred provider."
+    text = "🇧🇩 <b>SELECT LOCAL PAYMENT</b>\n\nChoose your provider."
     return text, InlineKeyboardMarkup(rows)

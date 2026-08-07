@@ -918,6 +918,7 @@ def main():
                 # navigation only; every gateway button inside these
                 # submenus still uses the existing "^pay_...$" patterns below.
                 CallbackQueryHandler(payment_handlers.topup_show_crypto_networks, pattern="^topup_menu_crypto$"),
+                CallbackQueryHandler(payment_handlers.topup_show_other_coins, pattern="^topup_menu_coins$"),
                 CallbackQueryHandler(payment_handlers.topup_show_mobile_money, pattern="^topup_menu_mobile$"),
                 CallbackQueryHandler(payment_handlers.topup_back_to_methods, pattern="^topup_menu_back$"),
                 # "⬅️ Back" on the Payment Method screen itself — returns to
@@ -1055,9 +1056,20 @@ def main():
     # cancel_purchase pattern already used elsewhere in this file (present
     # both inside a ConversationHandler and standalone).
     application.add_handler(CallbackQueryHandler(payment_handlers.topup_show_crypto_networks, pattern="^topup_menu_crypto$"))
+    application.add_handler(CallbackQueryHandler(payment_handlers.topup_show_other_coins, pattern="^topup_menu_coins$"))
     application.add_handler(CallbackQueryHandler(payment_handlers.topup_show_mobile_money, pattern="^topup_menu_mobile$"))
     application.add_handler(CallbackQueryHandler(payment_handlers.topup_back_to_methods, pattern="^topup_menu_back$"))
     application.add_handler(CallbackQueryHandler(payment_handlers.topup_back_to_amount_selection, pattern="^topup_back_to_amount$"))
+    # Navigation bookkeeping only (separate handler group, so it never
+    # intercepts, blocks or alters any real "pay_*" payment handler): it
+    # records that the user moved from a menu onto a gateway screen, so the
+    # gateway screen's "⬅️ Back" returns to the submenu it was opened from
+    # (USDT Networks / Other Coins / Local Payment) instead of always
+    # jumping straight to the main payment menu.
+    application.add_handler(
+        CallbackQueryHandler(payment_handlers.topup_track_gateway_screen, pattern="^pay_"),
+        group=-1,
+    )
     # "🔙 Back" on the "✅ Deposit cancelled successfully." confirmation
     # (see payment_handlers.deposit_cancel / services/payment_ui.py:
     # deposit_cancelled_keyboard) is shown AFTER deposit_cancel has already

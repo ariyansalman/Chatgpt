@@ -702,45 +702,40 @@ def build_acc_root_keyboard(maintenance_on: bool,
 
 def _build_category_keyboard(cat: str, page: int, uid: int,
                               context: ContextTypes.DEFAULT_TYPE) -> IKM:
-    """Submenu for one category page."""
+    """Submenu for one category page.
+
+    Dynamic grid, real items only — no placeholder/filler buttons:
+      • 2 real items available  → 2 buttons on that row.
+      • 1 real item left over   → that single button gets its own
+        full-width row instead of being padded with a dummy/⭐ button.
+    The per-item ⭐/★ pin toggle that used to occupy the second column
+    of every row has been removed (see acc:ui:favs docstring above —
+    pinning still works from wherever it's wired elsewhere; this view
+    no longer forces a placeholder button just to fill the grid).
+    """
     pages = _CAT_PAGES.get(cat, [[]])
     total = len(pages)
     page  = max(1, min(page, total))
     items = pages[page - 1]
 
-    use_icons  = _cfg_bool("admin_panel_icons",     True)
-    show_bc    = _cfg_bool("admin_panel_breadcrumb", True)
-    compact    = _cfg_bool("admin_panel_compact",    False)
-
-    cat_icon, cat_name = _CAT_META.get(cat, ("📋", cat.title()))
-
     kb: list[list[IKB]] = []
 
-    if compact:
-        # Setting + pin toggle per row (compact layout keeps its own
-        # toggle/flag working; pin exposure is identical in shape to
-        # non-compact so every setting gets a reachable pin button).
-        for label, cb in items:
-            pin_icon = "★" if _is_fav(context, uid, cb) else "⭐"
-            kb.append([
-                IKB(label, callback_data=cb),
-                IKB(pin_icon, callback_data=f"acc:ui:pin:{cb}"),
-            ])
-    else:
-        # One setting + pin toggle per row (cleaner on mobile)
-        for label, cb in items:
-            pin_icon = "★" if _is_fav(context, uid, cb) else "⭐"
-            kb.append([
-                IKB(label, callback_data=cb),
-                IKB(pin_icon, callback_data=f"acc:ui:pin:{cb}"),
-            ])
+    row: list[IKB] = []
+    for label, cb in items:
+        row.append(IKB(label, callback_data=cb))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        # Odd one out — full-width row, never paired with a filler button.
+        kb.append(row)
 
     # Pagination row
     pag: list[IKB] = []
     if page > 1:
         pag.append(IKB("« Prev", callback_data=f"acc:cat:{cat}:{page - 1}"))
     if page < total:
-        pag.append(IKB(f"Next »",
+        pag.append(IKB("Next »",
                         callback_data=f"acc:cat:{cat}:{page + 1}"))
     if pag:
         kb.append(pag)
@@ -979,9 +974,7 @@ async def _handle_ui_action(action: str, rest: list[str], uid: int,
         favs = nd["favs"]
         text = (
             "⭐ <b>Favorites</b>\n\n"
-            "Your pinned admin menus appear here.\n\n"
-            "To pin a menu: open any category, then tap "
-            "<code>⭐ Pin this menu</code>."
+            "Your pinned admin menus appear here."
             if not favs else
             f"⭐ <b>Favorites</b>  ({len(favs)}/{_MAX_FAVS} pinned)"
         )
