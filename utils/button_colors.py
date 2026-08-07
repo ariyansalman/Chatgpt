@@ -65,6 +65,7 @@ DEFAULT_MENU_ITEM_COLORS: dict[str, str] = {
     "account": "blue",
     "language": "blue",
     "settings": "blue",
+    "profile": "blue",
     "admin": "red",
 }
 

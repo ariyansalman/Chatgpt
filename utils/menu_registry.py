@@ -61,11 +61,9 @@ LEADING_EMOJI_RE = re.compile(
 # ─────────────────────────────────────────────────────────────────────────────
 
 DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
-    # Row 1 — Shop (full-width)
+    # Row 1 — Products | Wallet
     {"key": "products", "label_key": "main_menu.products", "callback": "products",
-     "row": 1, "order": 0, "full_width": True, "emoji": "🛒"},
-
-    # Row 2 — Wallet | Orders
+     "row": 1, "order": 0, "emoji": "🛒"},
     # NOTE: 💳 Deposit (key "topup", callback "topup") used to be its own
     # top-level button. Wallet is now the complete financial center --
     # "Add Funds" (the same "topup" flow, unchanged) lives one level down
@@ -74,35 +72,33 @@ DEFAULT_MENU_ITEMS: List[Dict[str, Any]] = [
     # point that used to say "Deposit" now redirects into Wallet / Add
     # Funds; the "topup" callback itself is untouched for compatibility.
     {"key": "wallet", "label_key": "main_menu.wallet", "callback": "wallet",
-     "row": 2, "order": 0, "emoji": "👛"},
-    {"key": "orders", "label_key": "main_menu.order_history", "callback": "order_history",
-     "row": 2, "order": 1, "emoji": "📦"},
+     "row": 1, "order": 1, "emoji": "💳"},
 
-    # Row 3 — Invite | Support
+    # Row 2 — Orders | Support
+    {"key": "orders", "label_key": "main_menu.order_history", "callback": "order_history",
+     "row": 2, "order": 0, "emoji": "📦"},
+    {"key": "support", "label_key": "main_menu.support", "callback": "support_center",
+     "row": 2, "order": 1, "emoji": "🎧"},
+
+    # Row 3 — Invite | Profile
+    # ⚙ Settings has been retired as a top-level button in favor of 👤
+    # Profile -- a single hub for everything account-related (see
+    # handlers/account_features.py: user_profile, callback "ua:profile",
+    # unchanged). Settings' own sub-pages (Notifications / Currency /
+    # Privacy / Terms / About -- handlers/settings_handlers.py, all
+    # unchanged) are still reachable, now linked from inside Profile.
     {"key": "refer", "label_key": "main_menu.refer", "callback": "refer",
      "row": 3, "order": 0, "emoji": "👥"},
-    {"key": "support", "label_key": "main_menu.support", "callback": "support_center",
-     "row": 3, "order": 1, "emoji": "🎧"},
+    {"key": "profile", "label": "👤 Profile", "callback": "ua:profile",
+     "row": 3, "order": 1, "emoji": "👤"},
 
-    # Row 4 — Language | Settings
-    # NOTE: 🌐 Language previously lived one level down inside ⚙ Settings.
-    # It is now back on the Main Menu as its own top-level button (the
-    # "language_menu" callback and its handler in handlers/user_handlers.py
-    # are unchanged) so language selection doesn't require opening Settings
-    # first. ⚙ Settings keeps only real, functional settings (Notifications /
-    # Currency / Privacy / Terms / About) -- see handlers/settings_handlers.py.
+    # Row 4 — Language (full-width)
+    # 🌐 Language previously lived one level down inside ⚙ Settings. It
+    # stays its own top-level button (the "language_menu" callback and its
+    # handler in handlers/user_handlers.py are unchanged) so language
+    # selection doesn't require opening Profile first.
     {"key": "language", "label_key": "language.menu_button", "callback": "language_menu",
-     "row": 4, "order": 0, "emoji": "🌐"},
-    {"key": "settings", "label_key": "main_menu.settings", "callback": "uset:menu",
-     "row": 4, "order": 1, "emoji": "⚙️"},
-
-    # NOTE: the old full-width "👤 Profile" main-menu button has been
-    # retired as part of a Main Menu simplification pass -- the primary
-    # menu now only surfaces the handful of most-used actions. Profile /
-    # Account info still lives at the same place it always has (see
-    # handlers/account_features.py: account_menu / user_profile, callback
-    # "ua:profile", unchanged), just reached via the /profile command
-    # instead of a dedicated button, so it doesn't compete for space here.
+     "row": 4, "order": 0, "full_width": True, "emoji": "🌐"},
 
     # Row 5 — Admin Panel (full-width, admin-only; not one of the 7
     # user-facing Main Menu buttons -- only ever shown to admins)
@@ -194,7 +190,7 @@ _PROFILE_CFG_KEYS = {
 # admin button-press required after a deploy. Manual customizations made
 # *after* that automatic sync are left alone until the version is bumped
 # again.
-MENU_DEFAULTS_VERSION = 5
+MENU_DEFAULTS_VERSION = 6
 _MENU_DEFAULTS_VERSION_CFG_KEY = "main_menu_defaults_version"
 
 

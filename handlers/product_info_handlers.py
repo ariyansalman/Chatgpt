@@ -53,6 +53,7 @@ from telegram.ext import (
 )
 
 from utils.helpers import is_admin
+from utils.update_proxy import with_data
 from utils.safe_conversation import end_conversation as _pib_conv_end
 from services.product_info_service import (
     BLOCK_TYPES,
@@ -164,14 +165,8 @@ async def user_proceed_to_purchase(update: Update, context: ContextTypes.DEFAULT
         return ConversationHandler.END
 
     # Delegate entirely to buy_product_start by faking the callback_data
-    query._unfreeze()  # type: ignore[attr-defined]
-    try:
-        query.data = f"buy_{product_id}"
-    except Exception:
-        pass
-
     from handlers.payment_handlers import buy_product_start
-    return await buy_product_start(update, context)
+    return await buy_product_start(with_data(update, f"buy_{product_id}"), context)
 
 
 def _build_user_info_keyboard(product_id: int, settings: dict,
@@ -442,8 +437,7 @@ async def admin_block_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
         _block_reorder(block_id, up=(action == "up"))
         # Refresh block detail
-        query.data = f"pib:admin:blk:{block_id}"
-        await admin_block_detail(update, context)
+        await admin_block_detail(with_data(update, f"pib:admin:blk:{block_id}"), context)
         return
 
     # ── tog (toggle visibility)  ──────────────────────────────────────────
@@ -453,8 +447,7 @@ async def admin_block_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except (IndexError, ValueError):
             return
         _block_toggle_visibility(block_id)
-        query.data = f"pib:admin:blk:{block_id}"
-        await admin_block_detail(update, context)
+        await admin_block_detail(with_data(update, f"pib:admin:blk:{block_id}"), context)
         return
 
     # ── dup (duplicate) ───────────────────────────────────────────────────
@@ -465,8 +458,7 @@ async def admin_block_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
         pid = _block_duplicate(block_id)
         if pid:
-            query.data = f"pib:admin:prod:{pid}"
-            await admin_product_blocks(update, context)
+            await admin_product_blocks(with_data(update, f"pib:admin:prod:{pid}"), context)
         return
 
     # ── del (confirm) ─────────────────────────────────────────────────────
@@ -491,8 +483,7 @@ async def admin_block_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
         pid = _block_delete(block_id)
         if pid:
-            query.data = f"pib:admin:prod:{pid}"
-            await admin_product_blocks(update, context)
+            await admin_product_blocks(with_data(update, f"pib:admin:prod:{pid}"), context)
         return
 
     # ── typemenu ──────────────────────────────────────────────────────────
@@ -518,8 +509,7 @@ async def admin_block_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except (IndexError, ValueError):
             return
         _block_set_field(block_id, "block_type", type_key)
-        query.data = f"pib:admin:blk:{block_id}"
-        await admin_block_detail(update, context)
+        await admin_block_detail(with_data(update, f"pib:admin:blk:{block_id}"), context)
         return
 
     # ── colmenu ───────────────────────────────────────────────────────────
@@ -545,8 +535,7 @@ async def admin_block_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except (IndexError, ValueError):
             return
         _block_set_field(block_id, "accent_color", color_key)
-        query.data = f"pib:admin:blk:{block_id}"
-        await admin_block_detail(update, context)
+        await admin_block_detail(with_data(update, f"pib:admin:blk:{block_id}"), context)
         return
 
 
@@ -780,8 +769,7 @@ async def admin_toggle_purchase_setting(update: Update, context: ContextTypes.DE
     settings[key] = not settings.get(key, False)
     save_purchase_settings(product_id, settings)
 
-    query.data = f"pib:admin:settings:{product_id}"
-    await admin_purchase_settings(update, context)
+    await admin_purchase_settings(with_data(update, f"pib:admin:settings:{product_id}"), context)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

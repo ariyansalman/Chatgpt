@@ -60,6 +60,7 @@ from handlers.menu_colors import (
     get_item_style,
 )
 from handlers.menu_preview import mm_refresh_preview
+from utils.update_proxy import with_data
 from handlers.menu_renderer import build_item_markup, save_reordered
 from handlers.menu_state import (
     active_audience,
@@ -745,8 +746,7 @@ async def mm_custom_color_action(update: Update, context: ContextTypes.DEFAULT_T
     save_custom_buttons(buttons, context)
     await query.answer(f"{color_emoji(selected)} {color_label(selected)} applied.", show_alert=False)
     await mm_refresh_preview(context)
-    query.data = "mm:custom"
-    await mm_custom_menu(update, context)
+    await mm_custom_menu(with_data(update, "mm:custom"), context)
 
 
 async def mm_custom_move(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1175,8 +1175,7 @@ async def mm_amgr_toggle_visibility(update: Update, context: ContextTypes.DEFAUL
             i["visible"] = new_val
     _amgr_save_items(menu_id, items)
     await query.answer(f"✅ {_amgr_item_label(item)} is now {'shown' if new_val else 'hidden'}.")
-    query.data = f"mm:amgr:{menu_id}:item:{key}"
-    await mm_amgr_item_detail(update, context)
+    await mm_amgr_item_detail(with_data(update, f"mm:amgr:{menu_id}:item:{key}"), context)
 
 
 async def mm_amgr_toggle_enabled(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1196,8 +1195,7 @@ async def mm_amgr_toggle_enabled(update: Update, context: ContextTypes.DEFAULT_T
             i["enabled"] = new_val
     _amgr_save_items(menu_id, items)
     await query.answer(f"✅ {_amgr_item_label(item)} is now {'enabled' if new_val else 'disabled'}.")
-    query.data = f"mm:amgr:{menu_id}:item:{key}"
-    await mm_amgr_item_detail(update, context)
+    await mm_amgr_item_detail(with_data(update, f"mm:amgr:{menu_id}:item:{key}"), context)
 
 
 # ── Move item ────────────────────────────────────────────────────────────────
@@ -1215,8 +1213,7 @@ async def mm_amgr_move_item(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await query.answer("✅ Order updated.")
     else:
         await query.answer("↔️ Already at the edge.", show_alert=False)
-    query.data = f"mm:amgr:{menu_id}:item:{key}"
-    await mm_amgr_item_detail(update, context)
+    await mm_amgr_item_detail(with_data(update, f"mm:amgr:{menu_id}:item:{key}"), context)
 
 
 # ── Color handlers ───────────────────────────────────────────────────────────
@@ -1277,8 +1274,7 @@ async def mm_amgr_set_color(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             candidate["style"] = selected
     _amgr_save_items(menu_id, items)
     await query.answer(f"{color_emoji(selected)} {color_label(selected)} applied.", show_alert=False)
-    query.data = f"mm:amgr:{menu_id}:item:{key}"
-    await mm_amgr_item_detail(update, context)
+    await mm_amgr_item_detail(with_data(update, f"mm:amgr:{menu_id}:item:{key}"), context)
 
 
 async def mm_amgr_color_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1307,8 +1303,7 @@ async def mm_amgr_color_action(update: Update, context: ContextTypes.DEFAULT_TYP
             candidate["style"] = selected
     _amgr_save_items(menu_id, items)
     await query.answer(f"{color_emoji(selected)} {color_label(selected)} applied.", show_alert=False)
-    query.data = f"mm:amgr:{menu_id}:item:{key}"
-    await mm_amgr_item_detail(update, context)
+    await mm_amgr_item_detail(with_data(update, f"mm:amgr:{menu_id}:item:{key}"), context)
 
 
 # ── Live preview ─────────────────────────────────────────────────────────────
@@ -1397,8 +1392,7 @@ async def mm_amgr_reset_confirm(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer("❌ Reset failed.", show_alert=True)
         return
     await query.answer("🔄 Menu reset to factory defaults.", show_alert=True)
-    query.data = f"mm:amgr:{menu_id}"
-    await mm_amgr_menu(update, context)
+    await mm_amgr_menu(with_data(update, f"mm:amgr:{menu_id}"), context)
 
 
 # ── Audience submenu ─────────────────────────────────────────────────────────
@@ -1464,8 +1458,7 @@ async def mm_amgr_set_audience(update: Update, context: ContextTypes.DEFAULT_TYP
             i.pop("admin_only", None)
     _amgr_save_items(menu_id, items)
     await query.answer(f"✅ Audience set to {audience_label(audience_val)}.")
-    query.data = f"mm:amgr:{menu_id}:item:{key}"
-    await mm_amgr_item_detail(update, context)
+    await mm_amgr_item_detail(with_data(update, f"mm:amgr:{menu_id}:item:{key}"), context)
 
 
 # ── Delete item ──────────────────────────────────────────────────────────────
@@ -1511,8 +1504,7 @@ async def mm_amgr_delitem(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     new_items = [i for i in items if i["key"] != key]
     _amgr_save_items(menu_id, new_items)
     await query.answer(f"🗑 Deleted: {label}", show_alert=True)
-    query.data = f"mm:amgr:{menu_id}"
-    await mm_amgr_menu(update, context)
+    await mm_amgr_menu(with_data(update, f"mm:amgr:{menu_id}"), context)
 
 
 # ── Delete menu ──────────────────────────────────────────────────────────────
@@ -1580,8 +1572,7 @@ async def mm_amgr_deletemenu_confirm(update: Update, context: ContextTypes.DEFAU
         except Exception:
             pass
         await query.answer("🔄 Menu reset to factory defaults.", show_alert=True)
-    query.data = "mm:amgr"
-    await mm_amgr_list(update, context)
+    await mm_amgr_list(with_data(update, "mm:amgr"), context)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

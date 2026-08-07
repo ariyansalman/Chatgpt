@@ -104,7 +104,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
             ("🎟 Gift Cards",          "agc:menu"),
             ("🗂 Template Manager",    "apt:menu"),
             ("📄 Clone Products",      "pct:menu"),
-            ("⭐ Badges & Featured",    "admin_products"),
+            ("⚡ Bulk Actions",        "bpim:bulk:menu"),
             ("❓ Product FAQ",          "acc:sec:pfaq"),
             ("⚖️ Product Compare",      "acc:sec:pcmp"),
             ("❤️ Favorites",            "acc:sec:favs"),
@@ -218,7 +218,7 @@ _CAT_PAGES: dict[str, list[list[tuple[str, str]]]] = {
     # control exists in the codebase — flagged as a gap.
     "appearance": [[
         ("🧩 Main Menu Builder",   "mm:menu"),
-        ("🔘 Button Manager",      "mm:menu"),
+        ("🔘 Button Manager",      "mm:custom"),
         ("😀 Emoji Manager",       "mm:emoji_help"),
         ("🎨 Color Manager",       "acc:sec:colors"),
         ("🎭 Theme",               "acc:sec:theme"),

@@ -368,17 +368,24 @@ async def user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     ]
     text = "\n".join(lines)
 
-    # Compact Profile Menu -- Wallet / Orders / Referral / Language already
-    # have their own Main Menu entry points, so this screen only surfaces
-    # what's unique to Account: Wallet & Orders shortcuts, Purchased Keys,
-    # and Settings. No duplicate buttons, no duplicate navigation paths.
+    # Profile Hub -- Main Menu's single account destination. User Info /
+    # Wallet Summary / Order Stats / Referral Stats are shown above as
+    # text; the rows below link out to each existing module (Wallet,
+    # Orders, Referrals, Language, Notifications, full Account Details /
+    # Security, Purchased Keys, Terms & About) so nothing needs to be
+    # reimplemented here -- every callback below is an existing,
+    # unchanged handler.
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("👛 Wallet",         callback_data="wallet"),
-         InlineKeyboardButton("📦 My Orders",      callback_data="order_history")],
-        [InlineKeyboardButton("🔑 Purchased Keys", callback_data="ua:dl"),
-         InlineKeyboardButton("⚙️ Settings",       callback_data="ua:sec")],
-        [InlineKeyboardButton("📄 Terms",          callback_data="sc_page_terms"),
-         InlineKeyboardButton("ℹ️ About",          callback_data="sc_page_about")],
+        [InlineKeyboardButton("👛 Wallet",          callback_data="wallet"),
+         InlineKeyboardButton("📦 My Orders",       callback_data="order_history")],
+        [InlineKeyboardButton("👥 Referrals",       callback_data="refer"),
+         InlineKeyboardButton("🔑 Purchased Keys",  callback_data="ua:dl")],
+        [InlineKeyboardButton("🌐 Language",        callback_data="language_menu"),
+         InlineKeyboardButton("🔔 Notifications",   callback_data="uset:notif")],
+        [InlineKeyboardButton("🧾 Account Details", callback_data="uset:menu"),
+         InlineKeyboardButton("🔒 Security",        callback_data="ua:sec")],
+        [InlineKeyboardButton("📄 Terms",           callback_data="sc_page_terms"),
+         InlineKeyboardButton("ℹ️ About",           callback_data="sc_page_about")],
         [InlineKeyboardButton("🏠 Main Menu",   callback_data="main_menu")],
     ])
 
