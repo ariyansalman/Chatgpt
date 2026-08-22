@@ -1,0 +1,20 @@
+# Environment / secrets — never commit your real .env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Local SQLite database (production uses Supabase Postgres, not this file)
+*.db
+*.sqlite3
+
+# Editor/OS cruft
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,15 @@
+python-telegram-bot==21.6
+SQLAlchemy==2.0.35
+requests==2.32.3
+python-dotenv==1.0.1
+Flask==3.0.3
+Flask-Session==0.8.0
+urllib3==2.2.3
+watchdog==6.0.0
+
+# Postgres driver — required for Supabase/Railway production deployment.
+psycopg2-binary==2.9.9
+
+# Production WSGI server for webhook_server.py (Flask's built-in dev server
+# is not meant to be run in production).
+gunicorn==23.0.0
